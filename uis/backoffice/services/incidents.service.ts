@@ -15,6 +15,7 @@ import {
   ApiConfigError,
   ApiNetworkError,
   ApiTimeoutError,
+  ApiUnauthorizedError,
   ApiUnexpectedResponseError,
   apiClient,
   type ApiClient,
@@ -119,6 +120,8 @@ async function guarded<T>(operation: () => Promise<T>): Promise<T> {
   } catch (error) {
     if (error instanceof IncidentServiceError || error instanceof ApiAbortError) throw error;
     if (error instanceof ApiConfigError) throw fail({ kind: 'config' });
+    // 401: el cliente ya borró el token; el guard de rutas redirige a /login.
+    if (error instanceof ApiUnauthorizedError) throw fail({ kind: 'session_expired' });
     if (error instanceof ApiTimeoutError) throw fail({ kind: 'timeout' });
     if (error instanceof ApiNetworkError) throw fail({ kind: 'network' });
     // UnexpectedResponseError (normalizador: 200 que no cumple el contrato),

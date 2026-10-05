@@ -7,9 +7,18 @@
 // error de este módulo lleva texto de la respuesta ni la excepción original
 // (el SyntaxError de `JSON.parse` incluye fragmentos del cuerpo recibido).
 //
+// Autenticación (AUTH-02): toda petición es protegida salvo que el servicio
+// pida `skipAuth` (login y registro). En las protegidas se adjunta
+// `Authorization: Bearer <token>` con el token de lib/auth-token.ts y, si la
+// API responde 401, se elimina el token (el guard de rutas redirige a /login)
+// y se lanza `ApiUnauthorizedError` sin llamar al handler del servicio. Así
+// ninguna vista repite esa lógica.
+//
 // El JSON recibido solo se entrega, sin inspeccionarlo, a la función `parse`
 // que indique el servicio (un normalizador de `services/normalizers.ts`, única
 // frontera que valida datos de red).
+
+import { clearAuthToken, readAuthToken } from '@/lib/auth-token';
 
 /**
  * Cualquier valor que puede producir `JSON.parse` sin reviver: exactamente lo
@@ -25,12 +34,22 @@ export interface ApiClientDependencies {
   fetch?: FetchLike;
   /** Base URL; por defecto `NEXT_PUBLIC_API_URL`. Se lee en cada petición (validación perezosa). */
   getBaseUrl?: () => string | undefined;
+  /** Token de sesión; por defecto el de `localStorage` (lib/auth-token.ts). Se lee en cada petición. */
+  getToken?: () => string | null;
+  /** Qué hacer ante un 401 de una petición protegida; por defecto, borrar el token. */
+  onUnauthorized?: () => void;
 }
 
 export interface RequestOptions {
   timeoutMs: number;
   /** Cancelación desde fuera (p. ej. desmontaje de la vista). */
   signal?: AbortSignal;
+  /**
+   * Petición pública (`POST /auth/login`, `POST /users`): no envía el token y
+   * su 401 lo interpreta el servicio (credenciales incorrectas), no es una
+   * sesión caducada. Por defecto toda petición es protegida.
+   */
+  skipAuth?: boolean;
 }
 
 /** Respuesta HTTP mientras se procesa: el timeout sigue activo al leer el cuerpo. */
@@ -46,9 +65,11 @@ export type ResponseHandler<T> = (response: ApiResponse) => Promise<T>;
 
 export interface ApiClient {
   get<T>(path: string, options: RequestOptions, handle: ResponseHandler<T>): Promise<T>;
-  postForm<T>(path: string, form: FormData, options: RequestOptions, handle: ResponseHandler<T>): Promise<T>;
+  /** `FormData` → multipart; `URLSearchParams` → `application/x-www-form-urlencoded` (login OAuth2). */
+  postForm<T>(path: string, form: FormData | URLSearchParams, options: RequestOptions, handle: ResponseHandler<T>): Promise<T>;
   postJson<T>(path: string, body: JsonValue, options: RequestOptions, handle: ResponseHandler<T>): Promise<T>;
   patchJson<T>(path: string, body: JsonValue, options: RequestOptions, handle: ResponseHandler<T>): Promise<T>;
+  putJson<T>(path: string, body: JsonValue, options: RequestOptions, handle: ResponseHandler<T>): Promise<T>;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,6 +112,17 @@ export class ApiAbortError extends ApiClientError {
   constructor() {
     super('The API request was aborted');
     this.name = 'ApiAbortError';
+  }
+}
+
+/**
+ * 401 en una petición protegida: no hay sesión válida (sin token, caducado o
+ * usuario borrado). El token ya se ha eliminado cuando se lanza.
+ */
+export class ApiUnauthorizedError extends ApiClientError {
+  constructor() {
+    super('The session is not valid');
+    this.name = 'ApiUnauthorizedError';
   }
 }
 
@@ -146,15 +178,38 @@ function wrapResponse(raw: Response): ApiResponse {
   };
 }
 
+interface OutgoingRequest {
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT';
+  body?: BodyInit;
+  contentType?: string;
+}
+
 export function createApiClient(dependencies: ApiClientDependencies = {}): ApiClient {
   const transport: FetchLike = dependencies.fetch ?? ((input, init) => fetch(input, init));
   const getBaseUrl = dependencies.getBaseUrl ?? defaultBaseUrl;
+  const getToken = dependencies.getToken ?? readAuthToken;
+  const onUnauthorized = dependencies.onUnauthorized ?? clearAuthToken;
 
-  async function send<T>(path: string, init: RequestInit, options: RequestOptions, handle: ResponseHandler<T>): Promise<T> {
+  function buildInit(request: OutgoingRequest, options: RequestOptions): RequestInit {
+    const headers: Record<string, string> = {};
+    if (request.contentType !== undefined) headers['Content-Type'] = request.contentType;
+    if (!options.skipAuth) {
+      const token = getToken();
+      // Sin token se envía igualmente: la API responde 401 y se trata abajo.
+      if (token !== null) headers.Authorization = `Bearer ${token}`;
+    }
+    const init: RequestInit = { method: request.method };
+    if (request.body !== undefined) init.body = request.body;
+    if (Object.keys(headers).length > 0) init.headers = headers;
+    return init;
+  }
+
+  async function send<T>(path: string, request: OutgoingRequest, options: RequestOptions, handle: ResponseHandler<T>): Promise<T> {
     const baseUrl = getBaseUrl()?.trim();
     if (!baseUrl) throw new ApiConfigError();
     const url = `${baseUrl.replace(/\/+$/, '')}${path}`;
     if (options.signal?.aborted) throw new ApiAbortError();
+    const init = buildInit(request, options);
 
     const controller = new AbortController();
     let timedOut = false;
@@ -168,13 +223,18 @@ export function createApiClient(dependencies: ApiClientDependencies = {}): ApiCl
     try {
       let raw: Response;
       try {
-        // Nunca se envían credenciales: la API no las acepta (CORS sin credentials).
+        // Nunca se envían credenciales (cookies): la API no las acepta (CORS sin
+        // credentials). El JWT viaja solo en la cabecera Authorization.
         raw = await transport(url, { ...init, signal: controller.signal });
       } catch (error) {
         if (timedOut) throw new ApiTimeoutError();
         if (controller.signal.aborted) throw new ApiAbortError();
         if (error instanceof Error && isAbortLike(error)) throw new ApiAbortError();
         throw new ApiNetworkError();
+      }
+      if (raw.status === 401 && !options.skipAuth) {
+        onUnauthorized();
+        throw new ApiUnauthorizedError();
       }
       try {
         return await handle(wrapResponse(raw));
@@ -194,15 +254,17 @@ export function createApiClient(dependencies: ApiClientDependencies = {}): ApiCl
 
   // Único punto que serializa JSON de salida: el cuerpo lo construye el servicio
   // campo a campo a partir de datos del formulario (nunca respuestas de la API).
-  function jsonInit(method: 'POST' | 'PATCH', body: JsonValue): RequestInit {
-    return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+  function jsonRequest(method: 'POST' | 'PATCH' | 'PUT', body: JsonValue): OutgoingRequest {
+    return { method, contentType: 'application/json', body: JSON.stringify(body) };
   }
 
   return {
     get: (path, options, handle) => send(path, { method: 'GET' }, options, handle),
-    postJson: (path, body, options, handle) => send(path, jsonInit('POST', body), options, handle),
-    patchJson: (path, body, options, handle) => send(path, jsonInit('PATCH', body), options, handle),
-    // Sin cabecera Content-Type: el navegador la genera con el boundary del multipart.
+    postJson: (path, body, options, handle) => send(path, jsonRequest('POST', body), options, handle),
+    patchJson: (path, body, options, handle) => send(path, jsonRequest('PATCH', body), options, handle),
+    putJson: (path, body, options, handle) => send(path, jsonRequest('PUT', body), options, handle),
+    // Sin cabecera Content-Type: el navegador la genera (boundary del multipart
+    // o `application/x-www-form-urlencoded` para URLSearchParams).
     postForm: (path, form, options, handle) => send(path, { method: 'POST', body: form }, options, handle),
   };
 }

@@ -659,3 +659,44 @@ Las cinco verificaciones están resueltas. Resumen de lo aprendido frente al con
 | URLs de datos no fiables (markdown crudo en `cv_url`) | Validar antes de renderizar como enlace |
 
 **La implementación puede comenzar por la Capa 1.**
+
+---
+
+## 9. Autenticación AUTH-02 (sesión contra `services/api` de Nexova)
+
+Fuente: ticket AUTH-02 ([`docs/auth-frontend.md`](../../docs/auth-frontend.md)): todas las aplicaciones del monorepo salvo el website público exigen sesión. Contrato de autenticación: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte C (§18). Esta sección **no** cambia nada de las §1–§8: la API de candidaturas de 4Geeks sigue sin autenticación y **nunca** recibe el token (§5.1).
+
+### 9.1 Dos APIs, dos variables
+
+```text
+# .env.local
+NEXT_PUBLIC_API_URL=https://playground.4geeks.com/tracker/api/v1   # candidaturas (4Geeks), sin token
+NEXT_PUBLIC_AUTH_API_URL=http://localhost:8000                     # services/api de Nexova (login, registro, perfil)
+```
+
+* Igual que §3.2: ninguna URL se escribe literal en el código y `lib/api-client.ts` falla al arrancar si falta cualquiera de las dos.
+* `apiClient` (4Geeks) no envía `Authorization`. `authApiClient` (services/api) la envía en sus rutas protegidas (`GET /auth/me`, `PUT /profiles/me`); login (`POST /auth/login`, formulario OAuth2 con `username` = email) y registro (`POST /users`) son públicos.
+* La app arranca en el puerto **3001** (`npm run dev`), un origen propio que `services/api` debe permitir en `CORS_ALLOWED_ORIGINS` (lo incluye su `.env.example`). Nunca se establece `credentials` en `fetch`.
+* El puerto 3001 y `NEXT_PUBLIC_AUTH_API_URL` son configuración local propuesta en AUTH-02, **pendiente de revisión** (`docs/auth-frontend.md` §3.3), no parte del contrato de la API de candidaturas.
+
+### 9.2 Vistas y protección
+
+| Ruta | Acceso | Qué hace |
+|---|---|---|
+| `/login` | pública | `POST /auth/login`; si es correcto guarda el JWT en `localStorage` y va a `/`; si no, error claro y ningún token |
+| `/register` | pública | `POST /users` (email, contraseña y `name`/`phone`/`address` opcionales; nunca `role`) y después `POST /auth/login`; errores 422/409 por campo |
+| `/account/profile` | protegida | `GET /auth/me` (email + `Profile`) y `PUT /profiles/me` (nombre y contacto; campo vacío → `null`) |
+| `/`, `/candidates/[id]` y cualquier ruta nueva | protegida | sin cambios funcionales |
+
+* **Guard global** en el layout raíz (`components/auth/auth-guard.tsx`): toda ruta salvo `PUBLIC_PATHS` (`lib/auth-routes.ts`) exige sesión. La sesión se valida una vez por token con `GET /auth/me` (la única llamada protegida al cargar: los datos de candidaturas no usan el token); la vista no se muestra ni pide datos a 4Geeks hasta entonces.
+* Sin token → `/login`. Un 401 de una ruta protegida de `services/api` → se borra el token y `/login`. Logout (cabecera) → se borra el token y `/login`.
+* **Prohibido** el middleware/proxy de Next.js o una cookie para esta comprobación: el token vive en `localStorage`.
+
+### 9.3 Código
+
+* `lib/auth-token.ts` — único módulo que usa `localStorage` (solo el JWT).
+* `lib/api-client.ts` — `authApiClient`: Bearer y tratamiento del 401 (`UnauthorizedError`) en un único sitio.
+* `services/auth.service.ts` — login y registro comparten el paso de login; `describeAuthError` traduce errores a mensajes por campo.
+* `services/normalizers.ts` — `normalizeAccessToken`, `normalizeCurrentUser`, `normalizeProfile` (frontera de confianza, §3.1).
+* `hooks/use-auth-session.ts`, `use-auth-form.ts`, `use-profile.ts`; `components/auth/*`.
+* Tests: `tests/auth.test.mjs` con el runner nativo de Node 24, sin dependencias (ver README, Validación).

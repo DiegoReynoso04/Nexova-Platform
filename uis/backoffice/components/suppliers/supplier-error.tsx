@@ -37,6 +37,8 @@ function copyFor(error: SupplierUiError): ErrorCopy {
         title: 'Falta la configuración del backoffice',
         body: 'La dirección de la API (NEXT_PUBLIC_API_URL) no está configurada.',
       };
+    case 'session_expired':
+      return { title: 'La sesión ha caducado', body: 'Vuelve a iniciar sesión para continuar.' };
   }
 }
 

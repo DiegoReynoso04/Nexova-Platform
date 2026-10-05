@@ -100,4 +100,5 @@ export type SupplierUiError =
   | { kind: 'network' }
   | { kind: 'timeout' }
   | { kind: 'unexpected_response' }
-  | { kind: 'config' };
+  | { kind: 'config' }
+  | { kind: 'session_expired' };

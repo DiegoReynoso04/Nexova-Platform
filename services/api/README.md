@@ -82,7 +82,7 @@ Variables de entorno (la API **no** carga archivos `.env` por sí sola, no usa `
 | `JWT_SECRET_KEY` | — (**obligatoria**) | Clave de firma HS256 de los JWT, mínimo 32 caracteres. Nunca en el código ni en git |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | — (**obligatoria**) | Validez del token de acceso en minutos (entero > 0) |
 | `AUTH_DB_PATH` | `services/api/data/auth.json` | Archivo TinyDB de `User` y `Profile` (API y `create-admin`). `data/` está en `.gitignore` |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Orígenes permitidos, separados por comas. `*` se rechaza al arrancar |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Orígenes permitidos, separados por comas. `*` se rechaza al arrancar. Con AUTH-02 el Talent Pipeline Tracker (puerto 3001) también llama a la API para login, registro y perfil: en local usar `http://localhost:3000,http://localhost:3001` (así viene en `.env.example`) |
 | `SUPPLIERS_DB_PATH` | `services/api/data/suppliers.json` | Archivo TinyDB del directorio de proveedores (API y seeder). `data/` está en `.gitignore` |
 | `MAX_UPLOAD_BYTES` | `1048576` (1 MiB) | Límite técnico del **body HTTP completo** (CSV + cabeceras y delimitadores multipart), **no del CSV**: el CSV máximo es algo menor. Decisión de la API, no requisito del cliente. Detalle en `SPECS.md` §3.1 |
 
@@ -151,8 +151,6 @@ Sin uv, con el venv del servicio: `python -m app.auth.create_admin --email ...`.
 - **El último análisis se pierde al reiniciar** el proceso: no hay persistencia.
 - Se guarda **el último análisis que termina correctamente**; un POST fallido no lo cambia. Es **global al proceso**, no por usuario, y con peticiones concurrentes gana la que termina después. `X-Analysis-Id` en la exportación identifica el análisis descargado.
 - **Autenticación sin estado**: no hay revocación ni refresh de tokens; cambiar contraseña o rol no invalida los tokens ya emitidos hasta que expiran. Sin permisos por rol en las rutas de incidentes y proveedores (basta un token válido).
-- **CORS no permite `PUT`**: `PUT /users/{id}` y `PUT /profiles/me` funcionan desde `/docs`, curl o servidor, pero no desde el navegador hasta que se añada `PUT` a los métodos CORS (`SPECS.md` §22).
-- **El backoffice aún no envía el token**: sus vistas `/suppliers` e `/incidents` reciben 401 hasta la fase de frontend.
 - Con `MAX_UPLOAD_BYTES` > 1 MiB, Starlette puede volcar el archivo subido a un temporal en disco durante la petición.
 - Las respuestas 200 de análisis y exportación llevan `Cache-Control: no-store`.
 
@@ -183,7 +181,7 @@ La suite del núcleo (Fase 1) no necesita el venv: `python -m unittest discover 
 |---|---|
 | `test_analyze.py` | POST correcto, contrato JSON, orden de reglas/categorías/estados, paridad con el núcleo, `/health` |
 | `test_export.py` | 404 sin análisis, cabeceras, cuerpo idéntico al `results.csv` de la CLI, sustitución A→B, B fallido (400/413/415/422/500) no borra A, `Cache-Control: no-store` |
-| `test_errors.py` | 400/404/405 (con `Allow`)/413/415/422, límite con y sin `Content-Length` incluida la frontera exacta (`MAX` → 200, `MAX+1` → 413), ausencia de volcado a disco, configuración, CORS |
+| `test_errors.py` | 400/404/405 (con `Allow`)/413/415/422, límite con y sin `Content-Length` incluida la frontera exacta (`MAX` → 200, `MAX+1` → 413), ausencia de volcado a disco, configuración, CORS (métodos declarados, incluido `PUT` para `/profiles/me` desde AUTH-02) |
 | `test_privacy.py` | Ningún email ni dato de registro en respuestas, errores, export ni logs; 500 opaco con excepción que contiene un email |
 | `test_architecture.py` | La API no duplica reglas, categorías, estados, regex, lógica de score ni redondeo; solo usa la API pública del núcleo; el núcleo no importa FastAPI |
 | `test_suppliers_api.py` | Proveedores: modelo = CONTEXT, 422 antes de tocar TinyDB (país, estado, tarifa ≤ 0, moneda, categorías, fecha, campos del sistema), 201/404/204, filtros país/categoría combinados, `updated_at` en cambio de tarifa y no en cambio de estado, CORS PATCH/DELETE |

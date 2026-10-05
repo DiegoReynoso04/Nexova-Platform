@@ -266,14 +266,30 @@ class CorsTests(unittest.TestCase):
         self.assertNotIn("access-control-allow-origin", self.preflight("http://evil.example", "POST"))
 
     def test_only_declared_methods_are_allowed(self) -> None:
-        # GET/POST (incidentes y proveedores) + PATCH/DELETE (directorio de proveedores).
+        # GET/POST (incidentes y proveedores) + PATCH/DELETE (directorio de proveedores)
+        # + PUT (perfil desde el frontend, AUTH-02). Cualquier otro método se rechaza.
         response = make_client().options(
-            ANALYZE_URL, headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "PUT"}
+            ANALYZE_URL, headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "TRACE"}
         )
         self.assertEqual(response.status_code, 400)
         allowed = {method.strip() for method in response.headers.get("access-control-allow-methods", "").split(",")}
-        self.assertNotIn("PUT", allowed)
-        self.assertLessEqual({"GET", "POST", "PATCH", "DELETE"}, allowed)
+        self.assertNotIn("TRACE", allowed)
+        self.assertEqual({"GET", "POST", "PATCH", "PUT", "DELETE"}, allowed - {"OPTIONS", "HEAD"})
+
+    def test_put_preflight_for_the_profile(self) -> None:
+        # AUTH-02: PUT /profiles/me desde el navegador, con el JWT en Authorization.
+        response = make_client().options(
+            "/profiles/me",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "PUT",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("access-control-allow-origin"), "http://localhost:3000")
+        self.assertIn("PUT", response.headers.get("access-control-allow-methods", ""))
+        self.assertNotIn("access-control-allow-credentials", response.headers)
 
     def test_export_headers_are_exposed_to_the_browser(self) -> None:
         client = make_client()
