@@ -23,5 +23,11 @@ Fuente de verdad: `SPECS.md` (raíz del proyecto). Ante cualquier duda no cubier
 - Los componentes nunca hacen llamadas HTTP directas: toda petición pasa por `services/`.
 - Client Components para listado y detalle; fetch desde el navegador, sin Route Handlers ni proxy.
 
+## Autenticación (AUTH-02, SPECS.md §9)
+- La sesión se obtiene de `services/api` de Nexova (`NEXT_PUBLIC_AUTH_API_URL`), no de la API de 4Geeks, que nunca recibe el token.
+- El JWT se guarda en `localStorage` (exigido por el ticket) y solo `lib/auth-token.ts` lo toca. No se persiste nada más en el navegador.
+- `Authorization: Bearer` y el tratamiento del 401 viven solo en `lib/api-client.ts` (`authApiClient`); las vistas no repiten esa lógica.
+- Protección global con el guard del layout raíz (`lib/auth-routes.ts`): toda vista nueva es protegida por defecto. Prohibido usar middleware/proxy de Next.js o cookies para comprobar la sesión.
+
 ## Tono e identidad
 - Esto es una herramienta interna de Nexova Solutions (Operaciones de Selección), no una app genérica: sobria, funcional, orientada a eficiencia operativa, coherente con el contexto y la imagen de la empresa.

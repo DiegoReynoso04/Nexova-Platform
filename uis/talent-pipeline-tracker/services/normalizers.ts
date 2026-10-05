@@ -4,6 +4,7 @@
 // está prohibido un normalizador genérico. Toda forma inesperada lanza un
 // Error descriptivo; nunca se devuelven datos parciales en silencio (§3.1).
 
+import { USER_ROLES, type AccessToken, type CurrentUser, type Profile, type UserRole } from '@/types/auth';
 import type { Note, RecordListItem } from '@/types/record';
 import type { NotesResponse, RecordsPage } from '@/types/api';
 
@@ -282,5 +283,89 @@ export function normalizeRecordsPage(data: unknown): RecordsPage {
     page,
     limit,
     data: items.map((item, index) => parseRecordListItem(item, `${context}.data[${index}]`)),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// services/api de Nexova — autenticación (AUTH-02, SPECS.md §9). Contrato:
+// services/api/SPECS.md Parte C §18. Cada respuesta se construye campo a campo:
+// nunca se copian propiedades fuera del contrato.
+// ---------------------------------------------------------------------------
+
+function isUserRole(value: unknown): value is UserRole {
+  return USER_ROLES.some((role) => role === value);
+}
+
+function requireString(source: Record<string, unknown>, key: string, context: string): string {
+  const value = source[key];
+  if (!isString(value)) {
+    throw new Error(`${context}.${key}: se esperaba string, se recibió ${describeType(value)}`);
+  }
+  return value;
+}
+
+function requireNullableString(source: Record<string, unknown>, key: string, context: string): string | null {
+  const value = source[key];
+  if (!isNullableString(value)) {
+    throw new Error(`${context}.${key}: se esperaba string o null, se recibió ${describeType(value)}`);
+  }
+  return value;
+}
+
+function parseProfile(value: unknown, context: string): Profile {
+  if (!isRecordObject(value)) {
+    throw new Error(`${context}: se esperaba un objeto, se recibió ${describeType(value)}`);
+  }
+  return {
+    id: requireString(value, 'id', context),
+    user_id: requireString(value, 'user_id', context),
+    name: requireNullableString(value, 'name', context),
+    phone: requireNullableString(value, 'phone', context),
+    address: requireNullableString(value, 'address', context),
+  };
+}
+
+/** POST /auth/login -> { access_token, token_type, expires_in }. Exige un token no vacío. */
+export function normalizeAccessToken(data: unknown): AccessToken {
+  const context = 'POST /auth/login';
+  if (!isRecordObject(data)) {
+    throw new Error(`${context}: se esperaba un objeto, se recibió ${describeType(data)}`);
+  }
+  const accessToken = requireString(data, 'access_token', context);
+  if (accessToken.trim() === '') {
+    throw new Error(`${context}.access_token: se esperaba un token no vacío`);
+  }
+  const { expires_in } = data;
+  if (!isFiniteNumber(expires_in)) {
+    throw new Error(`${context}.expires_in: se esperaba number, se recibió ${describeType(expires_in)}`);
+  }
+  return { access_token: accessToken, token_type: requireString(data, 'token_type', context), expires_in };
+}
+
+/** PUT /profiles/me -> Profile. */
+export function normalizeProfile(data: unknown): Profile {
+  return parseProfile(data, 'PUT /profiles/me');
+}
+
+/** GET /auth/me -> { id, email, role, is_active, created_at, profile }. */
+export function normalizeCurrentUser(data: unknown): CurrentUser {
+  const context = 'GET /auth/me';
+  if (!isRecordObject(data)) {
+    throw new Error(`${context}: se esperaba un objeto, se recibió ${describeType(data)}`);
+  }
+  const { role, is_active, profile } = data;
+  if (!isUserRole(role)) {
+    throw new Error(`${context}.role: se esperaba admin | manager | user, se recibió ${describeType(role)}`);
+  }
+  if (typeof is_active !== 'boolean') {
+    throw new Error(`${context}.is_active: se esperaba boolean, se recibió ${describeType(is_active)}`);
+  }
+  return {
+    id: requireString(data, 'id', context),
+    email: requireString(data, 'email', context),
+    role,
+    is_active,
+    created_at: requireString(data, 'created_at', context),
+    profile: profile === null ? null : parseProfile(profile, `${context}.profile`),
   };
 }

@@ -151,13 +151,19 @@ describe('errores de transporte', () => {
 
   test('en 4xx/5xx el cliente no interpreta el cuerpo ni lanza errores con su contenido', async () => {
     const body = { detail: `row 3: ${LEAK}`, code: 'whatever', rows: [{ customer_email: LEAK }] };
-    for (const status of [400, 401, 403, 404, 405, 409, 413, 415, 422, 429, 500, 503]) {
+    // El 401 de una petición protegida lo intercepta el cliente (AUTH-02, tests/auth-client.test.mjs);
+    // en una petición pública (`skipAuth`) llega al parser como cualquier otro status.
+    for (const status of [400, 403, 404, 405, 409, 413, 415, 422, 429, 500, 503]) {
       const transport = recordingFetch(() => jsonResponse(status, body));
       const client = createApiClient({ fetch: transport.fetch, getBaseUrl: () => BASE_URL });
       // El status no lo decide el cliente: entrega el JSON al parser de quien llama.
       const delivered = await client.get('/x', OPTIONS, (response) => response.json((parsed) => parsed));
       assert.deepEqual(delivered, body, String(status));
     }
+    const transport = recordingFetch(() => jsonResponse(401, body));
+    const client = createApiClient({ fetch: transport.fetch, getBaseUrl: () => BASE_URL });
+    const delivered = await client.get('/x', { ...OPTIONS, skipAuth: true }, (response) => response.json((parsed) => parsed));
+    assert.deepEqual(delivered, body, '401 (skipAuth)');
   });
 
   test('los errores lanzados por el handler se propagan sin transformar', async () => {

@@ -19,6 +19,9 @@ const UNKNOWN_ALLOWED_IN = 'services/normalizers.ts';
 // Único punto que serializa JSON de salida: los cuerpos de POST/PATCH del
 // directorio de proveedores, construidos campo a campo por el servicio.
 const JSON_STRINGIFY_ALLOWED_IN = 'lib/api-client.ts';
+// AUTH-02: el JWT se guarda en localStorage (exigido por el ticket). Única
+// excepción a "sin persistencia en el navegador"; documentada en CLAUDE.md.
+const LOCAL_STORAGE_ALLOWED_IN = 'lib/auth-token.ts';
 
 function codeWithoutComments(relativePath) {
   return readFileSync(new URL(relativePath, APP_ROOT), 'utf8')
@@ -33,7 +36,6 @@ const FORBIDDEN = [
   ['FileReader', /\bFileReader\b/],
   ['.text()', /\.text\(\)/],
   ['arrayBuffer(', /arrayBuffer\(/],
-  ['localStorage', /\blocalStorage\b/],
   ['sessionStorage', /\bsessionStorage\b/],
   ['indexedDB', /\bindexedDB\b/],
   ['customer_email', /customer_email/],
@@ -56,6 +58,34 @@ describe('código de producción', () => {
       'services/suppliers.service.ts',
     ]) {
       assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('incluye las vistas y piezas de autenticación (AUTH-02)', () => {
+    for (const file of [
+      'app/login/page.tsx',
+      'app/register/page.tsx',
+      'app/account/profile/page.tsx',
+      'components/auth/auth-guard.tsx',
+      'hooks/use-auth-session.ts',
+      'lib/auth-token.ts',
+      'services/auth.service.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('localStorage solo aparece en lib/auth-token.ts (token de sesión)', () => {
+    for (const file of PRODUCTION_FILES) {
+      const usesLocalStorage = /\blocalStorage\b/.test(codeWithoutComments(file));
+      assert.equal(usesLocalStorage, file === LOCAL_STORAGE_ALLOWED_IN, file);
+    }
+  });
+
+  test('la cabecera Authorization solo se construye en lib/api-client.ts', () => {
+    for (const file of PRODUCTION_FILES) {
+      const setsAuthorization = /\bAuthorization\b|\bBearer\b/.test(codeWithoutComments(file));
+      assert.equal(setsAuthorization, file === 'lib/api-client.ts', file);
     }
   });
 

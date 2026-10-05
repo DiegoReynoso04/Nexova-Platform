@@ -58,7 +58,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_allowed_origins),
-        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        # PUT: el backoffice y el tracker editan el perfil con PUT /profiles/me (AUTH-02).
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
         # El frontend enviará el JWT en `Authorization: Bearer <token>`.
         allow_headers=["Authorization"],
         allow_credentials=False,

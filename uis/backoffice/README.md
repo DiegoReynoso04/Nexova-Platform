@@ -1,6 +1,6 @@
 # Backoffice
 
-Panel administrativo interno de **Nexova Solutions**. Tiene tres vistas: la portada con la ficha de la empresa, el **análisis de incidentes de soporte** (`/incidents`) y el **directorio de proveedores** (`/suppliers`). No implementa autenticación ni ninguna otra capacidad de back-office.
+Panel administrativo interno de **Nexova Solutions**. Tiene tres vistas de negocio: la portada con la ficha de la empresa, el **análisis de incidentes de soporte** (`/incidents`) y el **directorio de proveedores** (`/suppliers`), todas protegidas por sesión (AUTH-02): `/login`, `/register` y `/account/profile`.
 
 ## Vistas
 
@@ -18,7 +18,7 @@ Fase 3 del procesador de incidentes de Nexova (Atención al Cliente — Roberto 
 - **Límite de tamaño:** el límite real lo impone la API: **1048576 bytes (1 MiB) sobre el body HTTP completo** (CSV + cabeceras multipart), configurable en el servidor con `MAX_UPLOAD_BYTES`. La comprobación del navegador (extensión `.csv` y tamaño ≤ 1 MiB − 4 KiB) es solo **orientativa** para avisar antes de subir; el backend es la autoridad y su 413 siempre se trata. El texto de la interfaz dice "aproximadamente 1 MiB".
 - **Exportación:** va ligada al análisis mostrado (se comprueba `X-Analysis-Id`). Si llega un análisis nuevo mientras se exporta el anterior, esa descarga se cancela; si el análisis nuevo falla, la del anterior termina.
 - **Privacidad:** el frontend **no lee ni muestra el contenido del CSV** (el archivo se envía tal cual; no hay `FileReader`, `file.text()` ni vista previa) y nunca muestra `customer_email` ni datos de filas: solo nombre y tamaño del archivo, las métricas agregadas y mensajes de error fijos. No hay logs ni persistencia en el navegador, y nada se envía a servicios externos.
-- **Sin autenticación:** igual que la API, es de **uso local**.
+- **Requiere sesión** (AUTH-02): la API exige el JWT; sin sesión la vista redirige a `/login`.
 
 ### `/suppliers` — directorio de proveedores
 
@@ -31,6 +31,17 @@ Registro oficial de proveedores de Nexova (Patricia Solís, HR Manager). Requisi
 - Badges `active` / `suspended` (color + símbolo). Las renovaciones de los próximos 60 días (fecha local del navegador) se destacan con un borde lateral y la etiqueta «Renueva en N días»; de los 15 proveedores del seed, 10 tienen fecha de renovación (todas ya pasadas) y 5 no tienen fecha, así que ninguno aparece como renovación próxima: solo se ve con proveedores registrados con una fecha próxima.
 - **Sin botón de eliminar**: el endpoint `DELETE` existe en la API, pero los proveedores se suspenden, no se borran.
 - Necesita la API en marcha y, para ver datos, el seeder ejecutado (`cd services/api && uv run seed`).
+
+### Autenticación — `/login`, `/register`, `/account/profile` (AUTH-02)
+
+Contexto: [`docs/auth-frontend.md`](../../docs/auth-frontend.md); contrato: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte C.
+
+- **`/login`**: email y contraseña → `POST /auth/login`. Si es correcto, el JWT se guarda en `localStorage` y se va a `/`; si no, un mensaje claro ("Email o contraseña incorrectos") y no se guarda nada.
+- **`/register`**: email, contraseña y, opcionalmente, nombre, teléfono y dirección → `POST /users` y después `POST /auth/login` con las mismas credenciales. Los errores de la API (422, email ya registrado) se muestran junto a su campo.
+- **`/account/profile`**: email (del `User`) y nombre, teléfono y dirección (del `Profile`) desde `GET /auth/me`; editar nombre y contacto con `PUT /profiles/me` (un campo vacío borra ese dato).
+- **Protección de rutas**: todas las vistas salvo `/login` y `/register` exigen sesión. Un guard en el layout raíz valida el token con `GET /auth/me` y redirige a `/login` si no hay token o la API responde 401 (el token se elimina). Toda llamada protegida lleva `Authorization: Bearer <token>`.
+- **Cerrar sesión** (cabecera): elimina el token y vuelve a `/login`.
+- Para crear la primera cuenta basta con `/register` (rol `user`); los admins se crean con `uv run create-admin` en `services/api`.
 
 ## Stack técnico
 
@@ -54,7 +65,7 @@ npm run start                # sirve el build
 
 `.env.example` es solo documentación: Next.js no lo carga (solo lee `.env`, `.env.local`, `.env.$(NODE_ENV)` y `.env.$(NODE_ENV).local`).
 
-La API solo acepta por defecto el origen `http://localhost:3000` (CORS, ver `services/api/README.md`). Si el backoffice arranca en otro puerto porque el 3000 está ocupado, hay que liberar ese puerto o añadir el origen en `CORS_ALLOWED_ORIGINS` de la API.
+La API solo acepta los orígenes de `CORS_ALLOWED_ORIGINS` (por defecto `http://localhost:3000`; ver `services/api/README.md`). Si el backoffice arranca en otro puerto porque el 3000 está ocupado, hay que liberar ese puerto o añadir el origen en `CORS_ALLOWED_ORIGINS` de la API. El Talent Pipeline Tracker usa el 3001.
 
 ## Validación
 
@@ -67,37 +78,48 @@ npm run build
 node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/support/resolve-alias.mjs --test --test-timeout=10000 "tests/*.test.mjs"
 ```
 
-Los tests (`tests/*.test.mjs`) usan el runner nativo de Node 24, sin dependencias: normalizadores, cliente HTTP, servicios de incidentes y de proveedores, estado/sesión de los hooks (cancelación, carreras, exportación, recarga tras cambios), vocabulario y renovaciones de proveedores contra el CONTEXT, y una revisión estática del código de producción (sin `any`, `unknown` solo en `services/normalizers.ts`, `fetch` y `JSON.stringify` solo en `lib/api-client.ts`, sin lectura del archivo, sin persistencia y sin borrado de proveedores). `tests/support/resolve-alias.mjs` resuelve el alias `@/` para Node sin tocar `tsconfig.json`. El aviso `MODULE_TYPELESS_PACKAGE_JSON` se silencia porque `package.json` no declara `"type"`.
+Los tests (`tests/*.test.mjs`) usan el runner nativo de Node 24, sin dependencias: normalizadores, cliente HTTP, servicios de incidentes, proveedores y autenticación, estado/sesión de los hooks (cancelación, carreras, exportación, recarga tras cambios, sesión, login/registro y perfil), token en `localStorage`, cabecera Bearer y 401, protección de rutas, vocabulario y renovaciones de proveedores contra el CONTEXT, y una revisión estática del código de producción (sin `any`, `unknown` solo en `services/normalizers.ts`, `fetch`, `JSON.stringify` y `Authorization` solo en `lib/api-client.ts`, `localStorage` solo en `lib/auth-token.ts`, sin lectura del archivo y sin borrado de proveedores). `tests/support/resolve-alias.mjs` resuelve el alias `@/` para Node sin tocar `tsconfig.json`. El aviso `MODULE_TYPELESS_PACKAGE_JSON` se silencia porque `package.json` no declara `"type"`.
 
-La unión con React (montaje/desmontaje) y la descarga real se validan manualmente en el navegador.
+La unión con React (montaje/desmontaje), la descarga real y los flujos de autenticación (login, registro, perfil, redirecciones, logout) se validan manualmente en el navegador.
 
 ## Estructura
 
 ```text
 app/
-├── layout.tsx                  # layout raíz: cabecera con enlace a / y navegación a /incidents
+├── layout.tsx                  # layout raíz: sesión, cabecera (navegación/logout) y guard global de rutas
+├── login/page.tsx              # /login (pública)
+├── register/page.tsx           # /register (pública)
+├── account/profile/page.tsx    # /account/profile
 ├── page.tsx                    # portada: ficha de empresa + roadmap
 ├── incidents/page.tsx          # /incidents: Server Component (metadata) que renderiza la vista cliente
 ├── suppliers/page.tsx          # /suppliers: Server Component (metadata) que renderiza el directorio
 └── globals.css                 # Tailwind v4 + paleta y tokens semánticos compartidos con talent-pipeline-tracker
 
 components/
-├── ui/                         # primitivas: button, loading-spinner, alert, nav-link
+├── ui/                         # primitivas: button, loading-spinner, alert, nav-link, input
+├── auth/                       # sesión, guard, navegación de cuenta, login, registro, perfil
 ├── incidents/                  # vista cliente (incident-analysis-view) + componentes presentacionales
 └── suppliers/                  # vista cliente (supplier-directory-view) + filtros, tabla, formulario, badges
 
 hooks/use-incident-analysis.ts  # estado de /incidents: reducer + sesión (cancelación, carreras, exportación)
 hooks/use-supplier-directory.ts # estado de /suppliers: reducer + sesión (filtros, alta, tarifa, estado, carreras)
+hooks/use-auth-session.ts       # sesión: token de localStorage + validación con GET /auth/me
+hooks/use-auth-form.ts          # envío de /login y /register
+hooks/use-profile.ts            # /account/profile: GET /auth/me + PUT /profiles/me
 services/
 ├── incidents.service.ts        # frontera HTTP de incidentes (prevalidación UX, mapeo de errores, export)
 ├── suppliers.service.ts        # frontera HTTP de proveedores (campos requeridos, body, 422 por campo)
+├── auth.service.ts             # login, registro, usuario actual y perfil (services/api Parte C)
 └── normalizers.ts              # única frontera con `unknown` de red
 lib/
-├── api-client.ts               # cliente HTTP genérico (timeout, errores tipados, sin credentials)
+├── api-client.ts               # cliente HTTP genérico (timeout, errores tipados, Bearer y 401, sin credentials)
+├── auth-token.ts               # JWT en localStorage (único uso de localStorage)
+├── auth-routes.ts              # rutas públicas y decisión del guard
 ├── supplier-renewal.ts         # renovaciones en los próximos 60 días (presentación)
 └── company.ts                  # datos de Nexova, cada campo citado desde contexts/CONTEXT.md
 types/incidents.ts              # contrato que recibe el frontend (incidentes)
 types/suppliers.ts              # contrato y vocabulario del directorio de proveedores
+types/auth.ts                   # contrato de autenticación y perfil
 tests/                          # tests node --test (.mjs) + support/
 
 .env.example                    # variables de entorno documentadas (sin secretos)

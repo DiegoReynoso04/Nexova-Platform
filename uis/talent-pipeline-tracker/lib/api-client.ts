@@ -1,16 +1,37 @@
-// Cliente HTTP genérico. Fuente: SPECS.md §3.2, §5.1, §5.4.
+// Cliente HTTP genérico. Fuente: SPECS.md §3.2, §5.1, §5.4 y §9 (AUTH-02).
 // No tipa el cuerpo de las respuestas: siempre devuelve `unknown`. El
 // estrechamiento a tipos firmes es responsabilidad de services/normalizers.ts.
+//
+// Dos destinos, cada uno con su variable de entorno:
+//   - `apiClient`: API de candidaturas de 4Geeks (NEXT_PUBLIC_API_URL). Sin
+//     autenticación (§5.1): nunca recibe el token de sesión.
+//   - `authApiClient`: services/api de Nexova (NEXT_PUBLIC_AUTH_API_URL), para
+//     login, registro, usuario actual y perfil (AUTH-02). Sus peticiones
+//     protegidas llevan `Authorization: Bearer <token>`; un 401 en ellas borra
+//     el token (el guard de rutas redirige a /login) y lanza UnauthorizedError.
 
+import { clearAuthToken, readAuthToken } from '@/lib/auth-token';
 import type { ValidationError } from '@/types/api';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const RAW_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
-if (!API_BASE_URL) {
+if (!RAW_API_BASE_URL) {
   throw new Error(
     'NEXT_PUBLIC_API_URL no está definida. Añádela a .env.local (ver SPECS.md §3.2).'
   );
 }
+
+const RAW_AUTH_API_BASE_URL = process.env.NEXT_PUBLIC_AUTH_API_URL;
+
+if (!RAW_AUTH_API_BASE_URL) {
+  throw new Error(
+    'NEXT_PUBLIC_AUTH_API_URL no está definida. Añádela a .env.local (ver SPECS.md §9).'
+  );
+}
+
+// Ya comprobadas: string no vacío.
+const API_BASE_URL: string = RAW_API_BASE_URL;
+const AUTH_API_BASE_URL: string = RAW_AUTH_API_BASE_URL.replace(/\/+$/, '');
 
 // El backend duerme en Heroku: un dyno frío puede tardar >10s en arrancar,
 // y el router de Heroku corta la conexión a los 30s. 20s deja margen para
@@ -52,6 +73,15 @@ export class NetworkError extends Error {
     super(message);
     this.name = 'NetworkError';
     this.originalError = originalError;
+  }
+}
+
+// 401 en una petición protegida de services/api: no hay sesión válida (sin
+// token, caducado o usuario borrado). El token ya se ha eliminado.
+export class UnauthorizedError extends ApiError {
+  constructor() {
+    super('La sesión ha caducado. Vuelve a iniciar sesión.', 401);
+    this.name = 'UnauthorizedError';
   }
 }
 
@@ -126,8 +156,39 @@ function parseValidationDetail(body: unknown): ValidationError[] | null {
 
 const UNREADABLE_RESPONSE_MESSAGE = 'La API devolvió una respuesta ilegible';
 
-async function request(path: string, init: RequestInit): Promise<unknown> {
+// `none`: API de 4Geeks (sin token). `bearer`: ruta protegida de services/api.
+// `public`: login y registro en services/api (sin token; su 401 significa
+// "credenciales incorrectas" y lo interpreta el servicio).
+type AuthMode = 'none' | 'bearer' | 'public';
+
+interface OutgoingRequest {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  body?: string | URLSearchParams;
+  contentType?: string;
+}
+
+function buildInit(outgoing: OutgoingRequest, auth: AuthMode): RequestInit {
+  const headers: Record<string, string> = {};
+  if (outgoing.contentType !== undefined) headers['Content-Type'] = outgoing.contentType;
+  if (auth === 'bearer') {
+    const token = readAuthToken();
+    // Sin token se envía igualmente: services/api responde 401 y se trata abajo.
+    if (token !== null) headers.Authorization = `Bearer ${token}`;
+  }
+  const init: RequestInit = { method: outgoing.method };
+  if (outgoing.body !== undefined) init.body = outgoing.body;
+  if (Object.keys(headers).length > 0) init.headers = headers;
+  return init;
+}
+
+async function request(
+  baseUrl: string,
+  path: string,
+  outgoing: OutgoingRequest,
+  auth: AuthMode = 'none'
+): Promise<unknown> {
   let response: Response;
+  const init = buildInit(outgoing, auth);
 
   const controller = new AbortController();
   let timedOut = false;
@@ -139,7 +200,7 @@ async function request(path: string, init: RequestInit): Promise<unknown> {
   try {
     // Nunca se establece `credentials`: CORS de la API es Allow-Origin: * +
     // Allow-Credentials: true, combinación inválida (§5.1).
-    response = await fetch(`${API_BASE_URL}${path}`, { ...init, signal: controller.signal });
+    response = await fetch(`${baseUrl}${path}`, { ...init, signal: controller.signal });
   } catch (cause) {
     // La bandera decide, no el nombre del error: un abort por nuestro
     // timeout y uno por desmontaje de la página (o cualquier otro motivo
@@ -164,6 +225,11 @@ async function request(path: string, init: RequestInit): Promise<unknown> {
   }
 
   if (!response.ok) {
+    if (response.status === 401 && auth === 'bearer') {
+      clearAuthToken();
+      throw new UnauthorizedError();
+    }
+
     // §5.4 — la detección de 404 se basa en el status, nunca en el cuerpo
     if (response.status === 404) {
       throw new NotFoundError();
@@ -195,39 +261,46 @@ async function request(path: string, init: RequestInit): Promise<unknown> {
   }
 }
 
+function json(method: 'POST' | 'PUT' | 'PATCH', body: unknown): OutgoingRequest {
+  return { method, contentType: 'application/json', body: JSON.stringify(body) };
+}
+
 function get(path: string, params?: QueryParams): Promise<unknown> {
-  return request(`${path}${buildQueryString(params)}`, { method: 'GET' });
+  return request(API_BASE_URL, `${path}${buildQueryString(params)}`, { method: 'GET' });
 }
 
 function post(path: string, body?: unknown): Promise<unknown> {
-  return request(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  return request(API_BASE_URL, path, json('POST', body));
 }
 
 function put(path: string, body?: unknown): Promise<unknown> {
-  return request(path, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  return request(API_BASE_URL, path, json('PUT', body));
 }
 
 function patch(path: string, body?: unknown): Promise<unknown> {
-  return request(path, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  return request(API_BASE_URL, path, json('PATCH', body));
 }
 
 function del(path: string): Promise<unknown> {
-  return request(path, { method: 'DELETE' });
+  return request(API_BASE_URL, path, { method: 'DELETE' });
 }
 
+// API de candidaturas de 4Geeks: sin token (§5.1).
 export const apiClient = { get, post, put, patch, del };
+
+// services/api de Nexova (AUTH-02, §9).
+export const authApiClient = {
+  /** GET protegido (Bearer). */
+  get: (path: string): Promise<unknown> => request(AUTH_API_BASE_URL, path, { method: 'GET' }, 'bearer'),
+  /** PUT protegido (Bearer). */
+  put: (path: string, body: unknown): Promise<unknown> => request(AUTH_API_BASE_URL, path, json('PUT', body), 'bearer'),
+  /** POST público con JSON (registro): sin token. */
+  postPublic: (path: string, body: unknown): Promise<unknown> =>
+    request(AUTH_API_BASE_URL, path, json('POST', body), 'public'),
+  /** POST público `application/x-www-form-urlencoded` (login OAuth2): sin token. */
+  postFormPublic: (path: string, form: URLSearchParams): Promise<unknown> =>
+    request(AUTH_API_BASE_URL, path, { method: 'POST', body: form }, 'public'),
+};
 
 // Mensaje legible único a partir de cualquier error de este cliente
 // (§5.4: "otros 4xx/5xx: mensaje legible").

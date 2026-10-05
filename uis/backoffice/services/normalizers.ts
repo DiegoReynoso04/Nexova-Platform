@@ -15,6 +15,14 @@
 // Los tests lo cargan con `node --test` (el alias `@/` lo resuelve
 // tests/support/resolve-alias.mjs).
 
+import {
+  USER_ROLES,
+  type AccessToken,
+  type AuthField,
+  type AuthFieldError,
+  type CurrentUser,
+  type Profile,
+} from '@/types/auth';
 import type {
   AnalysisResult,
   ApiErrorBody,
@@ -301,15 +309,86 @@ const PYDANTIC_VALUE_ERROR_PREFIX = 'Value error, ';
  * ignoran. Nunca lanza.
  */
 export function normalizeValidationErrors(input: unknown): FieldError[] {
+  return collectValidationErrors(input, (location) => (isOneOf(SUPPLIER_FIELDS, location) ? location : null));
+}
+
+/**
+ * Recorre el `detail` de un 422 y traduce cada `loc` a un campo con `toField`.
+ * Entradas mal formadas se ignoran. Nunca lanza.
+ */
+function collectValidationErrors<F extends string>(
+  input: unknown,
+  toField: (location: unknown) => F | null
+): { field: F | null; message: string }[] {
   if (!isObject(input) || !Array.isArray(input.detail)) return [];
-  const errors: FieldError[] = [];
+  const errors: { field: F | null; message: string }[] = [];
   for (const item of input.detail) {
     if (!isObject(item) || typeof item.msg !== 'string' || !Array.isArray(item.loc)) continue;
     const location = item.loc[0] === 'body' ? item.loc[1] : undefined;
     const message = item.msg.startsWith(PYDANTIC_VALUE_ERROR_PREFIX)
       ? item.msg.slice(PYDANTIC_VALUE_ERROR_PREFIX.length)
       : item.msg;
-    errors.push({ field: isOneOf(SUPPLIER_FIELDS, location) ? location : null, message });
+    errors.push({ field: toField(location), message });
   }
   return errors;
+}
+
+// ---------------------------------------------------------------------------
+// Autenticación y cuenta (services/api/SPECS.md Parte C, §17–§18)
+// ---------------------------------------------------------------------------
+
+const AUTH_FIELDS: readonly AuthField[] = ['email', 'password', 'name', 'phone', 'address'];
+
+/** Respuesta 200 de `POST /auth/login`. Exige un `access_token` no vacío. */
+export function normalizeAccessToken(input: unknown): AccessToken {
+  const root = 'response';
+  const body = expectObject(input, root);
+  const accessToken = readString(body, 'access_token', root);
+  if (accessToken.trim() === '') throw new UnexpectedResponseError(`${root}.access_token`, 'non-empty string', 'empty string');
+  return {
+    access_token: accessToken,
+    token_type: readString(body, 'token_type', root),
+    expires_in: readInteger(body, 'expires_in', root),
+  };
+}
+
+function parseProfile(input: unknown, path: string): Profile {
+  const value = expectObject(input, path);
+  return {
+    id: readString(value, 'id', path),
+    user_id: readString(value, 'user_id', path),
+    name: readNullableString(value, 'name', path),
+    phone: readNullableString(value, 'phone', path),
+    address: readNullableString(value, 'address', path),
+  };
+}
+
+/** Respuesta 200 de `GET /profiles/me` y `PUT /profiles/me`. */
+export function normalizeProfile(input: unknown): Profile {
+  return parseProfile(input, 'response');
+}
+
+/** Respuesta 200 de `GET /auth/me`. Nunca copia campos fuera del contrato. */
+export function normalizeCurrentUser(input: unknown): CurrentUser {
+  const root = 'response';
+  const body = expectObject(input, root);
+  return {
+    id: readString(body, 'id', root),
+    email: readString(body, 'email', root),
+    role: readOneOf(body, 'role', root, USER_ROLES),
+    is_active: readBoolean(body, 'is_active', root),
+    created_at: readString(body, 'created_at', root),
+    profile: body.profile === null ? null : parseProfile(body.profile, `${root}.profile`),
+  };
+}
+
+/**
+ * `detail` de un 422 de `/auth/login`, `/users` o `/profiles/me` → errores por
+ * campo. El formulario OAuth2 del login llama `username` al email.
+ */
+export function normalizeAuthValidationErrors(input: unknown): AuthFieldError[] {
+  return collectValidationErrors(input, (location) => {
+    if (location === 'username') return 'email';
+    return isOneOf(AUTH_FIELDS, location) ? location : null;
+  });
 }

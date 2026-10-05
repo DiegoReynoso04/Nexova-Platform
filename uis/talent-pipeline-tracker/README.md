@@ -14,7 +14,9 @@ Panel interno de gestión de candidaturas para **Nexova Solutions** (Operaciones
 - **Notificaciones**: cada alta, edición, cambio de estado/etapa o nota (crear/borrar) muestra un toast de éxito o error, accesible mediante regiones `aria-live`.
 - **Manejo de errores robusto**: errores de validación (422), recurso no encontrado (404), otros errores HTTP, errores de red y timeouts (20 s) se distinguen entre sí y siempre producen un mensaje legible — nunca un fallo silencioso ni un spinner infinito.
 
-Lo que la aplicación **no** hace, a propósito: no permite eliminar candidaturas (el endpoint existe en la API pero queda fuera de alcance de esta versión) y no incluye autenticación (la API no la requiere).
+- **Sesión de usuario (AUTH-02)**: `/login`, `/register` y `/account/profile` contra `services/api` de Nexova (no contra la API de candidaturas). Todas las demás vistas exigen sesión: sin token, o si `services/api` responde 401, se vuelve a `/login`. "Cerrar sesión" en la cabecera elimina el token. Detalle en `SPECS.md` §9.
+
+Lo que la aplicación **no** hace, a propósito: no permite eliminar candidaturas (el endpoint existe en la API pero queda fuera de alcance de esta versión). La API de candidaturas de 4Geeks no requiere autenticación y nunca recibe el token de sesión.
 
 ## Stack técnico
 
@@ -31,27 +33,43 @@ Requisitos: Node.js 20 o superior.
 npm install
 ```
 
-Crea un archivo `.env.local` en la raíz del proyecto con la URL base de la API:
+Crea un archivo `.env.local` en la raíz del proyecto con las URL base de las dos APIs:
 
 ```bash
 NEXT_PUBLIC_API_URL=https://playground.4geeks.com/tracker/api/v1
+NEXT_PUBLIC_AUTH_API_URL=http://localhost:8000
 ```
 
-La aplicación falla al arrancar con un error explícito si esta variable no está definida.
+La aplicación falla al arrancar con un error explícito si alguna de las dos no está definida. Para iniciar sesión hace falta `services/api` en marcha (ver su README) con `http://localhost:3001` en `CORS_ALLOWED_ORIGINS`.
 
 ```bash
-npm run dev      # servidor de desarrollo en http://localhost:3000
+npm run dev      # servidor de desarrollo en http://localhost:3001 (el 3000 es del backoffice)
 npm run build    # build de producción
-npm run start    # sirve el build de producción
+npm run start    # sirve el build de producción (puerto 3001)
 npm run lint     # ESLint
 ```
+
+## Validación
+
+```bash
+npx tsc --noEmit
+npm run lint
+node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/support/resolve-alias.mjs --test --test-timeout=10000 "tests/*.test.mjs"
+```
+
+Los tests (`tests/*.test.mjs`, AUTH-02) usan el runner nativo de **Node 24**, sin dependencias: token en `localStorage`, Bearer solo hacia `services/api` (nunca hacia la API de 4Geeks), 401, login/registro/perfil, normalizadores, sesión y protección de rutas. `tests/support/resolve-alias.mjs` resuelve el alias `@/`. Los flujos completos (login, registro, perfil, redirecciones, logout) se validan además en el navegador.
+
+`npm run lint` informa hoy de 4 errores `react-hooks/set-state-in-effect` en `hooks/use-notes.ts`, `use-record-detail.ts` y `use-records.ts`, anteriores a AUTH-02 (también en `main`).
 
 ## Estructura del proyecto
 
 ```text
 app/
 ├── page.tsx                     # listado de candidaturas
-├── layout.tsx                   # layout raíz, monta ToastProvider
+├── layout.tsx                   # layout raíz: ToastProvider, sesión, cabecera y guard global de rutas
+├── login/page.tsx               # /login (pública)
+├── register/page.tsx            # /register (pública)
+├── account/profile/page.tsx     # /account/profile
 └── candidates/[id]/
     ├── page.tsx                 # detalle de candidatura
     └── not-found.tsx            # id inexistente (404)

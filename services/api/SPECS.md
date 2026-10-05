@@ -325,7 +325,7 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 | D-AUTH-9 | Primer admin con el comando explícito `uv run create-admin` (patrón de `uv run seed`); contraseña interactiva y oculta (`getpass`), nunca por argumento |
 | D-AUTH-10 | TinyDB propio en `AUTH_DB_PATH` (por defecto `services/api/data/auth.json`, ignorado por git), tablas `users` y `profiles`. Mismo patrón que D-SUP-10 (lock + abrir/cerrar por operación, un worker) |
 | D-AUTH-11 | Las 8 rutas existentes se protegen a nivel de router (`include_router(..., dependencies=[Depends(get_current_user)])`): cualquier ruta nueva de esos routers queda protegida por defecto. Sin permisos por rol en ellas (basta un token válido) |
-| D-AUTH-12 | CORS añade solo la cabecera `Authorization` a `allow_headers`. **No** se añade `PUT` a los métodos (ver §22) |
+| D-AUTH-12 | CORS añade solo la cabecera `Authorization` a `allow_headers`. **No** se añade `PUT` a los métodos en AUTH-01 (ver §22). *Actualizado en AUTH-02 (2026-10-02): `PUT` ya está permitido para `PUT /profiles/me` desde el navegador* |
 | D-AUTH-13 | `PUT /users/{id}` y `PUT /profiles/me` actualizan solo los campos enviados (semántica parcial). Cuerpo vacío → 200 sin cambios |
 
 ## 17. Modelo y almacenamiento
@@ -397,8 +397,8 @@ Públicas: `GET /health`, `GET /docs` (y `/openapi.json`, `/redoc`), `POST /auth
 
 ## 22. Pendiente / fuera de alcance (no bloquea AUTH-01)
 
-- **CORS:** `Authorization` ya está permitido en `allow_headers`. Los métodos CORS siguen siendo `GET`/`POST`/`PATCH`/`DELETE`: `PUT` se habilitará con la integración del frontend, no en AUTH-01. Cuando el backoffice llame a `PUT /users/{id}` o `PUT /profiles/me` desde el navegador habrá que añadir `PUT` (el test de CORS de la Parte A lo rechaza hoy a propósito).
-- **Frontend:** `/suppliers` e `/incidents` del backoffice responden 401 hasta que envíe el token (esperado según el ticket; fase posterior).
+- ~~**CORS:** los métodos CORS siguen siendo `GET`/`POST`/`PATCH`/`DELETE`~~ — **resuelto en AUTH-02 (2026-10-02, [`docs/auth-frontend.md`](../../docs/auth-frontend.md))**: CORS permite `GET`/`POST`/`PATCH`/`PUT`/`DELETE` (cualquier otro método → preflight 400); `test_errors.py` comprueba `PUT` desde el origen del frontend y que un método no declarado (`TRACE`) se rechaza.
+- ~~**Frontend:** `/suppliers` e `/incidents` del backoffice responden 401 hasta que envíe el token~~ — **resuelto en AUTH-02**: el backoffice y el tracker envían `Authorization: Bearer <token>` (token en `localStorage`) y redirigen a `/login` sin sesión o ante un 401.
 - **Mejoras futuras de tokens (fuera de alcance):** refresh tokens, revocación/blacklist e invalidación de los tokens emitidos al cambiar la contraseña. Hoy un token sigue siendo válido hasta su `exp` aunque cambie la contraseña o el rol; no es un bloqueo para este ticket.
 - Sin bloqueo por intentos fallidos ni forma de desactivar usuarios por API (`is_active` solo se puede cambiar en la base).
 - Un admin puede quitarse su propio rol o borrarse aunque sea el último admin; se recupera con `uv run create-admin`.

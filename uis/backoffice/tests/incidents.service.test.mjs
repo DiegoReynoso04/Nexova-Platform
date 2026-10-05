@@ -166,10 +166,17 @@ describe('analyzeIncidentFile — errores HTTP', () => {
 
   test('ningún detail arbitrario de un 4xx se propaga (solo el de invalid_csv)', async () => {
     const piiDetail = `row 3: customer_email=${LEAK} ticket_id=NXV-000001 description=Printer broken`;
-    for (const [status, code] of [[400, 'bad_request'], [400, 'unknown_code'], [401, null], [403, 'forbidden'], [404, 'not_found'], [405, 'method_not_allowed'], [409, 'conflict'], [422, 'validation_error'], [429, null]]) {
+    // 401 ya no llega aquí como request_invalid: es una sesión caducada (test siguiente).
+    for (const [status, code] of [[400, 'bad_request'], [400, 'unknown_code'], [403, 'forbidden'], [404, 'not_found'], [405, 'method_not_allowed'], [409, 'conflict'], [422, 'validation_error'], [429, null]]) {
       const { service } = serviceWith(() => jsonResponse(status, { detail: piiDetail, code, rows: [ROW] }));
       await assert.rejects(service.analyzeIncidentFile(csvFile()), expectUiError({ kind: 'request_invalid' }));
     }
+  });
+
+  test('401 (AUTH-02) → session_expired, sin filtrar el cuerpo', async () => {
+    const piiDetail = `row 3: customer_email=${LEAK}`;
+    const { service } = serviceWith(() => jsonResponse(401, { detail: piiDetail, code: 'not_authenticated', rows: [ROW] }));
+    await assert.rejects(service.analyzeIncidentFile(csvFile()), expectUiError({ kind: 'session_expired' }));
   });
 
   test('422 con detail en forma de lista no filtra su contenido', async () => {

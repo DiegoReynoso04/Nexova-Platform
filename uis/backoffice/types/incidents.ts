@@ -93,4 +93,5 @@ export type UiError =
   | { kind: 'timeout' }
   | { kind: 'unexpected_response' }
   | { kind: 'config' }
+  | { kind: 'session_expired' }
   | { kind: 'export_mismatch' };
