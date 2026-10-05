@@ -33,7 +33,7 @@ Nota del ticket: la rotura temporal del frontend de la entrega anterior (AUTH-01
 
 ## 3. Requisitos, hechos y propuestas
 
-Esta sección separa lo que exige el ticket, lo que se comprobó en el repositorio y lo que se decidió durante la implementación. **Ninguna de las propuestas de §3.3 ha sido revisada ni aprobada todavía por el tech lead ni por la CTO**: describen lo implementado en la rama `feature/auth-frontend` y quedan pendientes de revisión.
+Esta sección separa lo que exige el ticket, lo que se comprobó en el repositorio y lo que se decidió durante la implementación. **Ninguna de las propuestas de §3.3 ha sido revisada ni aprobada todavía por el tech lead ni por la CTO**: describen lo implementado en AUTH-02, integrado en `main` con la PR #13 (merge `a4b6369`, 2026-10-05). **El merge no las aprueba**: siguen pendientes de revisión hasta que exista una decisión explícita del tech lead o de la CTO.
 
 ### 3.1 Requisitos del ticket AUTH-02 (§1)
 
