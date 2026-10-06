@@ -1,5 +1,5 @@
-// Contrato de autenticación que recibe y envía el backoffice (AUTH-02).
-// Fuente: services/api/SPECS.md Parte C (§17–§18) y app/auth/models.py.
+// Contrato de autenticación que recibe y envía el backoffice (AUTH-02 y AUTH-03).
+// Fuente: services/api/SPECS.md Parte C (§17–§18, §23) y app/auth/models.py.
 // Prohibido añadir campos que no estén en ese contrato.
 
 export const USER_ROLES = ['admin', 'manager', 'user'] as const;
@@ -53,7 +53,37 @@ export interface ProfileFormValues {
   address: string;
 }
 
-export type AuthField = 'email' | 'password' | 'name' | 'phone' | 'address';
+/** Formulario de `/forgot-password` (`POST /auth/forgot-password`). */
+export interface ForgotPasswordFormValues {
+  email: string;
+}
+
+/** Formulario de `/reset-password`. El token no es un campo: viene de la URL. */
+export interface ResetPasswordFormValues {
+  new_password: string;
+  password_confirmation: string;
+}
+
+/** Formulario de `/account/change-password` (`POST /auth/change-password`). */
+export interface ChangePasswordFormValues {
+  current_password: string;
+  new_password: string;
+  password_confirmation: string;
+}
+
+/**
+ * Campos de los formularios de autenticación. `password_confirmation` solo
+ * existe en el cliente: la API no la recibe (se comprueba antes de llamarla).
+ */
+export type AuthField =
+  | 'email'
+  | 'password'
+  | 'name'
+  | 'phone'
+  | 'address'
+  | 'current_password'
+  | 'new_password'
+  | 'password_confirmation';
 
 /** Error de validación por campo (`null` = no corresponde a un campo concreto). */
 export interface AuthFieldError {
@@ -69,6 +99,8 @@ export type AuthUiError =
   | { kind: 'registered_login_failed' }
   | { kind: 'session_expired' }
   | { kind: 'profile_not_found' }
+  /** AUTH-03: el enlace de restablecimiento falta, no es válido, caducó o ya se usó. */
+  | { kind: 'invalid_reset_token' }
   | { kind: 'request_invalid' }
   | { kind: 'server_error' }
   | { kind: 'network' }

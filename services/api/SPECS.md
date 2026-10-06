@@ -7,6 +7,7 @@ Una sola aplicación FastAPI (`app/main.py`) con tres dominios:
 - **Parte A (§1–§7): analizador de incidentes** — `/api/incidents/*`.
 - **Parte B (§8–§14): directorio de proveedores** — `/suppliers*`, persistido en TinyDB.
 - **Parte C (§15–§22): autenticación (AUTH-01)** — `/auth`, `/users`, `/profiles`; JWT obligatorio en las rutas de las Partes A y B.
+- **Parte D (§23–§27): recuperación y cambio de contraseña (AUTH-03)** — `POST /auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`; envío con Resend.
 
 Este documento distingue **dos orígenes** de requisitos. Mezclarlos sería atribuir al cliente decisiones que no tomó.
 
@@ -326,7 +327,7 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 | D-AUTH-10 | TinyDB propio en `AUTH_DB_PATH` (por defecto `services/api/data/auth.json`, ignorado por git), tablas `users` y `profiles`. Mismo patrón que D-SUP-10 (lock + abrir/cerrar por operación, un worker) |
 | D-AUTH-11 | Las 8 rutas existentes se protegen a nivel de router (`include_router(..., dependencies=[Depends(get_current_user)])`): cualquier ruta nueva de esos routers queda protegida por defecto. Sin permisos por rol en ellas (basta un token válido) |
 | D-AUTH-12 | CORS añade solo la cabecera `Authorization` a `allow_headers`. **No** se añade `PUT` a los métodos en AUTH-01 (ver §22). *Actualizado en AUTH-02 (2026-10-02): `PUT` ya está permitido para `PUT /profiles/me` desde el navegador* |
-| D-AUTH-13 | `PUT /users/{id}` y `PUT /profiles/me` actualizan solo los campos enviados (semántica parcial). Cuerpo vacío → 200 sin cambios |
+| D-AUTH-13 | `PUT /users/{id}` y `PUT /profiles/me` actualizan solo los campos enviados (semántica parcial). Cuerpo vacío → 200 sin cambios. *Actualizado en AUTH-03 (2026-10-06, hallazgo H-1 de la auditoría de seguridad): en `PUT /users/{id}`, `password` solo lo puede enviar un admin; un `user`/`manager` recibe 403 y no se aplica ningún campo de la petición. Los usuarios que no son admin cambian su contraseña con `POST /auth/change-password` (Parte D), que exige la actual* |
 
 ## 17. Modelo y almacenamiento
 
@@ -352,7 +353,7 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 | `POST /users` | pública | `{email, password, name?, phone?, address?}` (`role` → 422) | **201** + `UserRead` (`role=user`) | 409, 422 |
 | `GET /users` | admin | — | **200** + lista de `UserRead` | 401, 403 |
 | `GET /users/{id}` | propio o admin | — | **200** + `UserRead` | 401, 403, 404 (solo admin), 422 (id no UUID) |
-| `PUT /users/{id}` | propio o admin | `{email?, password?, role?}` | **200** + `UserRead` | 401, 403 (otro usuario o `role` sin ser admin), 404, 409, 422 |
+| `PUT /users/{id}` | propio o admin | `{email?, password?, role?}` (`password` y `role` solo admin) | **200** + `UserRead` | 401, 403 (otro usuario, o `role`/`password` sin ser admin), 404, 409, 422 |
 | `DELETE /users/{id}` | propio o admin | — | **204** (borra también el `Profile`) | 401, 403, 404 |
 | `POST /auth/login` | pública | formulario OAuth2 `username` (= email), `password` | **200** `{access_token, token_type: "bearer", expires_in}` | 401 `invalid_credentials`, 422 |
 | `GET /auth/me` | token | — | **200** `{id, email, role, is_active, created_at, profile}` | 401 |
@@ -372,7 +373,7 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 
 Protegidas (JWT obligatorio, cualquier rol): `POST /suppliers`, `GET /suppliers`, `GET /suppliers/{id}`, `PATCH /suppliers/{id}/rate`, `PATCH /suppliers/{id}/status`, `DELETE /suppliers/{id}`, `POST /api/incidents/analyze`, `GET /api/incidents/results/export`; además `GET /users`, `GET`/`PUT`/`DELETE /users/{id}`, `GET /auth/me`, `GET`/`PUT /profiles/me`.
 
-Públicas: `GET /health`, `GET /docs` (y `/openapi.json`, `/redoc`), `POST /auth/login`, `POST /users`.
+Públicas: `GET /health`, `GET /docs` (y `/openapi.json`, `/redoc`), `POST /auth/login`, `POST /users`; desde AUTH-03, `POST /auth/forgot-password` y `POST /auth/reset-password` (`POST /auth/change-password` exige token, Parte D).
 
 ## 21. 401 frente a 403 y matriz de permisos
 
@@ -385,7 +386,8 @@ Públicas: `GET /health`, `GET /docs` (y `/openapi.json`, `/redoc`), `POST /auth
 | `GET /users` | 403 | ✓ | 401 |
 | `GET /users/{id}` propio | ✓ | ✓ | 401 |
 | `GET /users/{id}` ajeno | 403 | ✓ | 401 |
-| `PUT /users/{id}` propio: `email`, `password` | ✓ | ✓ | 401 |
+| `PUT /users/{id}` propio: `email` | ✓ | ✓ | 401 |
+| `PUT /users/{id}` con `password` (propio o ajeno) | 403 → usar `POST /auth/change-password` | ✓ | 401 |
 | `PUT /users/{id}` con `role` | 403 | ✓ | 401 |
 | `PUT /users/{id}` ajeno | 403 | ✓ | 401 |
 | `DELETE /users/{id}` propio | ✓ | ✓ | 401 |
@@ -395,10 +397,72 @@ Públicas: `GET /health`, `GET /docs` (y `/openapi.json`, `/redoc`), `POST /auth
 
 `manager` tiene hoy los mismos permisos que `user`: el ticket no pide permisos distintos por rol.
 
+Desde AUTH-03 (H-1), cambiar la propia contraseña sin ser admin solo es posible con `POST /auth/change-password` (contraseña actual obligatorio, §25). Un admin conserva la capacidad de AUTH-01 de fijar la contraseña de cualquier usuario con `PUT /users/{id}` (residual en §27).
+
 ## 22. Pendiente / fuera de alcance (no bloquea AUTH-01)
 
 - ~~**CORS:** los métodos CORS siguen siendo `GET`/`POST`/`PATCH`/`DELETE`~~ — **resuelto en AUTH-02 (2026-10-02, [`docs/auth-frontend.md`](../../docs/auth-frontend.md))**: CORS permite `GET`/`POST`/`PATCH`/`PUT`/`DELETE` (cualquier otro método → preflight 400); `test_errors.py` comprueba `PUT` desde el origen del frontend y que un método no declarado (`TRACE`) se rechaza.
 - ~~**Frontend:** `/suppliers` e `/incidents` del backoffice responden 401 hasta que envíe el token~~ — **resuelto en AUTH-02**: el backoffice y el tracker envían `Authorization: Bearer <token>` (token en `localStorage`) y redirigen a `/login` sin sesión o ante un 401.
-- **Mejoras futuras de tokens (fuera de alcance):** refresh tokens, revocación/blacklist e invalidación de los tokens emitidos al cambiar la contraseña. Hoy un token sigue siendo válido hasta su `exp` aunque cambie la contraseña o el rol; no es un bloqueo para este ticket.
+- **Mejoras futuras de tokens (fuera de alcance):** refresh tokens, revocación/blacklist e invalidación de los tokens emitidos al cambiar la contraseña. Hoy un token sigue siendo válido hasta su `exp` aunque cambie la contraseña o el rol; no es un bloqueo para este ticket. *AUTH-03 (2026-10-05) tampoco lo cambia: restablecer o cambiar la contraseña no cierra las sesiones abiertas (§27).*
 - Sin bloqueo por intentos fallidos ni forma de desactivar usuarios por API (`is_active` solo se puede cambiar en la base).
 - Un admin puede quitarse su propio rol o borrarse aunque sea el último admin; se recupera con `uv run create-admin`.
+
+---
+
+# Parte D — Recuperación y cambio de contraseña (AUTH-03)
+
+## 23. Requisitos heredados (ticket AUTH-03)
+
+Fuente: [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md) (ticket del tech lead).
+
+| Requisito | Dónde se cumple |
+|---|---|
+| `POST /auth/forgot-password` acepta `{email}`, responde siempre 200 y, si el usuario existe, envía un enlace con un token de corta duración (15–60 min) | `app/routes/auth.py`, `UserService.request_password_reset`, `app/auth/email.py` |
+| `POST /auth/reset-password` acepta `{token, new_password}`; valida firma/expiración/uso; hashea, actualiza e invalida el token; 400 si es inválido, expirado o usado | `UserService.reset_password`, `AuthRepository.consume_reset_token` |
+| `POST /auth/change-password` con sesión, `{current_password, new_password}`; 400 si la actual es incorrecta | `UserService.change_password` |
+| Email transaccional con Resend o SendGrid, con el enlace, legible en móvil | Resend (D-PWD-1), texto plano (§25) |
+| API key solo en variables de entorno, documentada | `RESEND_API_KEY` en `.env.example` y README |
+| Opcional elegido: registro de auditoría (timestamp, IP) | tabla `password_audit` (§26) |
+
+## 24. Decisiones de implementación (2026-10-05)
+
+| ID | Decisión |
+|---|---|
+| D-PWD-1 | Proveedor **Resend** (elegido por el usuario; el ticket permite Resend o SendGrid). Se llama a `POST https://api.resend.com/emails` con `urllib` de la librería estándar: **sin dependencias nuevas** (ni SDK de Resend ni `requests`). `User-Agent` propio (Cloudflare puede rechazar el de `urllib`) |
+| D-PWD-2 | Token de restablecimiento **opaco**, no JWT: `secrets.token_urlsafe(32)` (256 bits). En TinyDB solo se guarda su **SHA-256** (tabla `password_reset_tokens`); el token en claro solo viaja en el enlace. Un JWT con `exp` no se puede invalidar tras usarlo (lo advierte el ticket) |
+| D-PWD-3 | Vigencia `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`, por defecto **30**, admitida entre **15 y 60** (rango del ticket); fuera de rango → `ConfigError` al arrancar |
+| D-PWD-4 | Un solo uso: validar, cambiar la contraseña y marcar `used_at` ocurre en una única operación bajo el lock del repositorio. Un enlace nuevo invalida los pendientes del mismo usuario; un reset correcto o un cambio de contraseña también. Los tokens caducados se borran al emitir uno nuevo |
+| D-PWD-5 | Un único error `400 invalid_reset_token` para token desconocido, caducado o ya usado (el motivo solo queda en la auditoría) |
+| D-PWD-6 | `forgot-password` responde **200 con el mismo cuerpo** exista o no el email (también para usuarios inactivos, que no reciben email). El envío se hace en una **tarea en segundo plano** (después de responder): el tiempo de respuesta no depende de si hubo email y un fallo del proveedor no cambia la respuesta (solo se registra el nombre de la clase del error) |
+| D-PWD-7 | `change-password` con contraseña actual incorrecta → **400** `incorrect_password`, no 401: la sesión es válida y un 401 haría que el frontend la cerrase |
+| D-PWD-8 | Email opcional al arrancar: `RESEND_API_KEY`, `EMAIL_FROM` y `PASSWORD_RESET_URL` van juntas (todas o ninguna; si no → `ConfigError`). Sin ellas la API arranca, `forgot-password` sigue respondiendo 200 y el fallo de envío queda registrado como `EmailNotConfiguredError` |
+| D-PWD-9 | El enlace se construye con `PASSWORD_RESET_URL` (URL absoluta del frontend, p. ej. `http://localhost:3000/reset-password`) + `?token=…`. **Nunca** se toma de la petición (evita enlaces manipulados). Una sola URL: en local apunta al backoffice |
+| D-PWD-10 | La contraseña nueva sigue las reglas de AUTH-01 (8 caracteres mínimo, 72 bytes máximo; 422). No se exige que sea distinta de la actual |
+| D-PWD-11 | Auditoría (opcional del ticket) en la tabla `password_audit` del mismo `auth.json`: evento, `user_id` (o `null`), IP del cliente directo (`request.client.host`, sin leer `X-Forwarded-For`), motivo y `created_at`. Nunca el email, el token ni contraseñas. Sin endpoint de lectura ni política de retención (§27) |
+| D-PWD-12 | **Corrección H-1 (auditoría de seguridad, 2026-10-06):** `PUT /users/{id}` ya no acepta `password` de un usuario que no sea admin (403 `forbidden`, sin aplicar ningún campo), así que no se puede esquivar la contraseña actual que exige `POST /auth/change-password`. Admin sin cambios (D-AUTH-13, §21) |
+
+## 25. Endpoints
+
+| Método y ruta | Auth | Body | Éxito | Errores |
+|---|---|---|---|---|
+| `POST /auth/forgot-password` | pública | `{email}` | **200** `{"detail": "if that email is registered, a reset link has been sent"}` (siempre el mismo) | 422 (email mal formado o campos extra) |
+| `POST /auth/reset-password` | pública | `{token, new_password}` | **200** `{"detail": "password updated"}` | **400** `invalid_reset_token`, 422 |
+| `POST /auth/change-password` | token | `{current_password, new_password}` | **200** `{"detail": "password updated"}` | **400** `incorrect_password`, 401, 422 |
+
+Email enviado (texto plano, legible en móvil: líneas cortas y el enlace solo en su línea): asunto "Restablece tu contraseña de Nexova", el enlace `PASSWORD_RESET_URL?token=<token>`, la vigencia en minutos y el aviso de ignorarlo si no se pidió.
+
+## 26. Almacenamiento
+
+En `AUTH_DB_PATH` (el mismo archivo que `users` y `profiles`):
+
+- `password_reset_tokens`: `id` (UUID), `user_id`, `token_hash` (SHA-256 hex), `created_at`, `expires_at`, `used_at` (`null` hasta usarse).
+- `password_audit`: `id`, `event` (`reset_requested`, `reset_completed`, `reset_rejected`, `password_changed`, `password_change_rejected`), `user_id` (`null` si el email no existe), `ip`, `reason` (`unknown_email`; `unknown`/`expired`/`used` en `reset_rejected`; si no, `null`), `created_at`.
+
+## 27. Pendiente / fuera de alcance (no bloquea AUTH-03)
+
+- **Sesiones abiertas:** restablecer o cambiar la contraseña no invalida los JWT ya emitidos (igual que §19 y §22).
+- **Contraseña fijada por un admin (`PUT /users/{id}` con `password`, capacidad de AUTH-01):** no exige la contraseña actual (tampoco para la del propio admin), no invalida los enlaces de restablecimiento pendientes del usuario afectado y no se registra en `password_audit`. Riesgo residual aceptado tras H-1; cambiarlo es una decisión aparte.
+- **Rate limiting** de `forgot-password` (opcional del ticket, no elegido): hoy se puede pedir un enlace tantas veces como se quiera; cada petición invalida el anterior.
+- **Plantilla HTML** del email (opcional del ticket, no elegido): solo texto plano.
+- **Auditoría:** sin endpoint de consulta ni retención definida; las IP son datos personales.
+- **Remitente de desarrollo:** con el remitente de onboarding de Resend (`onboarding@resend.dev`) solo se puede enviar a la dirección de la cuenta de Resend; para otros destinatarios hace falta verificar un dominio propio.

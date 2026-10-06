@@ -26,6 +26,11 @@ function copyFor(error: AuthUiError): ErrorCopy {
       return { title: 'La sesión ha caducado', body: 'Vuelve a iniciar sesión para continuar.' };
     case 'profile_not_found':
       return { title: 'No se encontró tu perfil', body: 'La API no tiene un perfil asociado a esta cuenta.' };
+    case 'invalid_reset_token':
+      return {
+        title: 'El enlace no es válido o ha caducado',
+        body: 'Los enlaces para restablecer la contraseña caducan y solo se pueden usar una vez. Solicita uno nuevo.',
+      };
     case 'request_invalid':
       return { title: 'La solicitud no es válida', body: 'Revisa los datos e inténtalo de nuevo.' };
     case 'server_error':
@@ -56,6 +61,9 @@ export const AUTH_FIELD_LABELS: Record<AuthField, string> = {
   name: 'Nombre',
   phone: 'Teléfono',
   address: 'Dirección',
+  current_password: 'Contraseña actual',
+  new_password: 'Contraseña nueva',
+  password_confirmation: 'Confirmación',
 };
 
 function describeFieldError(error: AuthFieldError): string {

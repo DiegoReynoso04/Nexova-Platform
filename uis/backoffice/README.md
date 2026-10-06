@@ -43,6 +43,16 @@ Contexto: [`docs/auth-frontend.md`](../../docs/auth-frontend.md); contrato: [`se
 - **Cerrar sesión** (cabecera): elimina el token y vuelve a `/login`.
 - Para crear la primera cuenta basta con `/register` (rol `user`); los admins se crean con `uv run create-admin` en `services/api`.
 
+### Contraseñas — `/forgot-password`, `/reset-password`, `/account/change-password` (AUTH-03)
+
+Contexto: [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md); contrato: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte D.
+
+- **`/login`** tiene el enlace "¿Olvidaste tu contraseña?" y, al volver de un restablecimiento (`/login?reset=success`), un aviso de éxito.
+- **`/forgot-password`** (sin sesión): email → `POST /auth/forgot-password`. Tras enviarlo, el formulario se desactiva y muestra siempre "Si esa dirección está registrada, recibirás un enlace en breve".
+- **`/reset-password`** (con o sin sesión): abre el enlace del email (`?token=…`), pide la contraseña nueva y su confirmación → `POST /auth/reset-password` → `/login` con aviso. Si el token falta, no es válido, caducó o ya se usó: error claro y enlace a `/forgot-password`.
+- **`/account/change-password`** (con sesión; enlace en `/account/profile`): contraseña actual, nueva y confirmación (deben coincidir antes de llamar a la API) → `POST /auth/change-password`; muestra el éxito o el error junto a su campo.
+- El email lo envía `services/api` con Resend: requiere `RESEND_API_KEY`, `EMAIL_FROM` y `PASSWORD_RESET_URL=http://localhost:3000/reset-password` en `services/api/.env` (ver su README).
+
 ## Stack técnico
 
 Mismo stack que [`uis/talent-pipeline-tracker`](../talent-pipeline-tracker/README.md), decisión registrada en [`memory-bank/techContext.md`](../../memory-bank/techContext.md): Next.js 16 (App Router), React 19, TypeScript estricto, Tailwind CSS v4 (`@import "tailwindcss"` en `app/globals.css`, sin `tailwind.config.ts`). Sin librerías de estado externas y sin dependencias añadidas para `/incidents` ni `/suppliers`.
@@ -90,6 +100,9 @@ app/
 ├── login/page.tsx              # /login (pública)
 ├── register/page.tsx           # /register (pública)
 ├── account/profile/page.tsx    # /account/profile
+├── account/change-password/page.tsx # /account/change-password (AUTH-03)
+├── forgot-password/page.tsx    # /forgot-password (pública, AUTH-03)
+├── reset-password/page.tsx     # /reset-password (abierta: enlace del email, AUTH-03)
 ├── page.tsx                    # portada: ficha de empresa + roadmap
 ├── incidents/page.tsx          # /incidents: Server Component (metadata) que renderiza la vista cliente
 ├── suppliers/page.tsx          # /suppliers: Server Component (metadata) que renderiza el directorio
@@ -97,24 +110,24 @@ app/
 
 components/
 ├── ui/                         # primitivas: button, loading-spinner, alert, nav-link, input
-├── auth/                       # sesión, guard, navegación de cuenta, login, registro, perfil
+├── auth/                       # sesión, guard, navegación de cuenta, login, registro, perfil y contraseñas
 ├── incidents/                  # vista cliente (incident-analysis-view) + componentes presentacionales
 └── suppliers/                  # vista cliente (supplier-directory-view) + filtros, tabla, formulario, badges
 
 hooks/use-incident-analysis.ts  # estado de /incidents: reducer + sesión (cancelación, carreras, exportación)
 hooks/use-supplier-directory.ts # estado de /suppliers: reducer + sesión (filtros, alta, tarifa, estado, carreras)
 hooks/use-auth-session.ts       # sesión: token de localStorage + validación con GET /auth/me
-hooks/use-auth-form.ts          # envío de /login y /register
+hooks/use-auth-form.ts          # envío de /login, /register y los formularios de contraseña
 hooks/use-profile.ts            # /account/profile: GET /auth/me + PUT /profiles/me
 services/
 ├── incidents.service.ts        # frontera HTTP de incidentes (prevalidación UX, mapeo de errores, export)
 ├── suppliers.service.ts        # frontera HTTP de proveedores (campos requeridos, body, 422 por campo)
-├── auth.service.ts             # login, registro, usuario actual y perfil (services/api Parte C)
+├── auth.service.ts             # login, registro, usuario actual, perfil y contraseñas (services/api Partes C y D)
 └── normalizers.ts              # única frontera con `unknown` de red
 lib/
 ├── api-client.ts               # cliente HTTP genérico (timeout, errores tipados, Bearer y 401, sin credentials)
 ├── auth-token.ts               # JWT en localStorage (único uso de localStorage)
-├── auth-routes.ts              # rutas públicas y decisión del guard
+├── auth-routes.ts              # rutas públicas/abiertas y decisión del guard
 ├── supplier-renewal.ts         # renovaciones en los próximos 60 días (presentación)
 └── company.ts                  # datos de Nexova, cada campo citado desde contexts/CONTEXT.md
 types/incidents.ts              # contrato que recibe el frontend (incidentes)

@@ -4,6 +4,95 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-06 — AUTH-03: documentación para revisión (guía para el profesor)
+
+**Estado: hecho** (solo documental, sin impacto técnico en el código), sin commit todavía, en la rama `feature/password-reset` (después del commit `cb9d0d5`; PR #16 abierta).
+
+- **`docs/auth-password-reset.md` es ahora el documento principal de AUTH-03.** Se amplía con:
+  - endpoints (propósito, autenticación, request, respuesta, errores y seguridad);
+  - funcionamiento técnico;
+  - sección propia de **H-1** con prueba manual en PowerShell (datos ficticios);
+  - puesta en marcha (API con `uv run --env-file .env uvicorn app.main:create_app --factory`, backoffice en 3000 y tracker en 3001);
+  - variables de entorno, sin valores;
+  - guía de validación manual paso a paso;
+  - Resend sin dominio propio (`onboarding@resend.dev` y el destinatario de pruebas `delivered@resend.dev`);
+  - resumen de la auditoría de seguridad;
+  - comandos exactos de los tests, verificados;
+  - estado de la validación manual y deuda técnica.
+- **Enlaces añadidos** desde el README de `services/api` y desde `docs/local-development.md`.
+- **Referencias corregidas:** "D-PWD-1…11" pasa a "D-PWD-1…12" en el README de la API, `docs/auth-password-reset.md` y `techContext.md`.
+- **Validación manual informada por el usuario,** además de la de la entrada de abajo:
+  - integración con Resend usando el destinatario de pruebas;
+  - H-1 probado a mano: `PUT /users/{id}` con `password` → 403 y la contraseña no cambió;
+  - frontend del backoffice;
+  - frontend del tracker: `/forgot-password`, envío a Resend, mensaje genérico, botón desactivado tras enviar y `/reset-password`.
+- **Comandos de test comprobados al documentarlos:**
+  - `test_password_reset.py`: 33 OK;
+  - H-1 con `-k`: 6 OK;
+  - `password.service.test.mjs` del backoffice: 15 OK;
+  - `password.test.mjs` del tracker: 15 OK.
+
+---
+
+## 2026-10-06 — AUTH-03: validación manual con email real, auditoría de seguridad y corrección H-1
+
+**Estado: hecho** en la rama `feature/password-reset`; se comiteó después en `cb9d0d5` (PR #16). Continúa la entrada del 2026-10-05 de abajo.
+
+- **Validación manual del usuario, de extremo a extremo:**
+  - `forgot-password` devuelve 200 sin revelar si el usuario existe;
+  - el email real llega por Resend;
+  - `reset-password` funciona y el token caduca y es de un solo uso (reutilizarlo da error);
+  - `change-password` rechaza una contraseña actual incorrecta y funciona con la correcta.
+- **Diagnóstico previo:** un `forgot-password` sin email era correcto, porque el email probado no estaba registrado en `services/api/data/auth.json`. La auditoría lo registró como `reset_requested` / `unknown_email` y por diseño no se llama a Resend.
+- **Auditoría de seguridad de AUTH-03 (solo lectura):** sin hallazgos CRITICAL y con un HIGH (**H-1**).
+  - H-1: `PUT /users/{id}` permitía a un usuario normal cambiar su `password` sin la contraseña actual, esquivando `POST /auth/change-password`. Venía de AUTH-01 (D-AUTH-13).
+  - Hallazgos no bloqueantes, **sin corregir**:
+    - M-1: restablecer o cambiar la contraseña no cierra las sesiones JWT abiertas;
+    - M-2: diferencia de tiempo en `forgot-password` entre email existente y desconocido;
+    - M-3: escrituras sin autenticación ni rate limiting en `auth.json`;
+    - L-1…L-6: ver la sección "Decisiones y problemas conocidos".
+- **H-1 corregido:**
+  - `app/routes/users.py`, `update_user`: si quien no es admin envía `password`, responde 403 `forbidden` y no aplica ningún campo de la petición, igual que con `role`;
+  - el cambio de contraseña de los usuarios normales va exclusivamente por `POST /auth/change-password`;
+  - un admin conserva la capacidad de AUTH-01 de fijar contraseñas con `PUT /users/{id}`.
+- **Tests de `tests/test_auth.py`:**
+  - el antiguo [18] (`test_user_updates_own_email_and_password`) pasa a ser `test_user_updates_own_email`, porque exigía justo el comportamiento eliminado;
+  - 5 tests nuevos: usuario y manager rechazados, cambio de otro usuario rechazado, admin conserva la capacidad, y `change-password` sigue siendo el camino (400 con la actual incorrecta, 200 con la correcta).
+- **Resultado:** `services/api` pasa 205 tests (200 + 5).
+- **Docs:** D-AUTH-13, §18 y §21 de `services/api/SPECS.md` actualizados; D-PWD-12 y el riesgo residual en §27 nuevos; tabla de endpoints y sección AUTH-03 del README de la API.
+
+**Pendiente:**
+- Revisión de P3-1…P3-6 por el tech lead o la CTO.
+- Decisión sobre M-1, M-2 y M-3.
+- Riesgo residual de H-1 (SPECS §27): un admin puede fijar contraseñas con `PUT /users/{id}` sin la actual, también la suya; ese cambio no invalida enlaces de reset pendientes ni queda en `password_audit`.
+- ~~Commit y PR~~: hecho, commit `cb9d0d5` y PR #16 abierta contra `main`.
+
+---
+
+## 2026-10-05 — AUTH-03: recuperación y cambio de contraseña (`services/api`, `uis/backoffice`, `uis/talent-pipeline-tracker`)
+
+**Estado: hecho y validado automáticamente; validación manual con email real completada el 2026-10-06 (entrada de arriba).** Rama `feature/password-reset` (creada desde `main` en `87a7047`, merge de la PR #15), sin commit todavía. Contexto: ticket AUTH-03 ([`docs/auth-password-reset.md`](../docs/auth-password-reset.md)); contrato en `services/api/SPECS.md` Parte D.
+
+**Decisiones del usuario:** Resend como proveedor, llamado por HTTP con la librería estándar (sin dependencias nuevas); flujos en backoffice y tracker; de los opcionales, solo la auditoría. Las decisiones técnicas son D-PWD-1…11 (SPECS §24); las decisiones de implementación que el ticket no fija son **propuestas pendientes de revisión** P3-1…P3-6 (`docs/auth-password-reset.md` §4).
+
+**Qué se hizo:**
+- **`services/api`:** `POST /auth/forgot-password` (siempre 200 con el mismo cuerpo; email en segundo plano), `POST /auth/reset-password` (400 `invalid_reset_token`), `POST /auth/change-password` (protegido; 400 `incorrect_password`). Token opaco de 256 bits guardado solo como SHA-256 en la tabla `password_reset_tokens` de `auth.json`, vigencia 15–60 min (30 por defecto), un solo uso. Auditoría en `password_audit` (evento, `user_id`, IP, motivo, fecha; sin email ni token). Envío con `app/auth/email.py` (Resend por `urllib`). Nuevas variables `RESEND_API_KEY`, `EMAIL_FROM`, `PASSWORD_RESET_URL` (todas o ninguna) y `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`; `.env.example` y README actualizados.
+- **Backoffice y tracker:** `/forgot-password` (pública), `/reset-password` (abierta, con o sin sesión), `/account/change-password` (protegida), enlace "¿Olvidaste tu contraseña?" en `/login`, aviso tras `?reset=success` y enlace a cambiar contraseña desde el perfil. Sin dependencias nuevas.
+- **Docs:** `docs/auth-password-reset.md` (nuevo); `services/api/SPECS.md` Parte D; READMEs de API, backoffice y tracker; `SPECS.md` §9.4, `CLAUDE.md` de las dos apps; `docs/local-development.md`; `AGENTS.md` §4; `uis/README*.md`; `.agents/rules/app-specific-overrides.md`; `techContext.md`.
+
+**Validación ejecutada:**
+- `services/api`: 200 tests OK (167 anteriores + 33 nuevos en `tests/test_password_reset.py`; ninguno llama a Resend). Prueba de humo contra un uvicorn real (puerto 8010, base temporal fuera del repo): 18/18, incluido el preflight CORS desde 3000 y 3001 de las tres rutas.
+- `uis/backoffice`: `tsc`, `lint` y `build` OK (rutas nuevas estáticas); 263 tests OK (240 + 23 nuevos en `tests/password.service.test.mjs`; ajustados los tests de rutas y el estático de producción).
+- `uis/talent-pipeline-tracker`: `tsc` y `build` OK; 35 tests OK (20 + 15 en `tests/password.test.mjs`); `lint` solo con los 4 errores preexistentes.
+- Navegador (servidores de desarrollo del usuario, sin enviar formularios): enlace en `/login` de las dos apps, `/forgot-password`, `/reset-password` sin token (error y enlace) y con token (formulario; el token desaparece de la URL; `referrer: no-referrer`), aviso en `/login?reset=success`. Sin errores de consola.
+
+**Pendiente / no verificado:**
+- ~~Email real con Resend~~ y ~~flujo completo en el navegador contra la API nueva~~: **hechos el 2026-10-06** (entrada de arriba).
+- Revisión de P3-1…P3-6 por el tech lead o la CTO.
+- Fuera de alcance (SPECS §27): cerrar sesiones abiertas al cambiar la contraseña, rate limiting, plantilla HTML, retención de la auditoría.
+
+---
+
 ## 2026-10-05 — Validación manual de la exportación autenticada de `/incidents` y deuda de `LastResultStore`
 
 **Estado: hecho** (solo documental, sin impacto técnico en el código). Se registra la validación manual del usuario en el navegador (backoffice en `http://localhost:3000`, API en `http://localhost:8000`): la exportación de `/incidents` con token funciona y una sesión inválida durante la exportación lleva a `/login` (detalle en la entrada de AUTH-02, "Validación ejecutada"). Se retira ese pendiente de AUTH-02. Se registra también como deuda pendiente, **sin corregir**, que `LastResultStore` es global al proceso y no por usuario (ver "Decisiones y problemas conocidos"). Rama `docs/auth02-export-validation`, creada desde `main` en `98c8ad2` (merge de la PR #14).
@@ -304,6 +393,19 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 - ~~**`README.md` raíz desactualizado**~~ — resuelto el 2026-09-27: el `README.md` raíz ahora es el briefing de Nexova (ver entrada de arriba).
 - **`main` local puede desactualizarse silenciosamente:** al iniciar este cambio, el `main` local estaba 7 commits detrás de `origin/main` (incluía Hitos 2 y 3, ya mergeados vía PR). Cualquier agente debe `git fetch` antes de asumir en qué estado está `main`.
 - **`/services` ya no está vacío (2026-09-23):** contiene `services/api/`, la API del procesador de incidentes, creada por decisión del tech lead con contrato propio (`services/api/SPECS.md`). La decisión "`/services` no se crea" está marcada como superada en `techContext.md`. `docs/ARCHITECTURE_PROPOSAL.md` (backend general de Nexova: candidatos, vacantes, pipeline…) **sigue pendiente de aprobación del CTO**; `services/api/` no la adopta (p. ej. no usa `/api/v1`).
+- **AUTH-03, auditoría de seguridad (2026-10-06):**
+  - **H-1 corregido:** un usuario que no es admin ya no cambia `password` con `PUT /users/{id}`; solo puede hacerlo con `POST /auth/change-password`.
+  - **Riesgo residual aceptado (SPECS §27):** un admin sigue pudiendo fijar contraseñas con `PUT /users/{id}`, también la suya, sin la contraseña actual. Ese cambio no invalida enlaces de reset pendientes ni se audita.
+  - **No bloqueantes y sin corregir:**
+    - M-1: no se cierran las sesiones al cambiar o restablecer la contraseña;
+    - M-2: diferencia de tiempo en `forgot-password` según exista el email;
+    - M-3: escrituras sin rate limiting en `auth.json`;
+    - L-1: bcrypt antes de validar el token;
+    - L-2: `PASSWORD_RESET_URL` admite `http://`;
+    - L-3: el token aparece en la URL de la primera carga;
+    - L-4: `http.client.HTTPException` no se captura en el sender;
+    - L-5: retención de las IP de la auditoría;
+    - L-6: aviso de éxito oculto si hay otra sesión abierta.
 - **Deuda pendiente — `LastResultStore` global al proceso, no por usuario (registrada el 2026-10-05, sin corregir):** `services/api` guarda en memoria un único "último análisis" de incidentes para todo el proceso (`services/api/SPECS.md` §6, D-API-5). Desde AUTH-01/AUTH-02 hay varios usuarios autenticados, así que un usuario puede exportar el último resultado generado por otro. Hoy el resultado solo contiene métricas agregadas (sin filas ni emails) y el frontend descarta una exportación cuyo `X-Analysis-Id` no coincide con el análisis que muestra, pero la API no lo impide. **No se corrige ahora:** es una decisión de arquitectura pendiente del tech lead, a revisar antes de llevar el módulo de incidentes a un uso multiusuario real o a la Fase 4.
 
 ## Próximos pasos conocidos (no implementados aquí)
@@ -313,4 +415,5 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 - `uis/backoffice` es un punto de entrada — tiene `/incidents` y `/suppliers`; el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.
 - **Directorio de proveedores:** hecho e integrado en `main` con el PR #9 (entrada 2026-09-29). Migración futura de TinyDB a Postgres cuando exista el ORM (decisión del tech lead) — `User`/`Profile` de AUTH-01 **no** migran: se quedan en TinyDB y Postgres solo guardará `user_uuid`.
 - **AUTH-01:** hecho e integrado en `main` con el PR #10 (entrada 2026-09-30). Su siguiente fase (que el frontend envíe el token y `PUT` en CORS) la cubrió AUTH-02.
+- **AUTH-03:** implementado en `feature/password-reset` (entradas 2026-10-05 y 2026-10-06), validado de extremo a extremo con email real y con H-1 de la auditoría corregido. Commit `cb9d0d5` en la PR #16, abierta y sin merge. La guía para revisarlo está en `docs/auth-password-reset.md`. Pendiente: la revisión y el merge de la PR. También pendientes las propuestas P3-1…P3-6 y la decisión sobre M-1, M-2 y M-3.
 - **AUTH-02:** hecho e integrado en `main` con la PR #13 (merge `a4b6369`, entrada 2026-10-02 / 2026-10-05). Pendientes: revisión de las propuestas P-1…P-7 (`docs/auth-frontend.md` §3.3), registro desde la UI del tracker y refresh tokens (fuera de alcance). Los 4 errores de lint `react-hooks/set-state-in-effect` del tracker son anteriores a AUTH-02.

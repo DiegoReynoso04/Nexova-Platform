@@ -7,8 +7,12 @@
   `sub` = `User.id` (UUID de TinyDB), `iat` y `exp` (ahora +
   ACCESS_TOKEN_EXPIRE_MINUTES). `decode_access_token` exige firma válida,
   `sub` y `exp` no vencido; cualquier fallo → `None` (la dependencia responde 401).
+- Tokens de restablecimiento (AUTH-03): cadena aleatoria de 256 bits, no un
+  JWT, porque debe poder invalidarse tras usarla. En la base solo se guarda su
+  SHA-256 (`hash_reset_token`); el token en claro solo viaja en el enlace del email.
 """
 
+import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 from functools import cache
@@ -48,6 +52,16 @@ def burn_password_check(password: str) -> None:
     están registrados.
     """
     verify_password(password, _dummy_hash())
+
+
+def new_reset_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_reset_token(token: str) -> str:
+    # SHA-256 sin sal basta: el token tiene 256 bits aleatorios (no se puede
+    # adivinar por diccionario) y así se busca por igualdad en la base.
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def expires_in_seconds(settings: Settings) -> int:

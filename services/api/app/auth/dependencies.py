@@ -15,6 +15,7 @@ from uuid import UUID
 from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 
+from app.auth.email import EmailSender
 from app.auth.models import UserInDB, UserRole
 from app.auth.security import decode_access_token
 from app.auth.service import UserService
@@ -39,8 +40,14 @@ def get_user_service(request: Request) -> UserService:
     return service
 
 
+def get_email_sender(request: Request) -> EmailSender:
+    sender: EmailSender = request.app.state.email_sender
+    return sender
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+EmailSenderDep = Annotated[EmailSender, Depends(get_email_sender)]
 
 
 def get_current_user(

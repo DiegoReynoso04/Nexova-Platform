@@ -334,10 +334,11 @@ function collectValidationErrors<F extends string>(
 }
 
 // ---------------------------------------------------------------------------
-// Autenticación y cuenta (services/api/SPECS.md Parte C, §17–§18)
+// Autenticación y cuenta (services/api/SPECS.md Parte C, §17–§18 y §23)
 // ---------------------------------------------------------------------------
 
-const AUTH_FIELDS: readonly AuthField[] = ['email', 'password', 'name', 'phone', 'address'];
+// Campos que puede nombrar un 422 de la API. `password_confirmation` no: es solo del cliente.
+const AUTH_FIELDS: readonly AuthField[] = ['email', 'password', 'name', 'phone', 'address', 'current_password', 'new_password'];
 
 /** Respuesta 200 de `POST /auth/login`. Exige un `access_token` no vacío. */
 export function normalizeAccessToken(input: unknown): AccessToken {
@@ -383,8 +384,9 @@ export function normalizeCurrentUser(input: unknown): CurrentUser {
 }
 
 /**
- * `detail` de un 422 de `/auth/login`, `/users` o `/profiles/me` → errores por
- * campo. El formulario OAuth2 del login llama `username` al email.
+ * `detail` de un 422 de `/auth/login`, `/users`, `/profiles/me` o de las rutas
+ * de contraseña de AUTH-03 → errores por campo. El formulario OAuth2 del login
+ * llama `username` al email.
  */
 export function normalizeAuthValidationErrors(input: unknown): AuthFieldError[] {
   return collectValidationErrors(input, (location) => {

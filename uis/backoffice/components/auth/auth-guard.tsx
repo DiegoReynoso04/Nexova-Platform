@@ -10,8 +10,9 @@ import { HOME_PATH, LOGIN_PATH, routeAccess } from '@/lib/auth-routes';
 
 import { useSession } from './session-provider';
 
-// Guard global (layout raíz): protege todas las vistas salvo /login y
-// /register (lib/auth-routes.ts). Sin token, o cuando un 401 lo borra,
+// Guard global (layout raíz): protege todas las vistas salvo las públicas
+// y abiertas de lib/auth-routes.ts (/login, /register, /forgot-password,
+// /reset-password). Sin token, o cuando un 401 lo borra,
 // redirige a /login; la vista protegida no se muestra hasta que `GET /auth/me`
 // confirma la sesión.
 export function AuthGuard({ children }: { children: ReactNode }) {

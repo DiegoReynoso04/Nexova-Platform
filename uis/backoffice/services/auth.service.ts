@@ -1,6 +1,6 @@
-// Servicio de autenticación y cuenta (AUTH-02): única capa que llama al
-// cliente HTTP para login, registro, usuario actual y perfil. Contrato:
-// services/api/SPECS.md Parte C (§17–§18) y §4 (formato de errores).
+// Servicio de autenticación y cuenta (AUTH-02 y AUTH-03): única capa que llama
+// al cliente HTTP para login, registro, usuario actual, perfil y contraseñas.
+// Contrato: services/api/SPECS.md Parte C (§17–§18, §23) y §4 (formato de errores).
 //
 // - `login` y `register` comparten `authenticate`: `POST /auth/login` y, si va
 //   bien, guarda el token. Un token inválido o un login fallido nunca se guardan.
@@ -8,6 +8,9 @@
 //   "credenciales incorrectas", no "sesión caducada".
 // - `getCurrentUser` y `updateProfile` son protegidas: el cliente adjunta el
 //   Bearer y, ante un 401, borra el token (ver lib/api-client.ts).
+// - AUTH-03: `requestPasswordReset` y `resetPassword` son públicas (`skipAuth`);
+//   `changePassword` es protegida. La confirmación de la contraseña nueva se
+//   comprueba aquí, antes de llamar a la API, y nunca se envía.
 //
 // Todo error que sale de aquí es `AuthServiceError` (con un `AuthUiError`
 // para mostrar), salvo la cancelación pedida por quien llama (`ApiAbortError`).
@@ -34,19 +37,26 @@ import {
   normalizeProfile,
 } from '@/services/normalizers';
 import type {
+  AuthField,
   AuthFieldError,
   AuthUiError,
+  ChangePasswordFormValues,
   CurrentUser,
+  ForgotPasswordFormValues,
   LoginFormValues,
   Profile,
   ProfileFormValues,
   RegisterFormValues,
+  ResetPasswordFormValues,
 } from '@/types/auth';
 
 const LOGIN_PATH = '/auth/login';
 const USERS_PATH = '/users';
 const CURRENT_USER_PATH = '/auth/me';
 const MY_PROFILE_PATH = '/profiles/me';
+const FORGOT_PASSWORD_PATH = '/auth/forgot-password';
+const RESET_PASSWORD_PATH = '/auth/reset-password';
+const CHANGE_PASSWORD_PATH = '/auth/change-password';
 export const AUTH_TIMEOUT_MS = 10_000;
 
 /** Error del servicio con un `AuthUiError`. El mensaje solo lleva el tipo de error. */
@@ -73,6 +83,12 @@ export interface AuthService {
   getCurrentUser(options?: CallOptions): Promise<CurrentUser>;
   /** `PUT /profiles/me` con nombre, teléfono y dirección. */
   updateProfile(values: ProfileFormValues, options?: CallOptions): Promise<Profile>;
+  /** `POST /auth/forgot-password`. La API responde 200 exista o no el email. */
+  requestPasswordReset(values: ForgotPasswordFormValues, options?: CallOptions): Promise<void>;
+  /** `POST /auth/reset-password` con el token del enlace. */
+  resetPassword(token: string, values: ResetPasswordFormValues, options?: CallOptions): Promise<void>;
+  /** `POST /auth/change-password` (requiere sesión). */
+  changePassword(values: ChangePasswordFormValues, options?: CallOptions): Promise<void>;
 }
 
 export interface AuthServiceDependencies {
@@ -99,6 +115,29 @@ export function validateRegisterForm(values: RegisterFormValues): AuthFieldError
   return validateLoginForm(values);
 }
 
+export function validateForgotPasswordForm(values: ForgotPasswordFormValues): AuthFieldError[] {
+  return values.email.trim() === '' ? [{ field: 'email', message: 'Introduce tu email.' }] : [];
+}
+
+/** Contraseña nueva + confirmación: requeridas y coincidentes. La longitud la valida la API. */
+function validateNewPassword(values: { new_password: string; password_confirmation: string }): AuthFieldError[] {
+  if (values.new_password === '') return [{ field: 'new_password', message: 'Introduce la contraseña nueva.' }];
+  if (values.password_confirmation !== values.new_password) {
+    return [{ field: 'password_confirmation', message: 'La confirmación no coincide con la contraseña nueva.' }];
+  }
+  return [];
+}
+
+export function validateResetPasswordForm(values: ResetPasswordFormValues): AuthFieldError[] {
+  return validateNewPassword(values);
+}
+
+export function validateChangePasswordForm(values: ChangePasswordFormValues): AuthFieldError[] {
+  const errors: AuthFieldError[] =
+    values.current_password === '' ? [{ field: 'current_password', message: 'Introduce tu contraseña actual.' }] : [];
+  return [...errors, ...validateNewPassword(values)];
+}
+
 /** Texto opcional del perfil: recortado; vacío → `null` (la API lo guarda como "sin dato"). */
 function optionalText(value: string): string | null {
   const trimmed = value.trim();
@@ -120,6 +159,16 @@ export function buildProfilePayload(values: ProfileFormValues): { [key: string]:
   return { name: optionalText(values.name), phone: optionalText(values.phone), address: optionalText(values.address) };
 }
 
+/** Body de `POST /auth/reset-password`. La confirmación no se envía. */
+export function buildResetPasswordPayload(token: string, values: ResetPasswordFormValues): { [key: string]: JsonValue } {
+  return { token, new_password: values.new_password };
+}
+
+/** Body de `POST /auth/change-password`. La confirmación no se envía. */
+export function buildChangePasswordPayload(values: ChangePasswordFormValues): { [key: string]: JsonValue } {
+  return { current_password: values.current_password, new_password: values.new_password };
+}
+
 /** Formulario OAuth2 de `POST /auth/login`: `username` es el email. */
 export function buildLoginForm(values: LoginFormValues): URLSearchParams {
   const form = new URLSearchParams();
@@ -134,6 +183,10 @@ export function buildLoginForm(values: LoginFormValues): URLSearchParams {
 
 function fail(uiError: AuthUiError): AuthServiceError {
   return new AuthServiceError(uiError);
+}
+
+function fieldError(field: AuthField, message: string): AuthFieldError {
+  return { field, message };
 }
 
 function clientValidation(errors: readonly AuthFieldError[]): AuthServiceError {
@@ -166,6 +219,14 @@ async function failFromResponse(response: ApiResponse): Promise<never> {
     });
   }
   if (status === 404 && body?.code === 'profile_not_found') throw fail({ kind: 'profile_not_found' });
+  if (status === 400 && body?.code === 'invalid_reset_token') throw fail({ kind: 'invalid_reset_token' });
+  if (status === 400 && body?.code === 'incorrect_password') {
+    throw fail({
+      kind: 'validation',
+      source: 'api',
+      errors: [fieldError('current_password', 'La contraseña actual no es correcta.')],
+    });
+  }
   if (status >= 500) throw fail({ kind: 'server_error' });
   if (status >= 400) throw fail({ kind: 'request_invalid' });
   throw fail({ kind: 'unexpected_response' });
@@ -257,6 +318,47 @@ export function createAuthService(dependencies: AuthServiceDependencies = {}): A
         )
       );
     },
+
+    requestPasswordReset(values, options = {}) {
+      return guarded(async () => {
+        const errors = validateForgotPasswordForm(values);
+        if (errors.length > 0) throw clientValidation(errors);
+        await client.postJson(
+          FORGOT_PASSWORD_PATH,
+          { email: values.email.trim() },
+          { timeoutMs, signal: options.signal, skipAuth: true },
+          expect(200, () => null)
+        );
+      });
+    },
+
+    resetPassword(token, values, options = {}) {
+      return guarded(async () => {
+        // Sin token en la URL no hay nada que enviar: el enlace no es válido.
+        if (token.trim() === '') throw fail({ kind: 'invalid_reset_token' });
+        const errors = validateResetPasswordForm(values);
+        if (errors.length > 0) throw clientValidation(errors);
+        await client.postJson(
+          RESET_PASSWORD_PATH,
+          buildResetPasswordPayload(token, values),
+          { timeoutMs, signal: options.signal, skipAuth: true },
+          expect(200, () => null)
+        );
+      });
+    },
+
+    changePassword(values, options = {}) {
+      return guarded(async () => {
+        const errors = validateChangePasswordForm(values);
+        if (errors.length > 0) throw clientValidation(errors);
+        await client.postJson(
+          CHANGE_PASSWORD_PATH,
+          buildChangePasswordPayload(values),
+          { timeoutMs, signal: options.signal },
+          expect(200, () => null)
+        );
+      });
+    },
   };
 }
 
@@ -267,3 +369,9 @@ export const register: AuthService['register'] = (values, options) => defaultSer
 export const getCurrentUser: AuthService['getCurrentUser'] = (options) => defaultService.getCurrentUser(options);
 export const updateProfile: AuthService['updateProfile'] = (values, options) =>
   defaultService.updateProfile(values, options);
+export const requestPasswordReset: AuthService['requestPasswordReset'] = (values, options) =>
+  defaultService.requestPasswordReset(values, options);
+export const resetPassword: AuthService['resetPassword'] = (token, values, options) =>
+  defaultService.resetPassword(token, values, options);
+export const changePassword: AuthService['changePassword'] = (values, options) =>
+  defaultService.changePassword(values, options);

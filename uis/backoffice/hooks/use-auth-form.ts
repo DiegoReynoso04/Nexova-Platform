@@ -1,7 +1,8 @@
-// Envío de los formularios públicos de autenticación (`/login` y `/register`).
-// Un solo hook para los dos: la diferencia está en la operación del servicio
-// (`login` o `register`), que ya comparten el paso de login y el guardado del
-// token (services/auth.service.ts). La redirección tras el éxito la hace la vista.
+// Envío de los formularios de autenticación: `/login` y `/register` (AUTH-02) y
+// los de contraseña de AUTH-03 (`/forgot-password`, `/reset-password`,
+// `/account/change-password`). Un solo hook: la diferencia está en la operación
+// del servicio (services/auth.service.ts). Qué hacer tras el éxito (redirigir o
+// mostrar una confirmación) lo decide la vista.
 //
 // Reducer puro + controlador sin React (probado con `node --test`) + hook.
 

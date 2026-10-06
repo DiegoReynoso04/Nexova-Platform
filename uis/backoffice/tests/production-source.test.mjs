@@ -61,6 +61,19 @@ describe('código de producción', () => {
     }
   });
 
+  test('incluye las vistas de contraseña (AUTH-03)', () => {
+    for (const file of [
+      'app/forgot-password/page.tsx',
+      'app/reset-password/page.tsx',
+      'app/account/change-password/page.tsx',
+      'components/auth/forgot-password-view.tsx',
+      'components/auth/reset-password-view.tsx',
+      'components/auth/change-password-view.tsx',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
   test('incluye las vistas y piezas de autenticación (AUTH-02)', () => {
     for (const file of [
       'app/login/page.tsx',
