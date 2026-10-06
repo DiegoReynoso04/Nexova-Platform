@@ -144,9 +144,9 @@ Contexto y guía paso a paso (incluido el flujo en `/docs`): [`docs/auth-api.md`
 
 ### Recuperación y cambio de contraseña (AUTH-03)
 
-Contexto: [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md). Contrato y decisiones D-PWD-1…11: `SPECS.md` Parte D.
+Contexto: [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md). Contrato y decisiones D-PWD-1…12: `SPECS.md` Parte D. **Guía para revisar AUTH-03** (endpoints, arranque, variables, validación manual paso a paso, prueba de H-1, Resend sin dominio propio, tests y deuda técnica): ese mismo documento, §5–§14.
 
-- **Envío con Resend** por HTTP (`urllib`, sin dependencias nuevas). Configurar `RESEND_API_KEY`, `EMAIL_FROM` y `PASSWORD_RESET_URL` en `services/api/.env` (ver `.env.example`). Con el remitente `onboarding@resend.dev` solo llegan emails a la dirección de tu cuenta de Resend: regístrate en la plataforma con ese email para probar.
+- **Envío con Resend** por HTTP (`urllib`, sin dependencias nuevas). Configurar `RESEND_API_KEY`, `EMAIL_FROM` y `PASSWORD_RESET_URL` en `services/api/.env` (ver `.env.example`) y arrancar con `uv run --env-file .env …` (la API no lee `.env` por sí sola). Con el remitente de pruebas `onboarding@resend.dev` y sin dominio verificado, Resend restringe los destinatarios: para una demo, registra en Nexova un usuario con el destinatario de pruebas `delivered@resend.dev` (detalle en `docs/auth-password-reset.md` §10).
 - **Token de un solo uso:** aleatorio, guardado solo como SHA-256 en `auth.json` (`password_reset_tokens`), caduca a los `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`. Un enlace nuevo, un reset correcto o un cambio de contraseña invalidan los pendientes.
 - **Sin enumeración:** `forgot-password` responde 200 con el mismo cuerpo exista o no el email; el email se envía después de responder.
 - **Auditoría:** cada evento queda en `password_audit` (`auth.json`) con IP y fecha, sin email ni token.

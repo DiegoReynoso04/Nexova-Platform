@@ -4,9 +4,39 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-06 — AUTH-03: documentación para revisión (guía para el profesor)
+
+**Estado: hecho** (solo documental, sin impacto técnico en el código), sin commit todavía, en la rama `feature/password-reset` (después del commit `cb9d0d5`; PR #16 abierta).
+
+- **`docs/auth-password-reset.md` es ahora el documento principal de AUTH-03.** Se amplía con:
+  - endpoints (propósito, autenticación, request, respuesta, errores y seguridad);
+  - funcionamiento técnico;
+  - sección propia de **H-1** con prueba manual en PowerShell (datos ficticios);
+  - puesta en marcha (API con `uv run --env-file .env uvicorn app.main:create_app --factory`, backoffice en 3000 y tracker en 3001);
+  - variables de entorno, sin valores;
+  - guía de validación manual paso a paso;
+  - Resend sin dominio propio (`onboarding@resend.dev` y el destinatario de pruebas `delivered@resend.dev`);
+  - resumen de la auditoría de seguridad;
+  - comandos exactos de los tests, verificados;
+  - estado de la validación manual y deuda técnica.
+- **Enlaces añadidos** desde el README de `services/api` y desde `docs/local-development.md`.
+- **Referencias corregidas:** "D-PWD-1…11" pasa a "D-PWD-1…12" en el README de la API, `docs/auth-password-reset.md` y `techContext.md`.
+- **Validación manual informada por el usuario,** además de la de la entrada de abajo:
+  - integración con Resend usando el destinatario de pruebas;
+  - H-1 probado a mano: `PUT /users/{id}` con `password` → 403 y la contraseña no cambió;
+  - frontend del backoffice;
+  - frontend del tracker: `/forgot-password`, envío a Resend, mensaje genérico, botón desactivado tras enviar y `/reset-password`.
+- **Comandos de test comprobados al documentarlos:**
+  - `test_password_reset.py`: 33 OK;
+  - H-1 con `-k`: 6 OK;
+  - `password.service.test.mjs` del backoffice: 15 OK;
+  - `password.test.mjs` del tracker: 15 OK.
+
+---
+
 ## 2026-10-06 — AUTH-03: validación manual con email real, auditoría de seguridad y corrección H-1
 
-**Estado: hecho** en la rama `feature/password-reset`, sin commit todavía. Continúa la entrada del 2026-10-05 de abajo.
+**Estado: hecho** en la rama `feature/password-reset`; se comiteó después en `cb9d0d5` (PR #16). Continúa la entrada del 2026-10-05 de abajo.
 
 - **Validación manual del usuario, de extremo a extremo:**
   - `forgot-password` devuelve 200 sin revelar si el usuario existe;
@@ -35,7 +65,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 - Revisión de P3-1…P3-6 por el tech lead o la CTO.
 - Decisión sobre M-1, M-2 y M-3.
 - Riesgo residual de H-1 (SPECS §27): un admin puede fijar contraseñas con `PUT /users/{id}` sin la actual, también la suya; ese cambio no invalida enlaces de reset pendientes ni queda en `password_audit`.
-- Commit y PR.
+- ~~Commit y PR~~: hecho, commit `cb9d0d5` y PR #16 abierta contra `main`.
 
 ---
 
@@ -385,5 +415,5 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 - `uis/backoffice` es un punto de entrada — tiene `/incidents` y `/suppliers`; el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.
 - **Directorio de proveedores:** hecho e integrado en `main` con el PR #9 (entrada 2026-09-29). Migración futura de TinyDB a Postgres cuando exista el ORM (decisión del tech lead) — `User`/`Profile` de AUTH-01 **no** migran: se quedan en TinyDB y Postgres solo guardará `user_uuid`.
 - **AUTH-01:** hecho e integrado en `main` con el PR #10 (entrada 2026-09-30). Su siguiente fase (que el frontend envíe el token y `PUT` en CORS) la cubrió AUTH-02.
-- **AUTH-03:** implementado en `feature/password-reset` (entradas 2026-10-05 y 2026-10-06), validado de extremo a extremo con email real y con H-1 de la auditoría corregido. Pendiente: commit y PR. También pendientes las propuestas P3-1…P3-6 y la decisión sobre M-1, M-2 y M-3.
+- **AUTH-03:** implementado en `feature/password-reset` (entradas 2026-10-05 y 2026-10-06), validado de extremo a extremo con email real y con H-1 de la auditoría corregido. Commit `cb9d0d5` en la PR #16, abierta y sin merge. La guía para revisarlo está en `docs/auth-password-reset.md`. Pendiente: la revisión y el merge de la PR. También pendientes las propuestas P3-1…P3-6 y la decisión sobre M-1, M-2 y M-3.
 - **AUTH-02:** hecho e integrado en `main` con la PR #13 (merge `a4b6369`, entrada 2026-10-02 / 2026-10-05). Pendientes: revisión de las propuestas P-1…P-7 (`docs/auth-frontend.md` §3.3), registro desde la UI del tracker y refresh tokens (fuera de alcance). Los 4 errores de lint `react-hooks/set-state-in-effect` del tracker son anteriores a AUTH-02.

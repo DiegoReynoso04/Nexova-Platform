@@ -73,7 +73,7 @@ Las variables `NEXT_PUBLIC_*` se incorporan al build: tras cambiarlas hay que re
 - **401:** si la API rechaza el token (caducado o inválido), se borra de `localStorage` y se vuelve a `/login`.
 - **Logout:** borra el token y vuelve a `/login`, sin llamar a la API.
 - **Sin refresh tokens:** al caducar el JWT hay que volver a iniciar sesión.
-- **Contraseñas (AUTH-03):** `/forgot-password` → email con enlace (Resend) → `/reset-password?token=…` → `/login`; `/account/change-password` con sesión. El token del enlace caduca (30 minutos por defecto) y solo sirve una vez. Para recibir el email en local: configurar las tres variables de Resend de la sección 3, reiniciar la API y pedir el enlace con el email de tu cuenta de Resend (registrado antes en `/register`). Contexto en [`auth-password-reset.md`](./auth-password-reset.md).
+- **Contraseñas (AUTH-03):** `/forgot-password` → email con enlace (Resend) → `/reset-password?token=…` → `/login`; `/account/change-password` con sesión. El token del enlace caduca (30 minutos por defecto) y solo sirve una vez. Para recibir el email en local: configurar las tres variables de Resend de la sección 3, reiniciar la API con `--env-file .env` y pedir el enlace para un email registrado antes en `/register`. Sin dominio verificado en Resend, usar el destinatario de pruebas `delivered@resend.dev` (o el email de tu cuenta de Resend). Guía de validación paso a paso, prueba de H-1 y tests en [`auth-password-reset.md`](./auth-password-reset.md) §9–§12.
 - **Separación de servicios:** el JWT solo se envía a `services/api`. **Nunca** se envía a la API de 4Geeks (el tracker usa dos clientes distintos) y el website no interviene en la autenticación.
 
 ## 5. CORS
