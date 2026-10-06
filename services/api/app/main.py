@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.dependencies import get_current_user
+from app.auth.email import DisabledEmailSender, EmailSender, ResendEmailSender
 from app.auth.repository import AuthRepository
 from app.auth.service import UserService
 from app.core.config import Settings
@@ -24,6 +25,13 @@ from app.routes.suppliers import router as suppliers_router
 from app.routes.users import router as users_router
 
 
+def build_email_sender(settings: Settings) -> EmailSender:
+    """Resend si RESEND_API_KEY, EMAIL_FROM y PASSWORD_RESET_URL están definidas; si no, no se envían emails."""
+    if settings.email_configured:
+        return ResendEmailSender(settings.resend_api_key, settings.email_from)
+    return DisabledEmailSender()
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings if settings is not None else Settings.from_env()
     settings.require_auth()
@@ -36,13 +44,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.supplier_repository = SupplierRepository(settings.suppliers_db_path)
     # User y Profile: TinyDB en un archivo propio (AUTH_DB_PATH).
     app.state.user_service = UserService(AuthRepository(settings.auth_db_path))
+    # AUTH-03: envío del enlace de restablecimiento (los tests lo sustituyen).
+    app.state.email_sender = build_email_sender(settings)
 
     install_error_handlers(app)
     # Rutas existentes con datos sensibles: todas exigen un JWT válido (AUTH-01).
     authenticated = [Depends(get_current_user)]
     app.include_router(incidents_router, prefix="/api/incidents", dependencies=authenticated)
     app.include_router(suppliers_router, prefix="/suppliers", dependencies=authenticated)
-    # /auth/login y POST /users son públicas; el resto declara su propia dependencia.
+    # Públicas: /auth/login, POST /users, /auth/forgot-password y /auth/reset-password;
+    # el resto (incluida /auth/change-password) declara su propia dependencia.
     app.include_router(auth_router, prefix="/auth")
     app.include_router(users_router, prefix="/users")
     app.include_router(profiles_router, prefix="/profiles")

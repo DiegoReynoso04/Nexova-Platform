@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuthForm } from '@/hooks/use-auth-form';
 import { HOME_PATH, LOGIN_PATH } from '@/lib/auth-routes';
-import { register } from '@/services/auth.service';
+import { register, validateCredentials } from '@/services/auth.service';
 import type { AuthField, RegisterFormValues } from '@/types/auth';
 
 import { FormErrorMessage } from './form-error-message';
@@ -20,7 +20,7 @@ const EMPTY_REGISTER_FORM: RegisterFormValues = { email: '', password: '', name:
 // 422/409 se muestran junto a su campo.
 export function RegisterForm() {
   const router = useRouter();
-  const { isSubmitting, errors, submit } = useAuthForm(register, 'register');
+  const { isSubmitting, errors, submit } = useAuthForm(register, 'register', validateCredentials);
   const [values, setValues] = useState<RegisterFormValues>(EMPTY_REGISTER_FORM);
 
   function set(field: AuthField, value: string) {

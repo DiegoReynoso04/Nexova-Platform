@@ -194,15 +194,15 @@ describe('cliente HTTP: Authorization y 401', () => {
 });
 
 describe('lib/auth-routes.ts — protección global', () => {
-  test('solo /login y /register son públicas', () => {
-    for (const path of ['/login', '/register', '/login/']) assert.equal(isPublicPath(path), true, path);
-    for (const path of ['/', '/incidents', '/suppliers', '/account/profile', '/loginx', '/ruta-nueva']) {
+  test('solo /login, /register y /forgot-password son públicas', () => {
+    for (const path of ['/login', '/register', '/login/', '/forgot-password']) assert.equal(isPublicPath(path), true, path);
+    for (const path of ['/', '/incidents', '/suppliers', '/account/profile', '/account/change-password', '/loginx', '/ruta-nueva']) {
       assert.equal(isPublicPath(path), false, path);
     }
   });
 
   test('vista protegida: sin token → /login; validando → espera; válida → se muestra; error → reintento', () => {
-    for (const path of ['/', '/incidents', '/suppliers', '/account/profile']) {
+    for (const path of ['/', '/incidents', '/suppliers', '/account/profile', '/account/change-password']) {
       assert.equal(routeAccess(path, 'anonymous'), 'redirect_login');
       assert.equal(routeAccess(path, 'initializing'), 'wait');
       assert.equal(routeAccess(path, 'checking'), 'wait');
@@ -211,12 +211,19 @@ describe('lib/auth-routes.ts — protección global', () => {
     }
   });
 
-  test('/login y /register se muestran sin sesión y redirigen a la vista principal con sesión válida', () => {
-    for (const path of ['/login', '/register']) {
+  test('/login, /register y /forgot-password se muestran sin sesión y redirigen a la vista principal con sesión válida', () => {
+    for (const path of ['/login', '/register', '/forgot-password']) {
       for (const status of ['initializing', 'anonymous', 'checking', 'error']) {
         assert.equal(routeAccess(path, status), 'render', `${path} ${status}`);
       }
       assert.equal(routeAccess(path, 'authenticated'), 'redirect_home');
+    }
+  });
+
+  test('/reset-password (AUTH-03) se muestra con o sin sesión: el enlace del email siempre funciona', () => {
+    for (const status of ['initializing', 'anonymous', 'checking', 'error', 'authenticated']) {
+      assert.equal(routeAccess('/reset-password', status), 'render', status);
+      assert.equal(routeAccess('/reset-password/', status), 'render', status);
     }
   });
 });

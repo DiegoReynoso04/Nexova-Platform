@@ -96,6 +96,24 @@ class EmailAlreadyRegisteredError(ApiError):
         super().__init__(409, "email_already_registered", "email already registered")
 
 
+# AUTH-03. Mismo criterio: mensajes fijos, nunca el token ni las contraseñas.
+class InvalidResetTokenError(ApiError):
+    """Token de restablecimiento desconocido, expirado o ya usado: un solo código para los tres casos."""
+
+    def __init__(self) -> None:
+        super().__init__(400, "invalid_reset_token", "reset token is invalid, expired or already used")
+
+
+class IncorrectPasswordError(ApiError):
+    """`POST /auth/change-password` con una contraseña actual que no coincide.
+
+    400 y no 401: la sesión es válida; un 401 haría que el frontend la cerrase.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(400, "incorrect_password", "current password is incorrect")
+
+
 class FileTooLargeError(ApiError):
     def __init__(self, max_bytes: int) -> None:
         super().__init__(413, "file_too_large", f"request body exceeds the {max_bytes} bytes limit")
@@ -168,3 +186,13 @@ class InternalErrorMiddleware:
             if not response_started:
                 response = error_response(500, "internal_error", INTERNAL_ERROR_DETAIL)
                 await response(scope, receive, send)
+
+
+def log_email_delivery_failure(exc: Exception) -> None:
+    """Fallo al enviar el email de restablecimiento (AUTH-03).
+
+    Se envía en segundo plano, después de responder, así que el cliente nunca
+    lo ve. Como en el 500, solo se registra el nombre de la clase: ni el email
+    del destinatario ni el enlace con el token.
+    """
+    logger.error("password reset email could not be delivered: %s", type(exc).__name__)

@@ -138,3 +138,51 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     expires_in: int
+
+
+# AUTH-03: recuperación y cambio de contraseña.
+# Límite generoso para la contraseña actual y el token: solo evita cuerpos
+# desmesurados; la validez real la decide la comparación con el hash.
+MAX_SECRET_INPUT_LENGTH = 512
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Entrada de `POST /auth/forgot-password`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: Email
+
+
+class ResetPasswordRequest(BaseModel):
+    """Entrada de `POST /auth/reset-password`: token del enlace + contraseña nueva."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token: Annotated[str, StringConstraints(min_length=1, max_length=MAX_SECRET_INPUT_LENGTH)]
+    new_password: Password
+
+
+class ChangePasswordRequest(BaseModel):
+    """Entrada de `POST /auth/change-password` (requiere sesión)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: Annotated[str, StringConstraints(min_length=1, max_length=MAX_SECRET_INPUT_LENGTH)]
+    new_password: Password
+
+
+class Message(BaseModel):
+    """Respuesta de las rutas de contraseña: un mensaje fijo, sin datos del usuario."""
+
+    detail: str
+
+
+class AuditEvent(StrEnum):
+    """Eventos de contraseña registrados en la tabla `password_audit` (AUTH-03, opcional del ticket)."""
+
+    RESET_REQUESTED = "reset_requested"
+    RESET_COMPLETED = "reset_completed"
+    RESET_REJECTED = "reset_rejected"
+    PASSWORD_CHANGED = "password_changed"
+    PASSWORD_CHANGE_REJECTED = "password_change_rejected"

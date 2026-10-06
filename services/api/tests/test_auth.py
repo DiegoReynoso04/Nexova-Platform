@@ -228,21 +228,73 @@ class UsersEndpointTests(AuthTestCase):
         _, token = self.user_with_token(ADMIN, UserRole.ADMIN)
         self.assertEqual(self.client.get(f"{USERS_URL}/1", headers=bearer(token)).status_code, 422)
 
-    def test_user_updates_own_email_and_password(self) -> None:  # [18]
+    def test_user_updates_own_email(self) -> None:  # [18]
         user_id, password = self.create_user(ALICE)
         token = self.token_for(ALICE, password)
-        new = new_password()
-        response = self.client.put(
-            f"{USERS_URL}/{user_id}", json={"email": "alice.new@example.invalid", "password": new}, headers=bearer(token)
-        )
+        response = self.client.put(f"{USERS_URL}/{user_id}", json={"email": "alice.new@example.invalid"}, headers=bearer(token))
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["email"], "alice.new@example.invalid")
         self.assertEqual(response.json()["role"], "user")
         self.assertNoCredentials(response)
+        self.assertEqual(self.login("alice.new@example.invalid", password).status_code, 200)
+        self.assertEqual(self.login(ALICE, password).status_code, 401)
+
+    def test_user_cannot_change_own_password_with_put(self) -> None:  # AUTH-03, auditoría H-1
+        # Sin la contraseña actual no se puede cambiar: solo POST /auth/change-password.
+        user_id, password = self.create_user(ALICE)
+        token = self.token_for(ALICE, password)
+        stored_hash = self.raw_users()[0]["hashed_password"]
+        for body in ({"password": new_password()}, {"email": "alice.new@example.invalid", "password": new_password()}):
+            with self.subTest(fields=sorted(body)):
+                response = self.client.put(f"{USERS_URL}/{user_id}", json=body, headers=bearer(token))
+                self.assertForbidden(response)
+                self.assertNotIn(body["password"], response.text)
+        # No se aplicó nada, tampoco el email enviado junto a la contraseña.
+        self.assertEqual(self.raw_users()[0]["hashed_password"], stored_hash)
+        self.assertEqual(self.raw_users()[0]["email"], ALICE)
+        self.assertEqual(self.login(ALICE, password).status_code, 200)
+
+    def test_manager_cannot_change_own_password_with_put(self) -> None:  # AUTH-03, auditoría H-1
+        user_id, password = self.create_user("manager@example.invalid", UserRole.MANAGER)
+        token = self.token_for("manager@example.invalid", password)
+        response = self.client.put(f"{USERS_URL}/{user_id}", json={"password": new_password()}, headers=bearer(token))
+        self.assertForbidden(response)
+        self.assertEqual(self.login("manager@example.invalid", password).status_code, 200)
+
+    def test_user_cannot_change_another_users_password(self) -> None:  # AUTH-03, auditoría H-1
+        bob_id, bob_password = self.create_user(BOB)
+        _, token = self.user_with_token(ALICE)
+        response = self.client.put(f"{USERS_URL}/{bob_id}", json={"password": new_password()}, headers=bearer(token))
+        self.assertForbidden(response)
+        self.assertEqual(self.login(BOB, bob_password).status_code, 200)
+
+    def test_admin_can_still_set_another_users_password(self) -> None:  # capacidad de admin de AUTH-01
+        bob_id, bob_password = self.create_user(BOB)
+        _, token = self.user_with_token(ADMIN, UserRole.ADMIN)
+        new = new_password()
+        response = self.client.put(f"{USERS_URL}/{bob_id}", json={"password": new}, headers=bearer(token))
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertNoCredentials(response)
         self.assertNotIn(new, self.auth_db_path.read_text(encoding="utf-8"))
-        self.assertEqual(self.login("alice.new@example.invalid", new).status_code, 200)
-        self.assertEqual(self.login("alice.new@example.invalid", password).status_code, 401)
-        self.assertEqual(self.login(ALICE, new).status_code, 401)
+        self.assertEqual(self.login(BOB, new).status_code, 200)
+        self.assertEqual(self.login(BOB, bob_password).status_code, 401)
+
+    def test_change_password_endpoint_remains_the_way_for_users(self) -> None:  # AUTH-03, auditoría H-1
+        user_id, password = self.create_user(ALICE)
+        token = self.token_for(ALICE, password)
+        self.assertForbidden(self.client.put(f"{USERS_URL}/{user_id}", json={"password": new_password()}, headers=bearer(token)))
+        wrong = self.client.post(
+            "/auth/change-password", json={"current_password": "wrong-password", "new_password": new_password()}, headers=bearer(token)
+        )
+        self.assertEqual(wrong.status_code, 400, wrong.text)
+        self.assertEqual(wrong.json()["code"], "incorrect_password")
+        new = new_password()
+        changed = self.client.post(
+            "/auth/change-password", json={"current_password": password, "new_password": new}, headers=bearer(token)
+        )
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertEqual(self.login(ALICE, new).status_code, 200)
+        self.assertEqual(self.login(ALICE, password).status_code, 401)
 
     def test_update_to_an_existing_email_is_409(self) -> None:
         user_id, token = self.user_with_token(ALICE)

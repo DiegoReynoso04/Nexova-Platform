@@ -15,6 +15,7 @@ Panel interno de gestión de candidaturas para **Nexova Solutions** (Operaciones
 - **Manejo de errores robusto**: errores de validación (422), recurso no encontrado (404), otros errores HTTP, errores de red y timeouts (20 s) se distinguen entre sí y siempre producen un mensaje legible — nunca un fallo silencioso ni un spinner infinito.
 
 - **Sesión de usuario (AUTH-02)**: `/login`, `/register` y `/account/profile` contra `services/api` de Nexova (no contra la API de candidaturas). Todas las demás vistas exigen sesión: sin token, o si `services/api` responde 401, se vuelve a `/login`. "Cerrar sesión" en la cabecera elimina el token. Detalle en `SPECS.md` §9.
+- **Contraseñas (AUTH-03)**: "¿Olvidaste tu contraseña?" en `/login` → `/forgot-password` (enlace por email), `/reset-password` (contraseña nueva desde el enlace) y `/account/change-password` (con sesión, enlace en el perfil). Detalle en `SPECS.md` §9.4.
 
 Lo que la aplicación **no** hace, a propósito: no permite eliminar candidaturas (el endpoint existe en la API pero queda fuera de alcance de esta versión). La API de candidaturas de 4Geeks no requiere autenticación y nunca recibe el token de sesión.
 
@@ -70,6 +71,9 @@ app/
 ├── login/page.tsx               # /login (pública)
 ├── register/page.tsx            # /register (pública)
 ├── account/profile/page.tsx     # /account/profile
+├── account/change-password/page.tsx # /account/change-password (AUTH-03)
+├── forgot-password/page.tsx     # /forgot-password (pública, AUTH-03)
+├── reset-password/page.tsx      # /reset-password (abierta: enlace del email, AUTH-03)
 └── candidates/[id]/
     ├── page.tsx                 # detalle de candidatura
     └── not-found.tsx            # id inexistente (404)

@@ -33,12 +33,15 @@ Columna *Auth*: 🔓 pública · 🔒 JWT válido · 👤 propio usuario o admin
 | `POST` | `/users` | 🔓 | Registro (`role=user`) + `Profile` inicial opcional (`name`, `phone`, `address`) |
 | `GET` | `/users` | 🛡️ | Lista usuarios |
 | `GET` | `/users/{id}` | 👤 | Detalle de un usuario |
-| `PUT` | `/users/{id}` | 👤 | Cambia `email`/`password`; `role` solo un admin |
+| `PUT` | `/users/{id}` | 👤 | Cambia `email`; `password` y `role` solo un admin (los demás cambian su contraseña con `POST /auth/change-password`) |
 | `DELETE` | `/users/{id}` | 👤 | Elimina el usuario y su `Profile` (204) |
 | `POST` | `/auth/login` | 🔓 | Formulario OAuth2 (`username` = email, `password`) → JWT |
 | `GET` | `/auth/me` | 🔒 | `email`, `role` y `Profile` del usuario autenticado |
 | `GET` | `/profiles/me` | 🔒 | Perfil del usuario autenticado |
 | `PUT` | `/profiles/me` | 🔒 | Actualiza `name`, `phone`, `address` del propio perfil |
+| `POST` | `/auth/forgot-password` | 🔓 | `{email}` → envía un enlace de restablecimiento si el email existe; siempre 200 (AUTH-03) |
+| `POST` | `/auth/reset-password` | 🔓 | `{token, new_password}` → cambia la contraseña; 400 si el token es inválido, caducó o ya se usó |
+| `POST` | `/auth/change-password` | 🔒 | `{current_password, new_password}` → cambia la contraseña; 400 si la actual es incorrecta |
 
 Sin token válido → **401**; token válido sobre un recurso ajeno o una acción de admin → **403** (`SPECS.md` §21). Ninguna respuesta incluye `password` ni `hashed_password`.
 
@@ -84,6 +87,10 @@ Variables de entorno (la API **no** carga archivos `.env` por sí sola, no usa `
 | `AUTH_DB_PATH` | `services/api/data/auth.json` | Archivo TinyDB de `User` y `Profile` (API y `create-admin`). `data/` está en `.gitignore` |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Orígenes permitidos, separados por comas. `*` se rechaza al arrancar. Con AUTH-02 el Talent Pipeline Tracker (puerto 3001) también llama a la API para login, registro y perfil: en local usar `http://localhost:3000,http://localhost:3001` (así viene en `.env.example`) |
 | `SUPPLIERS_DB_PATH` | `services/api/data/suppliers.json` | Archivo TinyDB del directorio de proveedores (API y seeder). `data/` está en `.gitignore` |
+| `RESEND_API_KEY` | — (opcional) | API key de [Resend](https://resend.com/) para enviar el email de restablecimiento (AUTH-03). Nunca en el código ni en git. Sin ella (y sin las dos siguientes) la API arranca, pero no envía emails |
+| `EMAIL_FROM` | — (con `RESEND_API_KEY`) | Remitente, p. ej. `Nexova <onboarding@resend.dev>` (remitente de pruebas de Resend: solo entrega a la dirección de tu cuenta de Resend) |
+| `PASSWORD_RESET_URL` | — (con `RESEND_API_KEY`) | URL absoluta de la página de restablecimiento del frontend; el enlace añade `?token=…`. En local: `http://localhost:3000/reset-password` |
+| `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` | `30` | Vigencia del enlace, entre 15 y 60 minutos |
 | `MAX_UPLOAD_BYTES` | `1048576` (1 MiB) | Límite técnico del **body HTTP completo** (CSV + cabeceras y delimitadores multipart), **no del CSV**: el CSV máximo es algo menor. Decisión de la API, no requisito del cliente. Detalle en `SPECS.md` §3.1 |
 
 ```powershell
@@ -133,7 +140,17 @@ Contexto y guía paso a paso (incluido el flujo en `/docs`): [`docs/auth-api.md`
 - **Almacenamiento:** `User` (solo credenciales) y `Profile` (`name`, `phone`, `address`) viven **solo en TinyDB**, en `data/auth.json` (`AUTH_DB_PATH`), separado de los proveedores. Ids UUID propios; `Profile.user_id` = `User.id`. Nunca en PostgreSQL/Supabase.
 - **Contraseñas:** hash bcrypt con `libpass` (`from passlib.hash import bcrypt`); 8 caracteres mínimo y 72 bytes máximo, validado antes del hash.
 - **JWT:** HS256 con `JWT_SECRET_KEY`; claims `sub` (= `User.id`), `iat`, `exp` (+`ACCESS_TOKEN_EXPIRE_MINUTES`). Login con formulario OAuth2 en `POST /auth/login` (`username` = email): el botón **Authorize** de `/docs` funciona directamente.
-- **Protección:** `get_current_user` (`app/auth/dependencies.py`) se aplica a los routers de incidentes y proveedores y a las rutas privadas de `/users`, `/auth/me` y `/profiles`.
+- **Protección:** `get_current_user` (`app/auth/dependencies.py`) se aplica a los routers de incidentes y proveedores y a las rutas privadas de `/users`, `/auth/me`, `/auth/change-password` y `/profiles`.
+
+### Recuperación y cambio de contraseña (AUTH-03)
+
+Contexto: [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md). Contrato y decisiones D-PWD-1…11: `SPECS.md` Parte D.
+
+- **Envío con Resend** por HTTP (`urllib`, sin dependencias nuevas). Configurar `RESEND_API_KEY`, `EMAIL_FROM` y `PASSWORD_RESET_URL` en `services/api/.env` (ver `.env.example`). Con el remitente `onboarding@resend.dev` solo llegan emails a la dirección de tu cuenta de Resend: regístrate en la plataforma con ese email para probar.
+- **Token de un solo uso:** aleatorio, guardado solo como SHA-256 en `auth.json` (`password_reset_tokens`), caduca a los `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`. Un enlace nuevo, un reset correcto o un cambio de contraseña invalidan los pendientes.
+- **Sin enumeración:** `forgot-password` responde 200 con el mismo cuerpo exista o no el email; el email se envía después de responder.
+- **Auditoría:** cada evento queda en `password_audit` (`auth.json`) con IP y fecha, sin email ni token.
+- **Un solo camino para cambiar la propia contraseña:** `PUT /users/{id}` con `password` responde 403 si no eres admin (hallazgo H-1 de la auditoría de seguridad); usa `POST /auth/change-password`, que exige la contraseña actual. Un admin puede seguir fijando contraseñas con `PUT /users/{id}`.
 
 ### Primer administrador
 
@@ -150,7 +167,7 @@ Sin uv, con el venv del servicio: `python -m app.auth.create_admin --email ...`.
 
 - **El último análisis se pierde al reiniciar** el proceso: no hay persistencia.
 - Se guarda **el último análisis que termina correctamente**; un POST fallido no lo cambia. Es **global al proceso**, no por usuario, y con peticiones concurrentes gana la que termina después. `X-Analysis-Id` en la exportación identifica el análisis descargado.
-- **Autenticación sin estado**: no hay revocación ni refresh de tokens; cambiar contraseña o rol no invalida los tokens ya emitidos hasta que expiran. Sin permisos por rol en las rutas de incidentes y proveedores (basta un token válido).
+- **Autenticación sin estado**: no hay revocación ni refresh de tokens; cambiar o restablecer la contraseña (AUTH-03) o el rol no invalida los tokens ya emitidos hasta que expiran. Sin permisos por rol en las rutas de incidentes y proveedores (basta un token válido).
 - Con `MAX_UPLOAD_BYTES` > 1 MiB, Starlette puede volcar el archivo subido a un temporal en disco durante la petición.
 - Las respuestas 200 de análisis y exportación llevan `Cache-Control: no-store`.
 
@@ -207,10 +224,11 @@ app/
 │   ├── models.py            # User/Profile (Pydantic), UserRole, validación de email y contraseña
 │   ├── repository.py        # AuthRepository: única capa que toca TinyDB de usuarios y perfiles
 │   ├── security.py          # bcrypt (libpass) y JWT (python-jose)
-│   ├── service.py           # UserService: crear, obtener por id/email, actualizar, eliminar, login
+│   ├── service.py           # UserService: crear, obtener por id/email, actualizar, eliminar, login, contraseñas
+│   ├── email.py             # AUTH-03: envío con Resend (urllib) y texto del email de restablecimiento
 │   ├── dependencies.py      # OAuth2PasswordBearer, get_current_user, require_admin, ensure_self_or_admin
 │   └── create_admin.py      # entry point de `uv run create-admin`
-├── routes/auth.py           # POST /auth/login, GET /auth/me
+├── routes/auth.py           # POST /auth/login, GET /auth/me; AUTH-03: forgot/reset/change-password
 ├── routes/users.py          # CRUD /users
 ├── routes/profiles.py       # GET/PUT /profiles/me
 ├── models.py                # Proveedores: modelos Pydantic, categorías y estados del contexto

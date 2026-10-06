@@ -294,7 +294,9 @@ export const authApiClient = {
   get: (path: string): Promise<unknown> => request(AUTH_API_BASE_URL, path, { method: 'GET' }, 'bearer'),
   /** PUT protegido (Bearer). */
   put: (path: string, body: unknown): Promise<unknown> => request(AUTH_API_BASE_URL, path, json('PUT', body), 'bearer'),
-  /** POST público con JSON (registro): sin token. */
+  /** POST protegido con JSON (Bearer): cambio de contraseña (AUTH-03). */
+  post: (path: string, body: unknown): Promise<unknown> => request(AUTH_API_BASE_URL, path, json('POST', body), 'bearer'),
+  /** POST público con JSON (registro y recuperación de contraseña): sin token. */
   postPublic: (path: string, body: unknown): Promise<unknown> =>
     request(AUTH_API_BASE_URL, path, json('POST', body), 'public'),
   /** POST público `application/x-www-form-urlencoded` (login OAuth2): sin token. */

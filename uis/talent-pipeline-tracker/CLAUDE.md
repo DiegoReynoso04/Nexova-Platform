@@ -28,6 +28,7 @@ Fuente de verdad: `SPECS.md` (raíz del proyecto). Ante cualquier duda no cubier
 - El JWT se guarda en `localStorage` (exigido por el ticket) y solo `lib/auth-token.ts` lo toca. No se persiste nada más en el navegador.
 - `Authorization: Bearer` y el tratamiento del 401 viven solo en `lib/api-client.ts` (`authApiClient`); las vistas no repiten esa lógica.
 - Protección global con el guard del layout raíz (`lib/auth-routes.ts`): toda vista nueva es protegida por defecto. Prohibido usar middleware/proxy de Next.js o cookies para comprobar la sesión.
+- Contraseñas (AUTH-03, SPECS.md §9.4): `/forgot-password` pública, `/reset-password` abierta (`OPEN_PATHS`), `/account/change-password` protegida. La confirmación nunca se envía a la API y `/forgot-password` no distingue si el email existe.
 
 ## Tono e identidad
 - Esto es una herramienta interna de Nexova Solutions (Operaciones de Selección), no una app genérica: sobria, funcional, orientada a eficiencia operativa, coherente con el contexto y la imagen de la empresa.

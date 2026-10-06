@@ -700,3 +700,18 @@ NEXT_PUBLIC_AUTH_API_URL=http://localhost:8000                     # services/ap
 * `services/normalizers.ts` — `normalizeAccessToken`, `normalizeCurrentUser`, `normalizeProfile` (frontera de confianza, §3.1).
 * `hooks/use-auth-session.ts`, `use-auth-form.ts`, `use-profile.ts`; `components/auth/*`.
 * Tests: `tests/auth.test.mjs` con el runner nativo de Node 24, sin dependencias (ver README, Validación).
+
+### 9.4 Contraseñas (AUTH-03)
+
+Fuente: ticket AUTH-03 ([`docs/auth-password-reset.md`](../../docs/auth-password-reset.md)); contrato en [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte D. Todo va contra `services/api` (`authApiClient`); la API de 4Geeks no interviene.
+
+| Ruta | Acceso | Qué hace |
+|---|---|---|
+| `/login` | pública | además: enlace "¿Olvidaste tu contraseña?" y aviso tras `?reset=success` |
+| `/forgot-password` | pública | `POST /auth/forgot-password` (`{email}`); tras un 200 muestra siempre "Si esa dirección está registrada, recibirás un enlace en breve" y desactiva el formulario |
+| `/reset-password` | abierta (`OPEN_PATHS`: con o sin sesión) | lee `?token=` (y lo quita de la URL), contraseña nueva + confirmación → `POST /auth/reset-password` → `/login?reset=success`; 400 → error y enlace a `/forgot-password` |
+| `/account/change-password` | protegida | contraseña actual, nueva y confirmación → `POST /auth/change-password` (Bearer); 400 → error en el campo de la contraseña actual |
+
+* La confirmación se comprueba en el servicio antes de llamar a la API y no se envía. El 400 de cada endpoint tiene un único significado (token inválido/caducado/usado o contraseña actual incorrecta), así que se distingue por ruta y status.
+* El enlace del email apunta a una sola URL (`PASSWORD_RESET_URL` de `services/api`, en local el backoffice); esta `/reset-password` funciona igual si se configura hacia el tracker (`docs/auth-password-reset.md`, P3-1).
+* Tests: `tests/password.test.mjs`.

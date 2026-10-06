@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 
 import { LoginView } from '@/components/auth/login-view';
 
 // Ruta pública (lib/auth-routes.ts). Server Component: exporta la metadata y
-// renderiza el formulario, que es un Client Component.
+// renderiza el formulario, que es un Client Component. `Suspense`: el
+// formulario lee `?reset=success` con useSearchParams (obligatorio en el build).
 export const metadata: Metadata = {
   title: 'Iniciar sesión · Nexova',
   description: 'Acceso al backoffice interno de Nexova Solutions.',
@@ -18,7 +20,9 @@ export default function LoginPage() {
         </h1>
         <p className="text-sm text-ink-muted">Entra con tu email y tu contraseña para usar las herramientas internas.</p>
       </div>
-      <LoginView />
+      <Suspense>
+        <LoginView />
+      </Suspense>
     </section>
   );
 }

@@ -7,6 +7,9 @@
 //   adjunta el Bearer y, ante un 401, borra el token (UnauthorizedError).
 // - `describeAuthError` traduce cualquier error a mensajes por campo y uno
 //   general, para que las vistas no repitan esa lógica.
+// - AUTH-03 (§9.4): `requestPasswordReset` y `resetPassword` son públicos;
+//   `changePassword` es protegido. La confirmación de la contraseña nueva se
+//   comprueba antes de llamar a la API y nunca se envía.
 
 import { ApiError, UnauthorizedError, ValidationApiError, authApiClient, describeApiError } from '@/lib/api-client';
 import { saveAuthToken } from '@/lib/auth-token';
@@ -14,11 +17,14 @@ import { normalizeAccessToken, normalizeCurrentUser, normalizeProfile } from '@/
 import type {
   AuthField,
   AuthFormErrors,
+  ChangePasswordFormValues,
   CurrentUser,
+  ForgotPasswordFormValues,
   LoginFormValues,
   Profile,
   ProfileFormValues,
   RegisterFormValues,
+  ResetPasswordFormValues,
 } from '@/types/auth';
 
 /** El usuario se creó, pero el login posterior falló: debe entrar desde /login. */
@@ -95,7 +101,80 @@ export async function updateProfile(values: ProfileFormValues): Promise<Profile>
   return normalizeProfile(data);
 }
 
-const AUTH_FIELDS: readonly AuthField[] = ['email', 'password', 'name', 'phone', 'address'];
+// --- AUTH-03: recuperación y cambio de contraseña (SPECS.md §9.4) ---
+
+/** El enlace de restablecimiento falta, no es válido, caducó o ya se usó (400 de `/auth/reset-password`). */
+export class InvalidResetTokenError extends Error {
+  constructor() {
+    super('El enlace no es válido o ha caducado. Los enlaces caducan y solo se pueden usar una vez: solicita uno nuevo.');
+    this.name = 'InvalidResetTokenError';
+  }
+}
+
+/** La contraseña actual no coincide (400 de `/auth/change-password`). La sesión sigue abierta. */
+export class IncorrectCurrentPasswordError extends Error {
+  constructor() {
+    super('La contraseña actual no es correcta.');
+    this.name = 'IncorrectCurrentPasswordError';
+  }
+}
+
+export function validateForgotPassword(values: ForgotPasswordFormValues): AuthFormErrors | null {
+  return values.email.trim() === '' ? { fields: { email: 'Introduce tu email.' }, form: null } : null;
+}
+
+/** Contraseña nueva + confirmación: requeridas y coincidentes. La longitud la valida la API (422). */
+function newPasswordErrors(values: ResetPasswordFormValues): AuthFormErrors['fields'] {
+  if (values.new_password === '') return { new_password: 'Introduce la contraseña nueva.' };
+  if (values.password_confirmation !== values.new_password) {
+    return { password_confirmation: 'La confirmación no coincide con la contraseña nueva.' };
+  }
+  return {};
+}
+
+export function validateResetPassword(values: ResetPasswordFormValues): AuthFormErrors | null {
+  const fields = newPasswordErrors(values);
+  return Object.keys(fields).length > 0 ? { fields, form: null } : null;
+}
+
+export function validateChangePassword(values: ChangePasswordFormValues): AuthFormErrors | null {
+  const fields: AuthFormErrors['fields'] = {
+    ...(values.current_password === '' ? { current_password: 'Introduce tu contraseña actual.' } : {}),
+    ...newPasswordErrors(values),
+  };
+  return Object.keys(fields).length > 0 ? { fields, form: null } : null;
+}
+
+/** `POST /auth/forgot-password`: la API responde 200 exista o no el email. */
+export async function requestPasswordReset(values: ForgotPasswordFormValues): Promise<void> {
+  await authApiClient.postPublic('/auth/forgot-password', { email: values.email.trim() });
+}
+
+/** `POST /auth/reset-password` con el token del enlace (la confirmación no se envía). */
+export async function resetPassword(token: string, values: ResetPasswordFormValues): Promise<void> {
+  if (token.trim() === '') throw new InvalidResetTokenError();
+  try {
+    await authApiClient.postPublic('/auth/reset-password', { token, new_password: values.new_password });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 400) throw new InvalidResetTokenError();
+    throw error;
+  }
+}
+
+/** `POST /auth/change-password` (protegido; la confirmación no se envía). */
+export async function changePassword(values: ChangePasswordFormValues): Promise<void> {
+  try {
+    await authApiClient.post('/auth/change-password', {
+      current_password: values.current_password,
+      new_password: values.new_password,
+    });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 400) throw new IncorrectCurrentPasswordError();
+    throw error;
+  }
+}
+
+const AUTH_FIELDS: readonly AuthField[] = ['email', 'password', 'name', 'phone', 'address', 'current_password', 'new_password'];
 
 // §5.4 — `loc` termina en el nombre del campo del body. El formulario OAuth2
 // del login llama `username` al email.
@@ -111,7 +190,10 @@ const PYDANTIC_VALUE_ERROR_PREFIX = 'Value error, ';
  * Cualquier error de este servicio → mensajes por campo y uno general.
  * `context`: login (401 = credenciales incorrectas) o cuenta (401 = sesión caducada).
  */
-export function describeAuthError(error: unknown, context: 'login' | 'register' | 'account'): AuthFormErrors {
+export function describeAuthError(
+  error: unknown,
+  context: 'login' | 'register' | 'account' | 'password'
+): AuthFormErrors {
   if (error instanceof ValidationApiError) {
     const fields: AuthFormErrors['fields'] = {};
     const unmatched: string[] = [];
@@ -133,5 +215,7 @@ export function describeAuthError(error: unknown, context: 'login' | 'register' 
     return { fields: { email: 'Ya existe una cuenta con este email.' }, form: null };
   }
   if (error instanceof RegisteredLoginFailedError) return { fields: {}, form: error.message };
+  if (error instanceof InvalidResetTokenError) return { fields: {}, form: error.message, invalidResetToken: true };
+  if (error instanceof IncorrectCurrentPasswordError) return { fields: { current_password: error.message }, form: null };
   return { fields: {}, form: describeApiError(error) };
 }

@@ -55,13 +55,16 @@ La primera cuenta se crea desde `/register` en cualquiera de las dos apps (rol `
 | `services/api` | `JWT_SECRET_KEY` | secreto propio (≥ 32 caracteres) | Firma de los JWT. Obligatoria |
 | `services/api` | `ACCESS_TOKEN_EXPIRE_MINUTES` | p. ej. `30` | Validez del token. Obligatoria |
 | `services/api` | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Orígenes que pueden llamar a la API desde el navegador (sección 5) |
+| `services/api` | `RESEND_API_KEY` | tu API key de Resend | Envío del email de restablecimiento (AUTH-03). Opcional: va junto con las dos siguientes |
+| `services/api` | `EMAIL_FROM` | `Nexova <onboarding@resend.dev>` | Remitente de pruebas de Resend: solo entrega a la dirección de tu cuenta de Resend |
+| `services/api` | `PASSWORD_RESET_URL` | `http://localhost:3000/reset-password` | Página del enlace del email (`?token=…`) |
 | `uis/backoffice` | `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | URL de `services/api` |
 | `uis/talent-pipeline-tracker` | `NEXT_PUBLIC_API_URL` | `https://playground.4geeks.com/tracker/api/v1` | API de candidaturas de **4Geeks** (sin cambios) |
 | `uis/talent-pipeline-tracker` | `NEXT_PUBLIC_AUTH_API_URL` | `http://localhost:8000` | URL de `services/api` para login, registro y perfil |
 
 Las variables `NEXT_PUBLIC_*` se incorporan al build: tras cambiarlas hay que reiniciar `npm run dev` (o recompilar).
 
-## 4. Autenticación (AUTH-01 + AUTH-02), en resumen
+## 4. Autenticación (AUTH-01, AUTH-02 y AUTH-03), en resumen
 
 - **Login** (`/login`): `POST /auth/login` con formulario `application/x-www-form-urlencoded` (`username` = email, `password`). Si es correcto, el JWT se guarda en `localStorage` y se entra en `/`.
 - **Registro** (`/register`): `POST /users` (email, contraseña y nombre/teléfono/dirección opcionales) y después login automático con las mismas credenciales.
@@ -70,6 +73,7 @@ Las variables `NEXT_PUBLIC_*` se incorporan al build: tras cambiarlas hay que re
 - **401:** si la API rechaza el token (caducado o inválido), se borra de `localStorage` y se vuelve a `/login`.
 - **Logout:** borra el token y vuelve a `/login`, sin llamar a la API.
 - **Sin refresh tokens:** al caducar el JWT hay que volver a iniciar sesión.
+- **Contraseñas (AUTH-03):** `/forgot-password` → email con enlace (Resend) → `/reset-password?token=…` → `/login`; `/account/change-password` con sesión. El token del enlace caduca (30 minutos por defecto) y solo sirve una vez. Para recibir el email en local: configurar las tres variables de Resend de la sección 3, reiniciar la API y pedir el enlace con el email de tu cuenta de Resend (registrado antes en `/register`). Contexto en [`auth-password-reset.md`](./auth-password-reset.md).
 - **Separación de servicios:** el JWT solo se envía a `services/api`. **Nunca** se envía a la API de 4Geeks (el tracker usa dos clientes distintos) y el website no interviene en la autenticación.
 
 ## 5. CORS
