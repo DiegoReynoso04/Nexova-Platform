@@ -1,4 +1,4 @@
-"""Aplicación FastAPI única del servicio: incidentes, proveedores y autenticación.
+"""Aplicación FastAPI única del servicio: incidentes, gestor de incidencias, proveedores y autenticación.
 
 Arranque: `uv run --env-file .env uvicorn app.main:create_app --factory` (ver README).
 Sin JWT_SECRET_KEY o ACCESS_TOKEN_EXPIRE_MINUTES la app no arranca (ConfigError).
@@ -17,6 +17,8 @@ from app.core.config import Settings
 from app.core.errors import InternalErrorMiddleware, install_error_handlers
 from app.core.limits import BodySizeLimitMiddleware
 from app.database import SupplierRepository
+from app.modules.incident_manager.repository import IncidentRepository
+from app.modules.incident_manager.router import router as incident_manager_router
 from app.modules.incidents.router import router as incidents_router
 from app.modules.incidents.store import LastResultStore
 from app.routes.auth import router as auth_router
@@ -44,6 +46,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.supplier_repository = SupplierRepository(settings.suppliers_db_path)
     # User y Profile: TinyDB en un archivo propio (AUTH_DB_PATH).
     app.state.user_service = UserService(AuthRepository(settings.auth_db_path))
+    # Gestor centralizado de incidencias: TinyDB en INCIDENTS_DB_PATH.
+    app.state.incident_repository = IncidentRepository(settings.incidents_db_path)
     # AUTH-03: envío del enlace de restablecimiento (los tests lo sustituyen).
     app.state.email_sender = build_email_sender(settings)
 
@@ -51,6 +55,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Rutas existentes con datos sensibles: todas exigen un JWT válido (AUTH-01).
     authenticated = [Depends(get_current_user)]
     app.include_router(incidents_router, prefix="/api/incidents", dependencies=authenticated)
+    # Gestor de incidencias: mismo prefijo, después del analizador. Sus rutas con id
+    # usan el convertidor uuid, así que no capturan /analyze ni /results/export.
+    app.include_router(incident_manager_router, prefix="/api/incidents", dependencies=authenticated)
     app.include_router(suppliers_router, prefix="/suppliers", dependencies=authenticated)
     # Públicas: /auth/login, POST /users, /auth/forgot-password y /auth/reset-password;
     # el resto (incluida /auth/change-password) declara su propia dependencia.

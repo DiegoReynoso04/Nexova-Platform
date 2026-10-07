@@ -34,6 +34,9 @@ INITIAL_STATUS: Final = IncidentStatus.OPEN
 # Campos que se pueden enviar al crear una incidencia. `id`, `created_at` y
 # `updated_at` los genera el sistema.
 INPUT_FIELDS: Final[tuple[str, ...]] = ("title", "description", "category", "status", "origin", "branch")
+# Filtros del listado y único campo del cambio de estado.
+FILTER_FIELDS: Final[tuple[str, ...]] = ("status", "origin", "branch", "category")
+STATUS_CHANGE_FIELDS: Final[tuple[str, ...]] = ("status",)
 
 
 _Choice = TypeVar("_Choice", bound=StrEnum)
@@ -47,6 +50,8 @@ class FieldErrorCode(StrEnum):
     INVALID_CHOICE = "invalid_choice"
     UNKNOWN_FIELD = "unknown_field"
     INVALID_TRANSITION = "invalid_transition"
+    # El cuerpo de la petición no es un objeto JSON (lo detecta la capa HTTP).
+    INVALID_BODY = "invalid_body"
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +89,16 @@ class IncidentDraft:
     __str__ = __repr__
 
 
+@dataclass(frozen=True, slots=True)
+class IncidentFilters:
+    """Filtros opcionales del listado; `None` = sin filtrar por ese campo. Se combinan con AND."""
+
+    status: IncidentStatus | None = None
+    origin: IncidentOrigin | None = None
+    branch: Branch | None = None
+    category: IncidentCategory | None = None
+
+
 def can_transition(current: IncidentStatus, target: IncidentStatus) -> bool:
     return target in ALLOWED_TRANSITIONS[current]
 
@@ -111,10 +126,7 @@ def validate_incident_fields(
     Un valor `None` cuenta como ausente. Lanza `IncidentValidationError` con
     todos los errores encontrados, no solo el primero.
     """
-    errors: list[FieldError] = [
-        FieldError(name, FieldErrorCode.UNKNOWN_FIELD, f"{name} is not an incident field")
-        for name in sorted(set(raw) - set(INPUT_FIELDS))
-    ]
+    errors = _unknown_fields(raw, INPUT_FIELDS)
     title = _required_text(raw, "title", errors, max_length=TITLE_MAX_LENGTH)
     description = _required_text(raw, "description", errors)
     category = _required_choice(raw, "category", IncidentCategory, errors)
@@ -129,6 +141,46 @@ def validate_incident_fields(
     assert title is not None and description is not None and category is not None
     assert status is not None and origin is not None and branch is not None
     return IncidentDraft(title, description, category, status, origin, branch)
+
+
+def validate_filters(raw: Mapping[str, str | None]) -> IncidentFilters:
+    """Valida los filtros del listado (`None` = ausente). Un valor fuera del vocabulario es un error."""
+    errors: list[FieldError] = []
+    vocabularies: dict[str, type[StrEnum]] = {
+        "status": IncidentStatus,
+        "origin": IncidentOrigin,
+        "branch": Branch,
+        "category": IncidentCategory,
+    }
+    values = {
+        name: None if raw.get(name) is None else _choice(raw.get(name), name, list(vocabularies[name]), errors)
+        for name in FILTER_FIELDS
+    }
+    if errors:
+        raise IncidentValidationError(errors)
+    return IncidentFilters(**values)  # type: ignore[arg-type]
+
+
+def validate_status_change(raw: Mapping[str, object]) -> IncidentStatus:
+    """Valida el cuerpo de un cambio de estado: solo `status`, obligatorio, uno de los cuatro estados.
+
+    No comprueba la transición (depende del estado actual): ver `check_transition`.
+    """
+    errors = _unknown_fields(raw, STATUS_CHANGE_FIELDS)
+    status = _required_choice(raw, "status", IncidentStatus, errors)
+    if errors:
+        errors.sort(key=_error_order)
+        raise IncidentValidationError(errors)
+    assert status is not None
+    return status
+
+
+def _unknown_fields(raw: Mapping[str, object], accepted: tuple[str, ...]) -> list[FieldError]:
+    # El mensaje no repite el nombre recibido: ya va en `field`.
+    return [
+        FieldError(name, FieldErrorCode.UNKNOWN_FIELD, "this field is not accepted")
+        for name in sorted(set(raw) - set(accepted))
+    ]
 
 
 def _error_order(error: FieldError) -> int:

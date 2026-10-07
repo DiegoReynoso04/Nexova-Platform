@@ -8,10 +8,13 @@ from nexova_shared.incidents import (
     IncidentCategory,
     IncidentOrigin,
     IncidentStatus,
+    IncidentFilters,
     IncidentValidationError,
     can_transition,
     check_transition,
+    validate_filters,
     validate_incident_fields,
+    validate_status_change,
 )
 
 OPEN = IncidentStatus.OPEN
@@ -198,6 +201,62 @@ class InvalidIncidentTests(unittest.TestCase):
         draft = validate_incident_fields(valid_input(description="Hidden customer detail"))
         for text in (repr(draft), str(draft), repr([draft])):
             self.assertNotIn("Hidden", text)
+
+
+class FilterTests(unittest.TestCase):
+    def test_no_filters(self) -> None:
+        self.assertEqual(validate_filters({}), IncidentFilters())
+        self.assertEqual(validate_filters({"status": None, "branch": None}), IncidentFilters())
+
+    def test_every_filter(self) -> None:
+        filters = validate_filters({"status": "open", "origin": "branch", "branch": "remote", "category": "sla_breach"})
+        self.assertEqual(
+            filters, IncidentFilters(OPEN, IncidentOrigin.BRANCH, Branch.REMOTE, IncidentCategory.SLA_BREACH)
+        )
+
+    def test_invalid_values_are_reported_per_field(self) -> None:
+        with self.assertRaises(IncidentValidationError) as caught:
+            validate_filters({"status": "OPEN", "origin": "", "branch": "leak@example.invalid", "category": "sla_breach"})
+        self.assertEqual(
+            [(e.field, e.error) for e in caught.exception.errors],
+            [("status", FieldErrorCode.INVALID_CHOICE), ("origin", FieldErrorCode.INVALID_CHOICE), ("branch", FieldErrorCode.INVALID_CHOICE)],
+        )
+        for error in caught.exception.errors:
+            self.assertNotIn("leak", error.message)
+
+    def test_other_query_names_are_ignored(self) -> None:
+        self.assertEqual(validate_filters({"page": "2"}), IncidentFilters())
+
+
+class StatusChangeTests(unittest.TestCase):
+    def test_every_status_is_a_valid_target_value(self) -> None:
+        for status in IncidentStatus:
+            with self.subTest(status=status.value):
+                self.assertIs(validate_status_change({"status": status.value}), status)
+
+    def test_status_is_required(self) -> None:
+        for raw in ({}, {"status": None}):
+            with self.subTest(raw=raw), self.assertRaises(IncidentValidationError) as caught:
+                validate_status_change(raw)
+            self.assertEqual([(e.field, e.error) for e in caught.exception.errors], [("status", FieldErrorCode.MISSING)])
+
+    def test_invalid_value(self) -> None:
+        with self.assertRaises(IncidentValidationError) as caught:
+            validate_status_change({"status": "closed"})
+        (error,) = caught.exception.errors
+        self.assertEqual((error.field, error.error), ("status", FieldErrorCode.INVALID_CHOICE))
+        self.assertEqual(error.message, "status must be one of: open, in_progress, resolved, discarded")
+
+    def test_only_status_can_change(self) -> None:
+        with self.assertRaises(IncidentValidationError) as caught:
+            validate_status_change({"status": "in_progress", "title": "Other"})
+        self.assertEqual([(e.field, e.error) for e in caught.exception.errors], [("title", FieldErrorCode.UNKNOWN_FIELD)])
+
+    def test_unknown_field_message_does_not_repeat_the_name(self) -> None:
+        with self.assertRaises(IncidentValidationError) as caught:
+            validate_status_change({"status": "open", "leak@example.invalid": 1})
+        (error,) = caught.exception.errors
+        self.assertEqual(error.message, "this field is not accepted")
 
 
 if __name__ == "__main__":

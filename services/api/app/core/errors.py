@@ -114,6 +114,30 @@ class IncorrectPasswordError(ApiError):
         super().__init__(400, "incorrect_password", "current password is incorrect")
 
 
+# Gestor centralizado de incidencias. A diferencia del resto de la API (422),
+# su validación responde 400 con un error por campo `{field, error, message}`
+# (exigencia del enunciado del proyecto; SPECS Parte E). Los mensajes vienen de
+# nexova_shared y nunca repiten el valor recibido.
+FieldErrorDetail = dict[str, str]
+
+
+class IncidentFieldsError(ApiError):
+    def __init__(self, errors: list[FieldErrorDetail]) -> None:
+        super().__init__(400, "validation_error", "")
+        self.detail = errors
+
+
+class InvalidStatusTransitionApiError(ApiError):
+    def __init__(self, errors: list[FieldErrorDetail]) -> None:
+        super().__init__(400, "invalid_status_transition", "")
+        self.detail = errors
+
+
+class IncidentNotFoundError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(404, "incident_not_found", "incident not found")
+
+
 class FileTooLargeError(ApiError):
     def __init__(self, max_bytes: int) -> None:
         super().__init__(413, "file_too_large", f"request body exceeds the {max_bytes} bytes limit")

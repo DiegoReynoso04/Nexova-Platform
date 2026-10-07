@@ -4,6 +4,48 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-07 — Gestor centralizado de incidencias, F4: API `/api/incidents` (`services/api`)
+
+**Estado: hecho, validado y comiteado** (commit de F4), en `feature/centralized-incident-manager`, después de F3 (`ef040f5`). Sin tocar `uis/` (F5).
+
+**Qué se hizo:**
+- **`app/modules/incident_manager/router.py`:** router propio con prefijo `/api/incidents` y JWT obligatorio (dependencia del router en `app/main.py`, incluido después del del analizador). Rutas:
+  - `POST` (201, nace `open`);
+  - `GET` con filtros `status`/`origin`/`branch`/`category` (AND);
+  - `GET /summary`;
+  - `GET /{incident_id:uuid}`;
+  - `PATCH /{incident_id:uuid}/status`.
+- **Ninguna regla en la API:** usa `validate_incident_fields`, `validate_filters` y `validate_status_change` (nuevas en `nexova_shared`) y `check_transition` vía el repositorio.
+- **Errores solo de este router:**
+  - `IncidentManagerRoute` convierte `RequestValidationError` (body no JSON, no objeto o ausente) en 400 `validation_error` con `field = "body"` y `error = "invalid_body"`. Solo usa la ubicación del error, nunca `input` ni `msg`;
+  - el resto de 400 vienen de los `FieldError` de `nexova_shared`;
+  - transición no permitida → 400 `invalid_status_transition`;
+  - 404 `incident_not_found`; id no UUID → 404 `not_found` (convertidor `uuid`);
+  - 500 opaco del middleware existente.
+  - El handler global del 422 no se tocó: proveedores y auth siguen en 422.
+- **Errores nuevos en `app/core/errors.py`:** `IncidentFieldsError`, `InvalidStatusTransitionApiError`, `IncidentNotFoundError`.
+- **`nexova_shared`:**
+  - `IncidentFilters`, `validate_filters`, `validate_status_change`, `FILTER_FIELDS`, `STATUS_CHANGE_FIELDS` y el código `invalid_body`;
+  - el mensaje de campo desconocido ya no repite la clave recibida ("this field is not accepted");
+  - +9 tests en `test_rules.py`.
+- **Tests:** `services/api/tests/test_incident_manager_api.py`, 43 tests:
+  - cada ruta con su caso feliz y cada 400 de la lista del usuario;
+  - las 16 transiciones por HTTP;
+  - base vacía; totales tras el seed del fixture;
+  - 401 en las 5 rutas; 404;
+  - 500 forzado sin traza ni mensaje, también en los logs;
+  - OpenAPI;
+  - no regresión: 405 de `/analyze` y `/results/export`, 404 de `/api/incidents/unknown`, 422 de `/suppliers`, `/users` y `/profiles/me`.
+- **Docs:**
+  - `services/api/SPECS.md`: **Parte E** (§28–§33: requisitos, decisiones P4-1…P4-13, endpoints, errores, resumen, persistencia) y referencias en §4, §7 y §20;
+  - `services/api/README.md`: endpoints, sección del gestor, tests y estructura;
+  - `packages/shared/README.md`;
+  - `AGENTS.md` §4: verificar en `/docs`.
+
+**Validación ejecutada:** `services/api` 289 OK (246 + 43); `packages/shared` 81 OK; analizador 118 OK (7 skipped); `src/` 97 OK. En `/openapi.json` aparecen las 5 rutas nuevas, con los filtros como `enum`.
+
+---
+
 ## 2026-10-07 — Gestor centralizado de incidencias, F3: seed de datos históricos (`scripts/seed_incidents.py`)
 
 **Estado: hecho, validado y comiteado** (commit de F3), en `feature/centralized-incident-manager`, después de F2 (`959a65b`). Sin rutas HTTP (F4) y sin tocar `uis/`.
@@ -508,7 +550,7 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 
 ## Próximos pasos conocidos (no implementados aquí)
 
-- **Gestor centralizado de incidencias:** F1 (validación compartida en `packages/shared`, `164a183`), F2 (modelo + repositorio TinyDB en `services/api`, `959a65b`) y F3 (`scripts/seed_incidents.py`) hechas y comiteadas en `feature/centralized-incident-manager` (entradas 2026-10-07). Siguen F4 (API `/api/incidents`), F5 (UI `/incident-manager` en `uis/backoffice`) y F6 (docs), una fase por commit y con visto bueno entre fases. Decisiones P4-1…P4-13 en la entrada de F1.
+- **Gestor centralizado de incidencias:** F1 (validación compartida en `packages/shared`, `164a183`), F2 (modelo + repositorio TinyDB en `services/api`, `959a65b`) F3 (`scripts/seed_incidents.py`, `ef040f5`) y F4 (API `/api/incidents`, SPECS Parte E) hechas y comiteadas en `feature/centralized-incident-manager` (entradas 2026-10-07). Siguen F5 (UI `/incident-manager` en `uis/backoffice`) y F6 (docs), una fase por commit y con visto bueno entre fases. Decisiones P4-1…P4-13 en la entrada de F1.
 - **Backend general de Nexova:** `docs/ARCHITECTURE_PROPOSAL.md` está pendiente de revisión por el CTO. Si se aprueba, sus dominios (candidatos, vacantes, pipeline, matching) tendrán que decidir cómo convivir con el `services/api/` ya existente del procesador de incidentes (mismo servicio o no, prefijo `/api/v1` o no). Nada de eso se ha iniciado.
 - **Procesador de incidentes:** Fases 1, 2 y 3 (`/incidents` en `uis/backoffice`) hechas e integradas en `main` (PR #6). Existe un fixture sintético de aceptación que reproduce las cifras del contexto (entrada 2026-09-27, PR #7). Pendientes: el test de aceptación con el CSV real (las cifras 100/96/4 no están verificadas con datos reales) y la Fase 4 (integración). Antes de la Fase 4 o de un uso multiusuario real, revisar la deuda de `LastResultStore` (ver "Decisiones y problemas conocidos").
 - `uis/backoffice` es un punto de entrada — tiene `/incidents` y `/suppliers`; el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.

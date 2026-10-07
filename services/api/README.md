@@ -5,7 +5,7 @@ Una sola aplicación FastAPI con estos dominios:
 - **Analizador de incidentes** (`/api/incidents/*`) — descrito a continuación.
 - **Directorio de proveedores** (`/suppliers*`, FastAPI + TinyDB + Pydantic) — ver [Directorio de proveedores](#directorio-de-proveedores) y `SPECS.md` Parte B.
 - **Autenticación (AUTH-01)** (`/auth`, `/users`, `/profiles`; JWT + bcrypt, `User`/`Profile` en TinyDB) — ver [Autenticación](#autenticación-auth-01), `SPECS.md` Parte C y [`docs/auth-api.md`](../../docs/auth-api.md). **Todas las rutas de incidentes y proveedores exigen un JWT válido.**
-- **Gestor centralizado de incidencias** (en curso: modelo, repositorio TinyDB y seed; rutas HTTP en una fase posterior) — ver [Gestor centralizado de incidencias](#gestor-centralizado-de-incidencias-en-curso).
+- **Gestor centralizado de incidencias** (`/api/incidents`, `/api/incidents/summary`, `/api/incidents/{id}`; TinyDB + seed del histórico; validación con **400**, no 422) — ver [Gestor centralizado de incidencias](#gestor-centralizado-de-incidencias) y `SPECS.md` Parte E.
 
 ## Analizador de incidentes
 
@@ -43,6 +43,11 @@ Columna *Auth*: 🔓 pública · 🔒 JWT válido · 👤 propio usuario o admin
 | `POST` | `/auth/forgot-password` | 🔓 | `{email}` → envía un enlace de restablecimiento si el email existe; siempre 200 (AUTH-03) |
 | `POST` | `/auth/reset-password` | 🔓 | `{token, new_password}` → cambia la contraseña; 400 si el token es inválido, caducó o ya se usó |
 | `POST` | `/auth/change-password` | 🔒 | `{current_password, new_password}` → cambia la contraseña; 400 si la actual es incorrecta |
+| `POST` | `/api/incidents` | 🔒 | Gestor de incidencias: registra una incidencia (201, nace `open`); 400 por campo |
+| `GET` | `/api/incidents` | 🔒 | Lista incidencias (más recientes primero); filtros opcionales `status`, `origin`, `branch`, `category` (AND) |
+| `GET` | `/api/incidents/summary` | 🔒 | Totales por estado, categoría, origen y sede (todas las claves, también a 0) |
+| `GET` | `/api/incidents/{id}` | 🔒 | Detalle (id UUID; 404 si no existe o no es un UUID) |
+| `PATCH` | `/api/incidents/{id}/status` | 🔒 | Cambia solo el estado; 400 `invalid_status_transition` si el ciclo de vida no lo permite |
 
 Sin token válido → **401**; token válido sobre un recurso ajeno o una acción de admin → **403** (`SPECS.md` §21). Ninguna respuesta incluye `password` ni `hashed_password`.
 
@@ -173,11 +178,12 @@ Sin uv, con el venv del servicio: `python -m app.auth.create_admin --email ...`.
 - Con `MAX_UPLOAD_BYTES` > 1 MiB, Starlette puede volcar el archivo subido a un temporal en disco durante la petición.
 - Las respuestas 200 de análisis y exportación llevan `Cache-Control: no-store`.
 
-## Gestor centralizado de incidencias (en curso)
+## Gestor centralizado de incidencias
 
-Registro estructurado de incidencias de Nexova (Sergio Molina, CTO; Roberto Díaz, Customer Support Lead). Contexto: [`docs/centralized-incident-manager.md`](../../docs/centralized-incident-manager.md). Vocabulario, reglas y mapeo del CSV: [`packages/shared`](../../packages/shared/README.md) (`nexova_shared.incidents`); aquí no se repite ningún valor. **Todavía sin rutas HTTP** (fase F4): hoy existen el modelo, el repositorio y el seed.
+Registro estructurado de incidencias de Nexova (Sergio Molina, CTO; Roberto Díaz, Customer Support Lead). Contexto: [`docs/centralized-incident-manager.md`](../../docs/centralized-incident-manager.md). Vocabulario, reglas y mapeo del CSV: [`packages/shared`](../../packages/shared/README.md) (`nexova_shared.incidents`); aquí no se repite ningún valor. Contrato HTTP y decisiones (P4-1…P4-13): `SPECS.md` Parte E. La interfaz web (`uis/backoffice`) llega en una fase posterior.
 
 - **Persistencia:** TinyDB en `data/incidents.json` (configurable con `INCIDENTS_DB_PATH`), tablas `incidents` (id UUID v4, `created_at`/`updated_at` en UTC generados por el repositorio) y `seed_keys` (solo el SHA-256 de la clave de origen de cada registro histórico y el `id` de la incidencia creada; el `ticket_id` nunca se guarda en claro).
+- **API** (`app/modules/incident_manager/router.py`, router propio con prefijo `/api/incidents` y JWT): `POST` (201), `GET` con filtros, `GET /summary`, `GET /{id}` y `PATCH /{id}/status`. A diferencia del resto de la API, **la validación responde 400** con `{"code": "validation_error", "detail": [{"field", "error", "message"}]}` (también si el body no es JSON); una transición no permitida, 400 `invalid_status_transition`. Las rutas con id usan el convertidor `uuid`: `GET /api/incidents/analyze` sigue en 405 y un id que no es UUID da 404. Prueba manual en `/docs`: *Authorize* → `POST /api/incidents` → `PATCH …/status`.
 - **Repositorio** (`app/modules/incident_manager/repository.py`): filtros combinables por `status`, `origin`, `branch` y `category`; cambio de estado solo por transición válida del ciclo de vida (actualiza `updated_at`); resumen con todas las claves de cada enumerado. Sin base o con la base vacía, las lecturas devuelven lista vacía y totales a cero, y no crean el archivo.
 
 ### Seed de datos históricos (`scripts/seed_incidents.py`)
@@ -234,6 +240,7 @@ La suite del núcleo (Fase 1) no necesita el venv: `python -m unittest discover 
 | `test_auth.py` | AUTH-01: registro (hash bcrypt, sin texto plano, `Profile` automático, `role=user` fijado por el backend y `role` en el body → 422, 409), login (401 genérico, solo formulario), JWT (`sub`/`exp`, expirado, mal formado, otra clave, `alg: none`), `/users` (401/403/admin, propio vs ajeno, cambio de rol, borrado en cascada), `/profiles/me`, `/auth/me` sin credenciales |
 | `test_auth_protection.py` | Las 8 rutas existentes: 401 sin token o con token inválido/expirado y funcionamiento con token válido; rutas públicas; esquema OAuth2 en OpenAPI; CORS `Authorization`; `JWT_SECRET_KEY`/`ACCESS_TOKEN_EXPIRE_MINUTES` obligatorias |
 | `test_incident_manager_repository.py` | Gestor de incidencias: base inexistente o vacía (lista vacía, resumen a cero, sin crear el archivo), id UUID y fechas UTC, filtros combinados, resumen con todas las claves, transiciones válidas/inválidas/finales, seed idempotente, totales del CONTEXT y `seed_keys` sin `ticket_id` en claro |
+| `test_incident_manager_api.py` | Gestor de incidencias por HTTP: caso feliz y cada 400 de cada ruta (ausente, vacío, valor no permitido, título > 120, campo desconocido, id/fechas del cliente, `status` ≠ `open` al crear, filtro inválido, body no JSON/no objeto, PATCH sin `status`), las 16 transiciones, base vacía, totales tras el seed, 401 en las 5 rutas, 404 (inexistente / no UUID), 500 opaco, OpenAPI y no regresión (405 de `/analyze`, 404 de rutas desconocidas, 422 de proveedores y auth) |
 | `test_incident_manager_seed.py` | `scripts/seed_incidents.py`: informe exacto con el fixture de aceptación (96 insertadas, filas inválidas 18/45/71/93), segunda ejecución sin duplicados, resumen tras el seed, no mapeables y duplicadas por número de fila, ningún contenido de fila en consola ni emails/`ticket_id` en la base, códigos de salida (CSV inexistente, cabecera de otro esquema, vacío, no UTF-8) e `INCIDENTS_DB_PATH` |
 | `test_create_admin.py` | `create-admin`: admin + `Profile` + hash bcrypt, email existente, contraseñas distintas, entrada inválida; nunca imprime la contraseña |
 
@@ -265,7 +272,8 @@ app/
 ├── database.py              # Proveedores: TinyDB (SupplierRepository, thread-safe, un archivo JSON)
 ├── seed.py                  # Proveedores: SUPPLIERS_SEED + entry point de `uv run seed`
 ├── routes/suppliers.py      # Proveedores: 6 endpoints /suppliers
-├── modules/incident_manager/  # Gestor centralizado de incidencias (sin rutas HTTP todavía)
+├── modules/incident_manager/  # Gestor centralizado de incidencias (SPECS Parte E)
+│   ├── router.py            # 5 endpoints /api/incidents, 400 propio (IncidentManagerRoute)
 │   ├── models.py            # Incident, IncidentSummary (enums de nexova_shared)
 │   └── repository.py        # IncidentRepository: TinyDB (incidents + seed_keys), filtros, transiciones, resumen, seed
 └── modules/incidents/
