@@ -19,8 +19,8 @@ Fuente: [`docs/COMPANY_INCIDENT_FILE_ANALIZER_PROJECT.md`](../../docs/COMPANY_IN
 
 | Requisito | Dónde se cumple |
 |---|---|
-| Estructura del CSV (9 campos, UTF-8, cabecera, coma) | `incident_analyzer` (`schema.py`, `reader.py`) |
-| Las 7 reglas de registros inválidos y su recuento por regla | `incident_analyzer` (`validation.py`, `metrics.py`) |
+| Estructura del CSV (9 campos, UTF-8, cabecera, coma) | `incident_analyzer` (`schema.py`, `reader.py`, reexportados de `packages/shared` → `nexova_shared.incident_csv`) |
+| Las 7 reglas de registros inválidos y su recuento por regla | `incident_analyzer` (`validation.py`, reexportado de `nexova_shared.incident_csv`; `metrics.py`) |
 | Métricas: totales, desglose por categoría y por estado sobre válidos, índice de satisfacción de CLOSED | `incident_analyzer` (`metrics.py`) |
 | Exportación "una métrica por fila" | `incident_analyzer` (`export.py`, formato `metric,value`) |
 | Privacidad: `customer_email` nunca en ninguna salida, "ni siquiera en errores"; nada de enviar datos a herramientas de IA externas | núcleo (solo conteos) + API (§5 de este documento) |

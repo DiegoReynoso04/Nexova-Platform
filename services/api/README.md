@@ -57,10 +57,10 @@ Python 3.11 o superior (verificado con 3.14.6). Dependencias (`pyproject.toml`),
 python -m venv services/api/.venv
 # Windows (PowerShell):  services\api\.venv\Scripts\Activate.ps1
 # Linux/macOS:           source services/api/.venv/bin/activate
-python -m pip install -e packages/incident-analyzer -e "services/api[dev]"
+python -m pip install -e packages/shared -e packages/incident-analyzer -e "services/api[dev]"
 ```
 
-**Instalar siempre los dos en la misma orden.** El núcleo (`packages/incident-analyzer`) no está publicado y **no** figura en las dependencias de `pyproject.toml` a propósito: su nombre está libre en PyPI y declararlo haría que pip lo buscase allí (*dependency confusion*). `pip install -e "services/api[dev]"` a solas instala el servicio pero no el núcleo, y la API fallará al importar `incident_analyzer`. `.venv/` y `*.egg-info/` están en `.gitignore`.
+**Instalar siempre los tres en la misma orden.** El núcleo (`packages/incident-analyzer`) y la validación compartida que usa (`packages/shared`, paquete `nexova_shared`) no están publicados y **no** figuran en las dependencias de `pyproject.toml` a propósito: sus nombres están libres en PyPI y declararlos haría que pip los buscase allí (*dependency confusion*). `pip install -e "services/api[dev]"` a solas instala el servicio pero no el núcleo, y la API fallará al importar `incident_analyzer`. (Si falta solo `nexova_shared`, el núcleo lo encuentra igualmente en el monorepo, pero el venv documentado lo instala.) `.venv/` y `*.egg-info/` están en `.gitignore`.
 
 ## Arranque
 
