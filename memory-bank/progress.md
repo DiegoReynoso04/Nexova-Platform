@@ -4,6 +4,56 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-07 — Gestor centralizado de incidencias, F5: UI en `uis/backoffice` (`/incident-manager`, `/incident-manager/new`)
+
+**Estado: hecho, validado y comiteado** (commit de F5), en `feature/centralized-incident-manager`, después de F4 (`d7ce215`). Sin tocar `services/` ni `packages/`; sin dependencias nuevas. El usuario autorizó ampliar el "Alcance actual" de `uis/backoffice/CLAUDE.md` con una cuarta pieza.
+
+**Qué se hizo:**
+- **Rutas y menú:**
+  - `/incident-manager` (resumen arriba y listado debajo; menú «Incidencias»);
+  - `/incident-manager/new` (formulario; menú «Registrar incidencia»);
+  - `/incidents` (el analizador) sin cambios.
+- **Capas:** páginas Server Component → vistas cliente (`components/incident-manager/`) → `hooks/use-incident-board.ts`, `use-incident-summary.ts` y `use-incident-form.ts` (reducer puro + sesión sin React + hook) → `services/incident-manager.service.ts` → `lib/api-client.ts`. `unknown` solo en `services/normalizers.ts`.
+- **Vocabulario** en `types/incident-manager.ts` (excepción documentada, como `/suppliers`): enums, `BRANCH_LABELS`, `INCIDENT_TRANSITIONS` y `TITLE_MAX_LENGTH`. Valores literales; etiquetas solo en `branch`.
+- **Formulario:**
+  - campos `title` (con contador), `description`, `category`, `origin`, `branch` (siempre visible y obligatorio) y `status` en solo lectura (`open`, que se envía en el body);
+  - validación en cliente antes de enviar (obligatorios y título ≤ 120), sin petición de red si no pasa;
+  - con `origin = branch`, `branch` se resalta con borde, fondo y texto de ayuda;
+  - spinner y botón deshabilitado durante el envío;
+  - tras el éxito, confirmación y formulario limpio (`formKey` como `key`).
+- **Errores:** el normalizador descarta el `message` del servidor y el servicio elige un texto en español por `code`, `field` y `error`; el error se muestra junto a su campo.
+- **Listado:**
+  - filtros `status`/`origin`/`branch` enviados a la API;
+  - cuatro estados (`boardView`): cargando, error con «Reintentar», vacío sin tabla y con datos;
+  - cambio de estado por fila solo con transiciones válidas (los finales muestran «Estado final»), optimista con reversión y aviso si falla;
+  - tras un cambio correcto se recarga el resumen.
+- **Resumen:** hook propio, con carga y error propios. El normalizador convierte cada diccionario de la API en una lista `{value, count}` en el orden del CONTEXT, para no usar aserciones de tipo, prohibidas por el test estático.
+- **Tests** (runner nativo de Node 24): `incident-manager-contract`, `incident-manager.service` y `use-incident-manager` (nuevos), `production-source` (ampliado) y `support/incident-fakes.mjs`.
+- **Docs:** `uis/backoffice/CLAUDE.md` (cuarta pieza y sección propia), `uis/backoffice/README.md`, `uis/README.md`, `uis/README.es.md` y `AGENTS.md` §4 (verificación en el navegador del gestor).
+
+**Validación ejecutada:**
+- Backoffice: `npx tsc --noEmit` y `npm run lint` limpios; `npm run build` OK (rutas estáticas `/incident-manager` y `/incident-manager/new`); tests 331 OK frente a la línea base de 263 (+68).
+- Navegador (API real en el puerto 8000 con bases TinyDB temporales fuera del repo, seed del fixture de aceptación, usuario de prueba desechable; backoffice `npm run dev` en el 3000):
+  - resumen con 96 / 27-56-13 / 49-35-12 / customer 96 / central 96;
+  - cambio `open → in_progress` con el resumen recargado;
+  - transición rechazada por la API (estado cambiado por fuera con curl) → la fila vuelve a `in_progress` con el aviso en español;
+  - filtros `status` y `status + origin`, y estado vacío sin tabla;
+  - formulario vacío → 5 errores junto a su campo y ningún `POST` en el log de la API;
+  - título de 121 caracteres → error y sin `POST`;
+  - resalte de `branch` (fondo, borde de 4 px y texto) que desaparece con `internal`;
+  - envío con `fetch` retrasado: botón deshabilitado, «Registrando…», spinner y `aria-busy`; después, confirmación y formulario limpio;
+  - fallo simulado de `/summary` → error y «Reintentar resumen» mientras el listado sigue operativo; fallo simulado del listado → error y «Reintentar» sin tabla, y recuperación;
+  - menú con los dos enlaces nuevos; `/incidents` intacto;
+  - consola: solo el 400 provocado a propósito.
+
+**Pendiente / no verificado:**
+- Un 400 de la API con `field` no se pudo provocar desde la UI real, porque la validación en cliente y los selectores lo impiden; lo cubren los tests del servicio.
+- No se probó con lector de pantalla ni en viewport móvil.
+- `services/api/SPECS.md` §33 sigue diciendo "Pendiente: la UI (F5)": corregirlo en F6 (en esta fase no se tocaba `services/`).
+- F6 (docs y memory-bank finales).
+
+---
+
 ## 2026-10-07 — Gestor centralizado de incidencias, F4: API `/api/incidents` (`services/api`)
 
 **Estado: hecho, validado y comiteado** (commit de F4), en `feature/centralized-incident-manager`, después de F3 (`ef040f5`). Sin tocar `uis/` (F5).
@@ -550,7 +600,7 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 
 ## Próximos pasos conocidos (no implementados aquí)
 
-- **Gestor centralizado de incidencias:** F1 (validación compartida en `packages/shared`, `164a183`), F2 (modelo + repositorio TinyDB en `services/api`, `959a65b`) F3 (`scripts/seed_incidents.py`, `ef040f5`) y F4 (API `/api/incidents`, SPECS Parte E) hechas y comiteadas en `feature/centralized-incident-manager` (entradas 2026-10-07). Siguen F5 (UI `/incident-manager` en `uis/backoffice`) y F6 (docs), una fase por commit y con visto bueno entre fases. Decisiones P4-1…P4-13 en la entrada de F1.
+- **Gestor centralizado de incidencias:** F1 (validación compartida en `packages/shared`, `164a183`), F2 (modelo + repositorio TinyDB en `services/api`, `959a65b`) F3 (`scripts/seed_incidents.py`, `ef040f5`) F4 (API `/api/incidents`, SPECS Parte E, `d7ce215`) y F5 (UI `/incident-manager` y `/incident-manager/new` en `uis/backoffice`) hechas y comiteadas en `feature/centralized-incident-manager` (entradas 2026-10-07). Sigue F6 (docs; incluye corregir SPECS §33), una fase por commit y con visto bueno entre fases. Decisiones P4-1…P4-13 en la entrada de F1.
 - **Backend general de Nexova:** `docs/ARCHITECTURE_PROPOSAL.md` está pendiente de revisión por el CTO. Si se aprueba, sus dominios (candidatos, vacantes, pipeline, matching) tendrán que decidir cómo convivir con el `services/api/` ya existente del procesador de incidentes (mismo servicio o no, prefijo `/api/v1` o no). Nada de eso se ha iniciado.
 - **Procesador de incidentes:** Fases 1, 2 y 3 (`/incidents` en `uis/backoffice`) hechas e integradas en `main` (PR #6). Existe un fixture sintético de aceptación que reproduce las cifras del contexto (entrada 2026-09-27, PR #7). Pendientes: el test de aceptación con el CSV real (las cifras 100/96/4 no están verificadas con datos reales) y la Fase 4 (integración). Antes de la Fase 4 o de un uso multiusuario real, revisar la deuda de `LastResultStore` (ver "Decisiones y problemas conocidos").
 - `uis/backoffice` es un punto de entrada — tiene `/incidents` y `/suppliers`; el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.

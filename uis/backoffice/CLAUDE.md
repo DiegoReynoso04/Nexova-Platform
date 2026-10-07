@@ -4,11 +4,12 @@ Fuente de verdad de negocio: `contexts/CONTEXT.md` si existe en tu checkout (car
 
 ## Alcance actual
 
-El backoffice tiene tres piezas de negocio, y **solo estas tres**, protegidas por la autenticación de AUTH-02 (sección propia abajo):
+El backoffice tiene cuatro piezas de negocio, y **solo estas cuatro**, protegidas por la autenticación de AUTH-02 (sección propia abajo):
 
 1. **Vista de entrada (`/`)** — ficha de empresa y roadmap. Se mantiene tal cual.
 2. **Análisis de incidentes de soporte (`/incidents`)** — capacidad de negocio **autorizada** por el tech lead como Fase 3 del procesador de incidentes de Nexova (rama `feature/incident-analyzer`). Ver sección propia abajo.
 3. **Directorio de proveedores (`/suppliers`)** — autorizado por el tech lead (Sergio Molina) para el encargo de Patricia Solís (rama `api-con-almacenamiento-ligero`). Ver sección propia abajo.
+4. **Gestor centralizado de incidencias (`/incident-manager`, `/incident-manager/new`)** — autorizado por el usuario el 2026-10-07 (rama `feature/centralized-incident-manager`, fase F5). Distinto de `/incidents`. Ver sección propia abajo.
 
 Cualquier otra capacidad de negocio (gestión de personas, operaciones, comunicación interna…) sigue **prohibida** sin un contexto de hito propio que la respalde — mismo criterio que `uis/talent-pipeline-tracker` (que tiene su `SPECS.md`).
 
@@ -55,6 +56,25 @@ Reglas específicas (lo no citado aquí sigue las reglas de `/incidents`: URL de
 - **Arquitectura:** `app/suppliers/page.tsx` (Server Component, metadata) → `components/suppliers/supplier-directory-view.tsx` (`'use client'`) → `hooks/use-supplier-directory.ts` (única frontera de interacción: carreras, cancelación, recarga tras cambios) → `services/suppliers.service.ts` → `lib/api-client.ts`. `unknown` solo en `services/normalizers.ts`.
 - **Navegación:** enlace "Proveedores" en la cabecera del layout.
 
+## Gestor centralizado de incidencias (`/incident-manager`, `/incident-manager/new`)
+
+Autorizado por el usuario el 2026-10-07 (fase F5 del gestor; decisiones P4-1…P4-13 en `services/api/SPECS.md` Parte E). **No confundir con `/incidents`**, el analizador del CSV, que no se toca.
+
+Fuentes de verdad, por orden:
+
+- Requisitos: el enunciado del proyecto (no versionado; resumido en `memory-bank/progress.md`) y [`docs/centralized-incident-manager.md`](../../docs/centralized-incident-manager.md) (vocabulario, etiquetas de sede, ciclo de vida).
+- Contrato HTTP: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte E (`POST`/`GET /api/incidents`, `GET /api/incidents/summary`, `GET /api/incidents/{id}`, `PATCH /api/incidents/{id}/status`). Mismas reglas que `/incidents` para no inventar campos ni endpoints.
+
+Reglas específicas (lo no citado sigue las de `/incidents`: URL de la API, frontera de confianza, capas, sin `console.*` ni persistencia en el navegador):
+
+- **Vocabulario en el frontend (excepción, como en `/suppliers`):** `types/incident-manager.ts` define estados, orígenes, categorías, sedes, las etiquetas de sede (`BRANCH_LABELS`), la tabla de transiciones (`INCIDENT_TRANSITIONS`) y el máximo del título (120). `tests/incident-manager-contract.test.mjs` exige que coincidan con el CONTEXT. Se muestran los valores literales; **solo `branch` usa etiquetas** (las del CONTEXT). No se traducen ni se amplían.
+- **Formulario:** `title`, `description`, `category`, `origin`, `branch` (siempre visible y obligatorio) y `status` en solo lectura (`open`). Validación en cliente antes de enviar (obligatorios y título ≤ 120): si no pasa, **no hay petición de red**. Con `origin = branch` el campo `branch` se resalta con borde, fondo **y un texto de ayuda** (no solo color). Durante el envío: spinner y botón deshabilitado. Tras el éxito, confirmación y formulario limpio (se vuelve a montar con `key = formKey`).
+- **Errores de la API:** la API responde 400 `{code, detail: [{field, error, message}]}`. **El `message` del servidor nunca se muestra**: `normalizeIncidentApiError` lo descarta y `services/incident-manager.service.ts` elige un texto propio en español por `code`, `field` y `error`. Si hay `field`, el mensaje aparece junto a ese campo. `tests/production-source.test.mjs` comprueba que el normalizador no lee `message`.
+- **Listado:** filtros `status`, `origin` y `branch` enviados a la API. Cuatro estados exclusivos (`boardView`): cargando, error con «Reintentar», vacío con mensaje (sin tabla) y con datos. Cambio de estado por fila **solo con transiciones válidas** (`INCIDENT_TRANSITIONS`; los estados finales muestran «Estado final», sin selector), **optimista**: si la API falla, la fila vuelve al estado anterior y muestra el aviso. Tras un cambio correcto se recarga el resumen.
+- **Resumen:** hook propio (`use-incident-summary`), con carga y error propios: si falla, el listado sigue funcionando (y al revés).
+- **Arquitectura:** `app/incident-manager/page.tsx` y `app/incident-manager/new/page.tsx` (Server Components, metadata) → `components/incident-manager/incident-board-view.tsx` / `incident-form-view.tsx` (`'use client'`) → `hooks/use-incident-board.ts`, `use-incident-summary.ts`, `use-incident-form.ts` (reducer puro + sesión sin React + hook) → `services/incident-manager.service.ts` → `lib/api-client.ts`. `unknown` solo en `services/normalizers.ts`. Rutas en `lib/incident-manager-routes.ts`.
+- **Navegación:** enlaces «Incidencias» (`/incident-manager`) y «Registrar incidencia» (`/incident-manager/new`) en la cabecera.
+
 ## Autenticación (AUTH-02)
 
 Autorizada por el ticket AUTH-02 ([`docs/auth-frontend.md`](../../docs/auth-frontend.md)). Contrato HTTP: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte C (`POST /auth/login`, `POST /users`, `GET /auth/me`, `PUT /profiles/me`). Mismas reglas que `/incidents` para no inventar campos ni endpoints.
@@ -76,7 +96,7 @@ Autorizada por el ticket AUTH-02 ([`docs/auth-frontend.md`](../../docs/auth-fron
 
 ## Arquitectura
 
-- Al consumir una API propia (hoy: análisis de incidentes y directorio de proveedores), seguir el mismo patrón de frontera de confianza que `uis/talent-pipeline-tracker`: `services/normalizers.ts` como único lugar con `unknown` de red, errores tipados en `lib/api-client.ts`, y componentes sin HTTP directo.
+- Al consumir una API propia (hoy: análisis de incidentes, directorio de proveedores y gestor de incidencias), seguir el mismo patrón de frontera de confianza que `uis/talent-pipeline-tracker`: `services/normalizers.ts` como único lugar con `unknown` de red, errores tipados en `lib/api-client.ts`, y componentes sin HTTP directo.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

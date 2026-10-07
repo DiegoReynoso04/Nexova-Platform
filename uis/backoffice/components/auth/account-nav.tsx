@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { NavLink } from '@/components/ui/nav-link';
 import { LOGIN_PATH, PROFILE_PATH, REGISTER_PATH } from '@/lib/auth-routes';
+import { INCIDENT_MANAGER_PATH, NEW_INCIDENT_PATH } from '@/lib/incident-manager-routes';
 
 import { useSession } from './session-provider';
 
@@ -24,6 +25,8 @@ export function AccountNav() {
       <nav aria-label="Principal" className="flex flex-wrap items-center gap-4">
         <NavLink href="/incidents">Análisis de incidentes</NavLink>
         <NavLink href="/suppliers">Proveedores</NavLink>
+        <NavLink href={INCIDENT_MANAGER_PATH}>Incidencias</NavLink>
+        <NavLink href={NEW_INCIDENT_PATH}>Registrar incidencia</NavLink>
         <NavLink href={PROFILE_PATH}>Mi perfil</NavLink>
         <span className="text-xs text-ink-muted" title="Sesión iniciada">
           {session.user.email}
