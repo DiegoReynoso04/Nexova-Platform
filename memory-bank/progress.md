@@ -4,6 +4,38 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-07 — Gestor centralizado de incidencias, F3: seed de datos históricos (`scripts/seed_incidents.py`)
+
+**Estado: hecho, validado y comiteado** (commit de F3), en `feature/centralized-incident-manager`, después de F2 (`959a65b`). Sin rutas HTTP (F4) y sin tocar `uis/`.
+
+**Qué se hizo:**
+- **`scripts/seed_incidents.py`**, capa fina:
+  - `nexova_shared.incidents.prepare_seed_batch` lee el CSV con el lector y el esquema del analizador, aplica las 7 reglas y el mapeo;
+  - `IncidentRepository.seed` inserta solo lo nuevo (idempotente por el SHA-256 de la clave de origen).
+- **Argumentos:**
+  - el CSV es opcional; por defecto `data/raw/incidents/incidents-nexova.csv`;
+  - `--db`, opcional; por defecto `INCIDENTS_DB_PATH` o `services/api/data/incidents.json`.
+- **Informe final en español**, como el seeder de proveedores: filas leídas, insertadas, ya existentes, inválidas (fila + códigos de regla), no mapeables (fila + motivo), duplicadas en el archivo (fila) y total en la base. Nunca contenido de las filas.
+- **Códigos de salida:** `1` si el CSV no existe, no es UTF-8 o su cabecera no tiene las columnas del analizador (no se crea la base); `2` si fallan los argumentos, la configuración o el entorno (sin el venv).
+- **Entorno:** se ejecuta con el venv de `services/api`. Si `nexova_shared` o `app` no están instalados, añade sus carpetas del monorepo a `sys.path`, como `scripts/analyze.py`.
+- **Tests:** `services/api/tests/test_incident_manager_seed.py` (14 tests).
+- **Docs:**
+  - `services/api/README.md`: sección del gestor, con el comando exacto del seed con el fixture sintético (Windows y Linux/macOS, verificado en PowerShell), tabla de tests y estructura;
+  - `scripts/README.md` y `README.es.md`: tabla de scripts;
+  - `AGENTS.md` §4: párrafo del gestor (el seed se verifica ejecutándolo dos veces sobre una base temporal).
+
+**Validación ejecutada (base temporal fuera del repo, en el scratchpad de la sesión):**
+- 1.ª ejecución con el fixture de aceptación: 100 filas; 96 insertadas; 4 inválidas (filas 18 `missing_client_company`, 45 `invalid_category`, 71 `invalid_email`, 93 `closed_without_score`); 0 no mapeables; 0 duplicadas; total 96; exit 0.
+- 2.ª ejecución: 0 insertadas, 96 ya existentes, total 96; exit 0.
+- Resumen del repositorio: open 27 / in_progress 0 / resolved 56 / discarded 13; technical_failure 49 / process_error 35 / client_complaint 12 y el resto de categorías 0; customer 96 (branch e internal 0); central 96 (resto de sedes 0).
+- En el archivo de la base hay 0 apariciones de `@`, `ticket_id`, `NXV-`, `example.invalid` y `AGT-`.
+- CSV inexistente → exit 1; cabecera de otro esquema → exit 1 (`missing required columns`).
+- Suites: `services/api` 246 OK (232 + 14); `packages/shared` 72; analizador 118 (7 skipped); `src/` 97.
+
+**Aviso:** en Git Bash, con la salida redirigida, las tildes del informe se ven mal, porque Python escribe en cp1252 y la terminal lee UTF-8. En PowerShell se ven bien. No se cambió la codificación de salida.
+
+---
+
 ## 2026-10-07 — Gestor centralizado de incidencias, F2: modelo y repositorio TinyDB (`services/api`)
 
 **Estado: hecho, validado y comiteado** (commit de F2), en `feature/centralized-incident-manager`, después del commit de F1 (`164a183`). Sin rutas HTTP todavía (F4) y sin tocar `uis/`.
@@ -476,7 +508,7 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 
 ## Próximos pasos conocidos (no implementados aquí)
 
-- **Gestor centralizado de incidencias:** F1 (validación compartida en `packages/shared`, `164a183`) y F2 (modelo + repositorio TinyDB en `services/api`) hechas y comiteadas en `feature/centralized-incident-manager` (entradas 2026-10-07). Siguen F3 (`scripts/seed_incidents.py`), F4 (API `/api/incidents`), F5 (UI `/incident-manager` en `uis/backoffice`) y F6 (docs), una fase por commit y con visto bueno entre fases. Decisiones P4-1…P4-13 en la entrada de F1.
+- **Gestor centralizado de incidencias:** F1 (validación compartida en `packages/shared`, `164a183`), F2 (modelo + repositorio TinyDB en `services/api`, `959a65b`) y F3 (`scripts/seed_incidents.py`) hechas y comiteadas en `feature/centralized-incident-manager` (entradas 2026-10-07). Siguen F4 (API `/api/incidents`), F5 (UI `/incident-manager` en `uis/backoffice`) y F6 (docs), una fase por commit y con visto bueno entre fases. Decisiones P4-1…P4-13 en la entrada de F1.
 - **Backend general de Nexova:** `docs/ARCHITECTURE_PROPOSAL.md` está pendiente de revisión por el CTO. Si se aprueba, sus dominios (candidatos, vacantes, pipeline, matching) tendrán que decidir cómo convivir con el `services/api/` ya existente del procesador de incidentes (mismo servicio o no, prefijo `/api/v1` o no). Nada de eso se ha iniciado.
 - **Procesador de incidentes:** Fases 1, 2 y 3 (`/incidents` en `uis/backoffice`) hechas e integradas en `main` (PR #6). Existe un fixture sintético de aceptación que reproduce las cifras del contexto (entrada 2026-09-27, PR #7). Pendientes: el test de aceptación con el CSV real (las cifras 100/96/4 no están verificadas con datos reales) y la Fase 4 (integración). Antes de la Fase 4 o de un uso multiusuario real, revisar la deuda de `LastResultStore` (ver "Decisiones y problemas conocidos").
 - `uis/backoffice` es un punto de entrada — tiene `/incidents` y `/suppliers`; el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.

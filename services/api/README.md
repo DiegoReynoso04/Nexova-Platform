@@ -1,10 +1,11 @@
 # services/api — API de Nexova
 
-Una sola aplicación FastAPI con tres dominios:
+Una sola aplicación FastAPI con estos dominios:
 
 - **Analizador de incidentes** (`/api/incidents/*`) — descrito a continuación.
 - **Directorio de proveedores** (`/suppliers*`, FastAPI + TinyDB + Pydantic) — ver [Directorio de proveedores](#directorio-de-proveedores) y `SPECS.md` Parte B.
 - **Autenticación (AUTH-01)** (`/auth`, `/users`, `/profiles`; JWT + bcrypt, `User`/`Profile` en TinyDB) — ver [Autenticación](#autenticación-auth-01), `SPECS.md` Parte C y [`docs/auth-api.md`](../../docs/auth-api.md). **Todas las rutas de incidentes y proveedores exigen un JWT válido.**
+- **Gestor centralizado de incidencias** (en curso: modelo, repositorio TinyDB y seed; rutas HTTP en una fase posterior) — ver [Gestor centralizado de incidencias](#gestor-centralizado-de-incidencias-en-curso).
 
 ## Analizador de incidentes
 
@@ -172,6 +173,32 @@ Sin uv, con el venv del servicio: `python -m app.auth.create_admin --email ...`.
 - Con `MAX_UPLOAD_BYTES` > 1 MiB, Starlette puede volcar el archivo subido a un temporal en disco durante la petición.
 - Las respuestas 200 de análisis y exportación llevan `Cache-Control: no-store`.
 
+## Gestor centralizado de incidencias (en curso)
+
+Registro estructurado de incidencias de Nexova (Sergio Molina, CTO; Roberto Díaz, Customer Support Lead). Contexto: [`docs/centralized-incident-manager.md`](../../docs/centralized-incident-manager.md). Vocabulario, reglas y mapeo del CSV: [`packages/shared`](../../packages/shared/README.md) (`nexova_shared.incidents`); aquí no se repite ningún valor. **Todavía sin rutas HTTP** (fase F4): hoy existen el modelo, el repositorio y el seed.
+
+- **Persistencia:** TinyDB en `data/incidents.json` (configurable con `INCIDENTS_DB_PATH`), tablas `incidents` (id UUID v4, `created_at`/`updated_at` en UTC generados por el repositorio) y `seed_keys` (solo el SHA-256 de la clave de origen de cada registro histórico y el `id` de la incidencia creada; el `ticket_id` nunca se guarda en claro).
+- **Repositorio** (`app/modules/incident_manager/repository.py`): filtros combinables por `status`, `origin`, `branch` y `category`; cambio de estado solo por transición válida del ciclo de vida (actualiza `updated_at`); resumen con todas las claves de cada enumerado. Sin base o con la base vacía, las lecturas devuelven lista vacía y totales a cero, y no crean el archivo.
+
+### Seed de datos históricos (`scripts/seed_incidents.py`)
+
+Carga el CSV del helpdesk (el del analizador de incidentes) con `origin = customer` y `branch = central`. Cada fila pasa por las 7 reglas del analizador y por el mapeo del CONTEXT (estado, categoría, `description` → `title` de 120 caracteres, `date` → `created_at` a medianoche UTC); nunca se inserta una fila tal cual. Es **idempotente**: una segunda ejecución no duplica nada.
+
+Se ejecuta con el intérprete del venv de `services/api` (necesita `tinydb` y `pydantic`), desde la raíz del monorepo. Con el **fixture sintético de aceptación** (100 filas, 96 válidas; no son datos de Nexova) y una base temporal:
+
+```bash
+# Windows (PowerShell)
+services\api\.venv\Scripts\python scripts\seed_incidents.py packages\incident-analyzer\tests\fixtures\incidents-acceptance-synthetic.csv --db $env:TEMP\incidents-demo.json
+# Linux/macOS
+services/api/.venv/bin/python scripts/seed_incidents.py packages/incident-analyzer/tests/fixtures/incidents-acceptance-synthetic.csv --db /tmp/incidents-demo.json
+```
+
+- Sin ruta del CSV se lee `data/raw/incidents/incidents-nexova.csv` (el dataset real, ignorado por git). Sin `--db` se usa `INCIDENTS_DB_PATH` o, si no está definida, `services/api/data/incidents.json`.
+- Informe final en consola: filas leídas, insertadas, ya existentes, inválidas (número de fila + código de regla), no mapeables (número de fila + motivo), duplicadas en el archivo y total en la base. **Nunca** muestra contenido de las filas (ni emails, ni descripciones, ni `ticket_id`).
+- Códigos de salida: `0` correcto · `1` CSV inexistente, no UTF-8 o con una cabecera sin las columnas del analizador · `2` argumentos, configuración o entorno incorrectos (por ejemplo, ejecutarlo con un Python sin el venv).
+- Con el fixture de aceptación: 96 insertadas y 4 inválidas (filas 18, 45, 71 y 93); en la segunda ejecución, 0 insertadas y 96 ya existentes.
+- Igual que el seeder de proveedores: ejecutarlo con la API parada o sin escrituras en curso.
+
 ## Tests
 
 La suite necesita las dependencias del venv de `services/api` (con el Python global falla al importar `fastapi`). Desde la raíz del monorepo, **sin necesidad de activar el venv**, usando su intérprete directamente:
@@ -206,6 +233,8 @@ La suite del núcleo (Fase 1) no necesita el venv: `python -m unittest discover 
 | `test_suppliers_seed.py` | Seeder = `SUPPLIERS_SEED` del CONTEXT, idempotente, no sobrescribe, salida en consola; persistencia tras reiniciar la app |
 | `test_auth.py` | AUTH-01: registro (hash bcrypt, sin texto plano, `Profile` automático, `role=user` fijado por el backend y `role` en el body → 422, 409), login (401 genérico, solo formulario), JWT (`sub`/`exp`, expirado, mal formado, otra clave, `alg: none`), `/users` (401/403/admin, propio vs ajeno, cambio de rol, borrado en cascada), `/profiles/me`, `/auth/me` sin credenciales |
 | `test_auth_protection.py` | Las 8 rutas existentes: 401 sin token o con token inválido/expirado y funcionamiento con token válido; rutas públicas; esquema OAuth2 en OpenAPI; CORS `Authorization`; `JWT_SECRET_KEY`/`ACCESS_TOKEN_EXPIRE_MINUTES` obligatorias |
+| `test_incident_manager_repository.py` | Gestor de incidencias: base inexistente o vacía (lista vacía, resumen a cero, sin crear el archivo), id UUID y fechas UTC, filtros combinados, resumen con todas las claves, transiciones válidas/inválidas/finales, seed idempotente, totales del CONTEXT y `seed_keys` sin `ticket_id` en claro |
+| `test_incident_manager_seed.py` | `scripts/seed_incidents.py`: informe exacto con el fixture de aceptación (96 insertadas, filas inválidas 18/45/71/93), segunda ejecución sin duplicados, resumen tras el seed, no mapeables y duplicadas por número de fila, ningún contenido de fila en consola ni emails/`ticket_id` en la base, códigos de salida (CSV inexistente, cabecera de otro esquema, vacío, no UTF-8) e `INCIDENTS_DB_PATH` |
 | `test_create_admin.py` | `create-admin`: admin + `Profile` + hash bcrypt, email existente, contraseñas distintas, entrada inválida; nunca imprime la contraseña |
 
 Los tests reutilizan el fixture sintético del núcleo (`example.invalid`). Como las rutas de incidentes y proveedores exigen JWT, `tests/support.py` crea para cada cliente una base de usuarios temporal y un token válido (la clave JWT de test se genera al importar; no hay ninguna fija). Los tests de AUTH-01 hashean con bcrypt real, por eso la suite tarda alrededor de un minuto. El núcleo tiene su propia suite (ver su README).
@@ -236,6 +265,9 @@ app/
 ├── database.py              # Proveedores: TinyDB (SupplierRepository, thread-safe, un archivo JSON)
 ├── seed.py                  # Proveedores: SUPPLIERS_SEED + entry point de `uv run seed`
 ├── routes/suppliers.py      # Proveedores: 6 endpoints /suppliers
+├── modules/incident_manager/  # Gestor centralizado de incidencias (sin rutas HTTP todavía)
+│   ├── models.py            # Incident, IncidentSummary (enums de nexova_shared)
+│   └── repository.py        # IncidentRepository: TinyDB (incidents + seed_keys), filtros, transiciones, resumen, seed
 └── modules/incidents/
     ├── router.py            # 2 endpoints: request → servicio → respuesta
     ├── schemas.py           # contrato JSON (traducción de AnalysisResult, sin cálculo)
