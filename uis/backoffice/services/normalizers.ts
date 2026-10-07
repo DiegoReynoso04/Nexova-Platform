@@ -6,6 +6,9 @@
 //   Para proveedores (SPECS Parte B) además comprueban que país, moneda,
 //   categorías y estado sean valores del vocabulario conocido: la UI los usa
 //   para badges y filtros, y un valor desconocido indicaría un contrato roto.
+//   Igual para el gestor de incidencias (SPECS Parte E): estados, orígenes,
+//   categorías y sedes deben ser valores del CONTEXT, y el resumen debe traer
+//   todas las claves de cada enumerado.
 // - Construyen objetos nuevos campo a campo (whitelist). Nunca se hace spread
 //   del objeto recibido, así que ninguna propiedad desconocida (p. ej. un
 //   `customer_email` que la API enviase por error) llega al estado de la UI.
@@ -33,6 +36,16 @@ import type {
   SatisfactionResult,
   Totals,
 } from '@/types/incidents';
+import {
+  INCIDENT_BRANCHES,
+  INCIDENT_CATEGORIES,
+  INCIDENT_ORIGINS,
+  INCIDENT_STATUSES,
+  type CountItem,
+  type Incident,
+  type IncidentApiError,
+  type IncidentSummary,
+} from '@/types/incident-manager';
 import {
   SUPPLIER_CATEGORIES,
   SUPPLIER_COUNTRIES,
@@ -393,4 +406,78 @@ export function normalizeAuthValidationErrors(input: unknown): AuthFieldError[] 
     if (location === 'username') return 'email';
     return isOneOf(AUTH_FIELDS, location) ? location : null;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Gestor centralizado de incidencias (services/api/SPECS.md Parte E)
+// ---------------------------------------------------------------------------
+
+function parseIncident(input: unknown, path: string): Incident {
+  const value = expectObject(input, path);
+  return {
+    id: readString(value, 'id', path),
+    title: readString(value, 'title', path),
+    description: readString(value, 'description', path),
+    category: readOneOf(value, 'category', path, INCIDENT_CATEGORIES),
+    status: readOneOf(value, 'status', path, INCIDENT_STATUSES),
+    origin: readOneOf(value, 'origin', path, INCIDENT_ORIGINS),
+    branch: readOneOf(value, 'branch', path, INCIDENT_BRANCHES),
+    created_at: readString(value, 'created_at', path),
+    updated_at: readString(value, 'updated_at', path),
+  };
+}
+
+/** Respuesta 200/201 con una incidencia (`GET /api/incidents/{id}`, `POST`, `PATCH …/status`). */
+export function normalizeIncident(input: unknown): Incident {
+  return parseIncident(input, 'response');
+}
+
+/** Respuesta 200 de `GET /api/incidents`: lista de incidencias. */
+export function normalizeIncidentList(input: unknown): Incident[] {
+  if (!Array.isArray(input)) throw new UnexpectedResponseError('response', 'array', describeType(input));
+  return input.map((item, index) => parseIncident(item, `response[${index}]`));
+}
+
+/**
+ * Diccionario de conteos → lista en el orden del vocabulario. Debe traer
+ * exactamente una entrada entera por cada valor (la API envía todas, aunque valgan 0).
+ */
+function readCounts<T extends string>(source: JsonObject, key: string, path: string, values: readonly T[]): CountItem<T>[] {
+  const counts = readObject(source, key, path);
+  const countsPath = `${path}.${key}`;
+  const received = Object.keys(counts).length;
+  if (received !== values.length) {
+    throw new UnexpectedResponseError(countsPath, `${values.length} keys`, `${received} keys`);
+  }
+  return values.map((value) => ({ value, count: readInteger(counts, value, countsPath) }));
+}
+
+/** Respuesta 200 de `GET /api/incidents/summary`. */
+export function normalizeIncidentSummary(input: unknown): IncidentSummary {
+  const value = expectObject(input, 'response');
+  return {
+    total: readInteger(value, 'total', 'response'),
+    by_status: readCounts(value, 'by_status', 'response', INCIDENT_STATUSES),
+    by_category: readCounts(value, 'by_category', 'response', INCIDENT_CATEGORIES),
+    by_origin: readCounts(value, 'by_origin', 'response', INCIDENT_ORIGINS),
+    by_branch: readCounts(value, 'by_branch', 'response', INCIDENT_BRANCHES),
+  };
+}
+
+/**
+ * Cuerpo de un 400/404 del gestor: `code` y, de `detail`, solo `field` y
+ * `error` de cada elemento. El `message` del servidor se descarta: la UI
+ * muestra sus propios textos. Nunca lanza: un cuerpo inesperado da `{code: null, errors: []}`.
+ */
+export function normalizeIncidentApiError(input: unknown): IncidentApiError {
+  if (!isObject(input)) return { code: null, errors: [] };
+  const { code, detail } = input;
+  const errors = Array.isArray(detail)
+    ? detail.flatMap((item) =>
+        isObject(item) && typeof item.field === 'string' && typeof item.error === 'string'
+          ? [{ field: item.field, error: item.error }]
+          : []
+      )
+    : [];
+  return { code: typeof code === 'string' ? code : null, errors };
 }

@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from incident_analyzer import Category, Rule, Status, analyze_stream
+from nexova_shared.incidents import BRANCH_LABELS, Branch, IncidentCategory, IncidentOrigin, IncidentStatus
 
 from .support import APP_DIR, CORE_PACKAGE_DIR, HEADER
 
@@ -35,6 +36,13 @@ PRINT_ALLOWED = {"seed.py", "auth/create_admin.py"}
 # en la API. Única excepción: la validación del email de login de AUTH-01, que
 # no tiene relación con el CSV de incidentes.
 CORE_LITERAL_EXCEPTIONS = {"auth/models.py": {"@"}}
+# Vocabulario del gestor centralizado de incidencias: vive en nexova_shared
+# (packages/shared) y la API no lo repite. "branch" es a la vez un origen y el
+# nombre de un campo del modelo, así que no se puede prohibir como literal.
+MANAGER_LITERALS = {
+    *(member.value for vocabulary in (IncidentStatus, IncidentOrigin, IncidentCategory, Branch) for member in vocabulary),
+    *BRANCH_LABELS.values(),
+} - {"branch"}
 
 
 def python_files(directory: Path) -> list[Path]:
@@ -58,6 +66,13 @@ class ApiDoesNotDuplicateCoreTests(unittest.TestCase):
                         self.assertNotIn(node.value, forbidden)
                         self.assertNotIn("AGT-", node.value)
                         self.assertNotIn(r"\d", node.value)
+
+    def test_no_incident_manager_vocabulary_in_api(self) -> None:
+        for path in python_files(APP_DIR):
+            for node in ast.walk(parse(path)):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    with self.subTest(file=path.name, literal=node.value):
+                        self.assertNotIn(node.value, MANAGER_LITERALS)
 
     def test_no_parsing_or_rounding_tools_in_api(self) -> None:
         for path in python_files(APP_DIR):

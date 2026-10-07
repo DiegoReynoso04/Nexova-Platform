@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nexova-shared"
+version = "0.1.0"
+description = "Nexova — validación compartida: CSV de incidentes del helpdesk y modelo del gestor centralizado de incidencias"
+readme = "README.md"
+requires-python = ">=3.11"
+# Solo librería estándar: sin dependencias de ejecución.
+dependencies = []
+
+[tool.setuptools]
+# Solo el paquete Python; `types/` (TypeScript, @repo/shared-types) no se empaqueta.
+packages = ["nexova_shared", "nexova_shared.incident_csv", "nexova_shared.incidents"]

@@ -1,5 +1,5 @@
-// Reglas estáticas sobre el código de producción del backoffice (incidentes y
-// proveedores; uis/backoffice/CLAUDE.md): `unknown` solo en services/normalizers.ts, nunca
+// Reglas estáticas sobre el código de producción del backoffice (incidentes,
+// proveedores y gestor de incidencias; uis/backoffice/CLAUDE.md): `unknown` solo en services/normalizers.ts, nunca
 // `any` ni aserciones de tipo, y ninguna API que lea el archivo, persista datos
 // o conserve errores originales. Se analiza el código sin comentarios.
 
@@ -58,6 +58,77 @@ describe('código de producción', () => {
       'services/suppliers.service.ts',
     ]) {
       assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('incluye el gestor de incidencias y sus piezas', () => {
+    for (const file of [
+      'app/incident-manager/page.tsx',
+      'app/incident-manager/new/page.tsx',
+      'components/incident-manager/incident-board-view.tsx',
+      'components/incident-manager/incident-form-view.tsx',
+      'hooks/use-incident-board.ts',
+      'hooks/use-incident-form.ts',
+      'hooks/use-incident-summary.ts',
+      'services/incident-manager.service.ts',
+      'types/incident-manager.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('las vistas del gestor son Client Components y sus páginas, Server Components', () => {
+    for (const file of ['components/incident-manager/incident-board-view.tsx', 'components/incident-manager/incident-form-view.tsx']) {
+      assert.match(codeWithoutComments(file), /^'use client';/, file);
+    }
+    for (const file of ['app/incident-manager/page.tsx', 'app/incident-manager/new/page.tsx']) {
+      const code = codeWithoutComments(file);
+      assert.doesNotMatch(code, /'use client'/, file);
+      assert.match(code, /export const metadata/, file);
+    }
+  });
+
+  test('el gestor nunca lee el message de los errores de la API', () => {
+    const normalizers = codeWithoutComments('services/normalizers.ts');
+    const errorParser = normalizers.slice(normalizers.indexOf('export function normalizeIncidentApiError'));
+    assert.ok(errorParser.length > 0);
+    assert.doesNotMatch(errorParser, /message/);
+  });
+
+  test('el analizador (/incidents) sigue siendo una vista aparte', () => {
+    assert.ok(PRODUCTION_FILES.includes('app/incidents/page.tsx'));
+    for (const file of PRODUCTION_FILES.filter((path) => path.includes('incident-manager'))) {
+      assert.doesNotMatch(codeWithoutComments(file), /use-incident-analysis|incidents\.service/, file);
+    }
+  });
+
+  // Un elemento `position: absolute` (p. ej. `sr-only`) dentro de un contenedor
+  // con overflow que no es su bloque contenedor no queda recortado y ensancha la
+  // página: en /incident-manager provocaba scroll horizontal a 375 px. Todo
+  // contenedor `overflow-x-auto` de components/ debe llevar `relative`.
+  // Excepciones pendientes (mismo patrón, fuera del alcance del arreglo del
+  // gestor): si alguna se corrige, hay que quitarla de esta lista.
+  const OVERFLOW_WITHOUT_RELATIVE_PENDING = [
+    'components/incidents/distribution-table.tsx',
+    'components/incidents/invalid-breakdown-table.tsx',
+    'components/incidents/satisfaction-panel.tsx',
+    'components/suppliers/supplier-table.tsx',
+  ];
+
+  test('todo contenedor overflow-x-auto de components/ lleva relative', () => {
+    const containers = PRODUCTION_FILES.filter((file) => file.startsWith('components/')).flatMap((file) =>
+      [...codeWithoutComments(file).matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\})/g)]
+        .map((match) => match[1] ?? match[2])
+        .filter((classes) => /(^|\s)overflow-x-auto(\s|$)/.test(classes))
+        .map((classes) => ({ file, relative: /(^|\s)relative(\s|$)/.test(classes) }))
+    );
+    assert.ok(containers.some((item) => item.file === 'components/incident-manager/incident-table.tsx'));
+    for (const { file, relative } of containers) {
+      const pending = OVERFLOW_WITHOUT_RELATIVE_PENDING.includes(file);
+      assert.equal(relative, !pending, pending ? `${file} ya lleva relative: quítalo de la lista de pendientes` : `${file}: overflow-x-auto sin relative`);
+    }
+    for (const file of OVERFLOW_WITHOUT_RELATIVE_PENDING) {
+      assert.ok(containers.some((item) => item.file === file), `${file} ya no tiene overflow-x-auto: quítalo de la lista`);
     }
   });
 

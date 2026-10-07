@@ -8,6 +8,7 @@ Una sola aplicación FastAPI (`app/main.py`) con tres dominios:
 - **Parte B (§8–§14): directorio de proveedores** — `/suppliers*`, persistido en TinyDB.
 - **Parte C (§15–§22): autenticación (AUTH-01)** — `/auth`, `/users`, `/profiles`; JWT obligatorio en las rutas de las Partes A y B.
 - **Parte D (§23–§27): recuperación y cambio de contraseña (AUTH-03)** — `POST /auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`; envío con Resend.
+- **Parte E (§28–§33): gestor centralizado de incidencias** — `POST`/`GET /api/incidents`, `GET /api/incidents/summary`, `GET /api/incidents/{id}`, `PATCH /api/incidents/{id}/status`; validación con 400 propio (no 422).
 
 Este documento distingue **dos orígenes** de requisitos. Mezclarlos sería atribuir al cliente decisiones que no tomó.
 
@@ -19,8 +20,8 @@ Fuente: [`docs/COMPANY_INCIDENT_FILE_ANALIZER_PROJECT.md`](../../docs/COMPANY_IN
 
 | Requisito | Dónde se cumple |
 |---|---|
-| Estructura del CSV (9 campos, UTF-8, cabecera, coma) | `incident_analyzer` (`schema.py`, `reader.py`) |
-| Las 7 reglas de registros inválidos y su recuento por regla | `incident_analyzer` (`validation.py`, `metrics.py`) |
+| Estructura del CSV (9 campos, UTF-8, cabecera, coma) | `incident_analyzer` (`schema.py`, `reader.py`, reexportados de `packages/shared` → `nexova_shared.incident_csv`) |
+| Las 7 reglas de registros inválidos y su recuento por regla | `incident_analyzer` (`validation.py`, reexportado de `nexova_shared.incident_csv`; `metrics.py`) |
 | Métricas: totales, desglose por categoría y por estado sobre válidos, índice de satisfacción de CLOSED | `incident_analyzer` (`metrics.py`) |
 | Exportación "una métrica por fila" | `incident_analyzer` (`export.py`, formato `metric,value`) |
 | Privacidad: `customer_email` nunca en ninguna salida, "ni siquiera en errores"; nada de enviar datos a herramientas de IA externas | núcleo (solo conteos) + API (§5 de este documento) |
@@ -159,6 +160,8 @@ Formato único: `{"detail": ..., "code": "..."}`.
 | 404 | `no_analysis` | export sin análisis previo | `no analysis available yet` |
 | 404 | `supplier_not_found` | `/suppliers/{id}` con un id que no existe (Parte B) | `supplier not found` |
 | 404 | `user_not_found` / `profile_not_found` | usuario o perfil inexistente, solo visible para quien tiene permiso (Parte C) | `user not found` / `profile not found` |
+| 400 | `validation_error` / `invalid_status_transition` | solo rutas del gestor de incidencias (Parte E, §31): lista `{field, error, message}` | ver §31 |
+| 404 | `incident_not_found` | `/api/incidents/{id}` con un UUID que no existe (Parte E) | `incident not found` |
 | 409 | `email_already_registered` | alta o cambio a un email ya registrado (Parte C) | `email already registered` (no repite el email) |
 | 404 | `not_found` | ruta inexistente | `Not Found` |
 | 405 | `method_not_allowed` | método no soportado; incluye la cabecera `Allow` con los métodos permitidos | `Method Not Allowed` |
@@ -205,6 +208,7 @@ Variables de entorno del proceso (la API no carga archivos `.env` por sí sola; 
 | `JWT_SECRET_KEY` | **ninguno (obligatoria)** | clave HS256, ≥ 32 caracteres; sin ella la API no arranca (Parte C) |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | **ninguno (obligatoria)** | entero > 0; sin ella la API no arranca (Parte C) |
 | `AUTH_DB_PATH` | `services/api/data/auth.json` | archivo TinyDB de `User` y `Profile` (Parte C). La usan la API y `create-admin` |
+| `INCIDENTS_DB_PATH` | `services/api/data/incidents.json` | archivo TinyDB del gestor centralizado de incidencias (tablas `incidents` y `seed_keys`). Lo usan el repositorio `app/modules/incident_manager/` y `scripts/seed_incidents.py`. Rutas en la Parte E |
 
 ---
 
@@ -371,7 +375,7 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 
 ## 20. Rutas protegidas y públicas
 
-Protegidas (JWT obligatorio, cualquier rol): `POST /suppliers`, `GET /suppliers`, `GET /suppliers/{id}`, `PATCH /suppliers/{id}/rate`, `PATCH /suppliers/{id}/status`, `DELETE /suppliers/{id}`, `POST /api/incidents/analyze`, `GET /api/incidents/results/export`; además `GET /users`, `GET`/`PUT`/`DELETE /users/{id}`, `GET /auth/me`, `GET`/`PUT /profiles/me`.
+Protegidas (JWT obligatorio, cualquier rol): `POST /suppliers`, `GET /suppliers`, `GET /suppliers/{id}`, `PATCH /suppliers/{id}/rate`, `PATCH /suppliers/{id}/status`, `DELETE /suppliers/{id}`, `POST /api/incidents/analyze`, `GET /api/incidents/results/export`, las 5 del gestor de incidencias (Parte E: `POST`/`GET /api/incidents`, `GET /api/incidents/summary`, `GET /api/incidents/{id}`, `PATCH /api/incidents/{id}/status`); además `GET /users`, `GET`/`PUT`/`DELETE /users/{id}`, `GET /auth/me`, `GET`/`PUT /profiles/me`.
 
 Públicas: `GET /health`, `GET /docs` (y `/openapi.json`, `/redoc`), `POST /auth/login`, `POST /users`; desde AUTH-03, `POST /auth/forgot-password` y `POST /auth/reset-password` (`POST /auth/change-password` exige token, Parte D).
 
@@ -466,3 +470,122 @@ En `AUTH_DB_PATH` (el mismo archivo que `users` y `profiles`):
 - **Plantilla HTML** del email (opcional del ticket, no elegido): solo texto plano.
 - **Auditoría:** sin endpoint de consulta ni retención definida; las IP son datos personales.
 - **Remitente de desarrollo:** con el remitente de onboarding de Resend (`onboarding@resend.dev`) solo se puede enviar a la dirección de la cuenta de Resend; para otros destinatarios hace falta verificar un dominio propio.
+
+---
+
+# Parte E — Gestor centralizado de incidencias
+
+## 28. Requisitos heredados (enunciado del proyecto + CONTEXT)
+
+Fuentes, por orden: el enunciado del proyecto (pegado por el usuario en la sesión del 2026-10-07; no está versionado) y [`docs/centralized-incident-manager.md`](../../docs/centralized-incident-manager.md) (CONTEXT: vocabulario, mapeos y conteos esperados). El vocabulario, las reglas de campos, el ciclo de vida y el mapeo del CSV viven en [`packages/shared`](../../packages/shared/README.md) (`nexova_shared.incidents`); la API no repite ningún valor (`tests/test_architecture.py`).
+
+| Requisito | Dónde se cumple |
+|---|---|
+| Modelo `Incident` (`id`, `title`, `description`, `category`, `status`, `origin`, `branch`, `created_at`, `updated_at`) con obligatorios y valores permitidos | `nexova_shared.incidents` (reglas) + `app/modules/incident_manager/models.py` y `repository.py` |
+| `POST /api/incidents`: valida todos los campos y responde 400 con un mensaje descriptivo | `router.py` → `validate_incident_fields` |
+| `GET /api/incidents` con filtros opcionales `status`, `origin`, `branch`, `category` | `router.py` → `validate_filters` → `IncidentRepository.find` |
+| `GET /api/incidents/{id}` con 404 si no existe | `router.py` |
+| `PATCH /api/incidents/{id}/status`: solo el estado, con transiciones coherentes con el ciclo de vida; las no permitidas → 400 | `validate_status_change` + `check_transition` (en `IncidentRepository.change_status`) |
+| `GET /api/incidents/summary`: totales por estado, categoría, origen y sede, también con la base vacía | `IncidentRepository.summary` |
+| 500 genérico sin traza; validación → 400 con el campo identificado; lecturas sin fallo con la base vacía | `InternalErrorMiddleware` (§5) + `IncidentManagerRoute` (§31) + repositorio |
+| Seed del CSV histórico con `origin = customer`, transformaciones del CONTEXT, inválidos reportados, idempotente | `scripts/seed_incidents.py` (README, sección del gestor) |
+
+## 29. Decisiones de implementación (usuario, 2026-10-07; P4-1…P4-13)
+
+Las tomó **el usuario** al aprobar el plan del proyecto. No han sido revisadas ni aprobadas por el tech lead ni por la CTO.
+
+| ID | Decisión |
+|---|---|
+| P4-1 | La validación del CSV se movió de `packages/incident-analyzer` a `packages/shared` (`nexova_shared.incident_csv`); el analizador la reexporta sin cambios. El modelo del gestor también vive allí (`nexova_shared.incidents`). La API y el seed la reutilizan sin duplicarla |
+| P4-2 | La validación de **este router** responde **400** con `{"code": "validation_error", "detail": [{"field", "error", "message"}]}` (un elemento por problema, todos a la vez). También un body que no es JSON o no es un objeto. El 422 del resto de la API (proveedores, auth, analizador) **no cambia** |
+| P4-3 | Router propio (`app/modules/incident_manager/router.py`) con el mismo prefijo `/api/incidents` que el analizador, incluido después de él. Las rutas con id usan el convertidor `{incident_id:uuid}` de Starlette: un segmento que no es un UUID no coincide, así que `GET /api/incidents/analyze` sigue en 405 (`Allow: POST`) y cualquier otro id mal formado responde 404. `/summary` se declara antes que `/{incident_id}` |
+| P4-4 | TinyDB + Pydantic, sin dependencias nuevas. Archivo `INCIDENTS_DB_PATH` (§7). `id` UUID v4 generado por el repositorio (como `User.id`, D-AUTH-2; no el `doc_id` entero de proveedores) |
+| P4-5 | Idempotencia del seed en la tabla `seed_keys`, fuera del modelo. **Solo guarda el SHA-256** de la clave de origen (`ticket_id`, o `title + created_at` si falta) y el `id` de la incidencia: el CONTEXT dice que `ticket_id` no se almacena |
+| P4-6 | El seed lee el CSV del argumento (por defecto `data/raw/incidents/incidents-nexova.csv`, ignorado por git) y se ejecuta con el venv de `services/api` |
+| P4-7 | UI en `uis/backoffice` → `/incident-manager` y `/incident-manager/new` (fase F5); `/incidents` sigue siendo el analizador |
+| P4-8 | Al crear, `status` es opcional y solo admite `open` (cualquier otro valor → 400 `invalid_choice`); la UI lo muestra en solo lectura. `title` ≤ 120 caracteres (el mismo recorte del seed); `description` sin máximo (el seed la copia literalmente; el límite técnico es el del body HTTP, `MAX_UPLOAD_BYTES`) |
+| P4-9 | JWT obligatorio en las 5 rutas (dependencia del router, como D-AUTH-11), sin permisos por rol |
+| P4-10 | El listado de la UI ofrece solo las transiciones válidas (F5); la API sigue siendo la autoridad |
+| P4-11 | Valores literales en la UI; solo `branch` tiene etiquetas para mostrar (las del CONTEXT, `BRANCH_LABELS`) |
+| P4-12 | `/summary` = `{total, by_status, by_category, by_origin, by_branch}` con todas las claves de cada enumerado, en el orden del CONTEXT, aunque valgan 0. El listado se ordena por `created_at` descendente (desempate por `id`) |
+| P4-13 | El seed descarta y reporta aparte las filas válidas para el analizador que no se pueden mapear (`unmapped_status`, `unmapped_category`, `invalid_date`, `empty_title`) y las duplicadas dentro del archivo |
+
+Detalles de esta implementación (no los fija ninguna fuente):
+
+- Los textos se guardan sin espacios en los extremos; categorías, estados, orígenes y sedes se comparan exactos (sin recortar ni ignorar mayúsculas).
+- `null` cuenta como campo ausente (`missing`).
+- Los mensajes de error están en inglés, como el resto de la API, y **nunca repiten el valor recibido**. La UI debe elegir su propio texto por `error` y no mostrar `message`. Solo `field` puede repetir la clave enviada, si es un campo desconocido.
+- Un filtro vacío (`?status=`) es un valor no permitido. Los parámetros de consulta que no son filtros se ignoran.
+
+## 30. Endpoints
+
+Todas exigen `Authorization: Bearer <token>` (401 `not_authenticated` sin token válido, §19). Cuerpos y respuestas en JSON.
+
+| Método y ruta | Body | Éxito | Errores |
+|---|---|---|---|
+| `POST /api/incidents` | `{title, description, category, origin, branch, status?}` | **201** + incidencia (`status = open`) | 400 `validation_error` |
+| `GET /api/incidents?status=&origin=&branch=&category=` | — | **200** + lista (más reciente primero; `[]` si no hay) | 400 `validation_error` (valor de filtro no permitido) |
+| `GET /api/incidents/summary` | — | **200** + resumen (§32) | — |
+| `GET /api/incidents/{id}` | — | **200** + incidencia | 404 `incident_not_found` (UUID inexistente) · 404 `not_found` (no es un UUID) |
+| `PATCH /api/incidents/{id}/status` | `{"status": "<estado>"}` (solo `status`) | **200** + incidencia con `status` y `updated_at` nuevos | 400 `validation_error` · 400 `invalid_status_transition` · 404 como el GET |
+
+Incidencia (respuesta):
+
+```json
+{
+  "id": "0c45f843-3f8c-4900-98a3-a3802dee688c",
+  "title": "Example incident title",
+  "description": "Example description of the incident.",
+  "category": "technical_failure",
+  "status": "open",
+  "origin": "branch",
+  "branch": "miami_office",
+  "created_at": "2026-10-07T19:01:48.006704Z",
+  "updated_at": "2026-10-07T19:01:48.006704Z"
+}
+```
+
+`id`, `created_at` y `updated_at` los genera el sistema (UTC); enviarlos → 400 `unknown_field`. `updated_at` cambia con cada `PATCH …/status` correcto; `created_at` nunca.
+
+Ciclo de vida (CONTEXT): `open → in_progress | discarded`; `in_progress → resolved | discarded`; `resolved` y `discarded` son finales. Pedir el mismo estado también es una transición no permitida.
+
+## 31. Errores de este router
+
+`IncidentManagerRoute` (clase de ruta del router) convierte los `RequestValidationError` de FastAPI en el 400 del gestor antes de que lleguen al handler global del 422, que sigue igual para el resto de la API. Del error de FastAPI solo se usa la ubicación: nunca `input` ni `msg`.
+
+| HTTP | `code` | `detail` |
+|---|---|---|
+| 400 | `validation_error` | lista de `{field, error, message}`; `error` ∈ `missing`, `blank`, `too_long`, `invalid_type`, `invalid_choice`, `unknown_field`, `invalid_body` (con `field = "body"`: el body no es JSON, no es un objeto o falta) |
+| 400 | `invalid_status_transition` | `[{"field": "status", "error": "invalid_transition", "message": "status resolved is final and cannot change"}]` |
+| 401 | `not_authenticated` | `could not validate credentials` (§19) |
+| 404 | `incident_not_found` | `incident not found` |
+| 404 | `not_found` | `Not Found` (id que no es un UUID, como cualquier ruta inexistente) |
+| 500 | `internal_error` | `internal server error`, sin traza ni mensaje (§5) |
+
+Ejemplo (alta sin `branch`):
+
+```json
+{"detail": [{"field": "branch", "error": "missing", "message": "branch is required"}], "code": "validation_error"}
+```
+
+## 32. Resumen
+
+```json
+{
+  "total": 0,
+  "by_status": {"open": 0, "in_progress": 0, "resolved": 0, "discarded": 0},
+  "by_category": {"technical_failure": 0, "process_error": 0, "client_complaint": 0, "candidate_issue": 0, "staff_issue": 0, "sla_breach": 0, "data_quality": 0, "other": 0},
+  "by_origin": {"customer": 0, "branch": 0, "internal": 0},
+  "by_branch": {"central": 0, "valencia_operations": 0, "miami_office": 0, "remote": 0}
+}
+```
+
+Tras el seed del fixture sintético de aceptación (o del CSV real): `total` 96; `by_status` open 27 / resolved 56 / discarded 13; `by_category` technical_failure 49 / process_error 35 / client_complaint 12; `by_origin.customer` 96; `by_branch.central` 96 (lo comprueba `tests/test_incident_manager_api.py`).
+
+## 33. Persistencia, CORS y pendiente
+
+- TinyDB en `INCIDENTS_DB_PATH` (§7): tablas `incidents` y `seed_keys`. Mismo patrón que D-SUP-10 (lock, un worker, no ejecutar el seed mientras la API escribe). Las lecturas no crean el archivo.
+- CORS: sin cambios (`PATCH` ya estaba permitido; `Content-Type: application/json` es una cabecera que Starlette admite siempre en el preflight).
+- UI: `uis/backoffice` → `/incident-manager` (resumen + listado con filtros y cambio de estado) y `/incident-manager/new` (formulario). Reglas en [`uis/backoffice/CLAUDE.md`](../../uis/backoffice/CLAUDE.md) ("Gestor centralizado de incidencias") y uso en [`uis/backoffice/README.md`](../../uis/backoffice/README.md).
+- Guía de revisión (puesta en marcha en PowerShell, salidas esperadas, trazabilidad de los requisitos y lo no verificado): [`docs/centralized-incident-manager-review.md`](../../docs/centralized-incident-manager-review.md).
+- Fuera de alcance del enunciado: alertas de `sla_breach` (el filtro `?category=sla_breach` ya existe), responsables, tiempos de resolución, borrado y edición de otros campos.

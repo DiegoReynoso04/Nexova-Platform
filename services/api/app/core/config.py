@@ -19,6 +19,8 @@ SERVICE_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SUPPLIERS_DB_PATH = SERVICE_ROOT / "data" / "suppliers.json"
 # Archivo TinyDB de usuarios y perfiles (AUTH-01), separado del de proveedores.
 DEFAULT_AUTH_DB_PATH = SERVICE_ROOT / "data" / "auth.json"
+# Archivo TinyDB del gestor centralizado de incidencias (incidencias + claves del seed).
+DEFAULT_INCIDENTS_DB_PATH = SERVICE_ROOT / "data" / "incidents.json"
 # HS256 necesita una clave de al menos 256 bits; se exige en caracteres.
 MIN_JWT_SECRET_LENGTH = 32
 # AUTH-03: vigencia del enlace de restablecimiento. El ticket fija 15–60 minutos.
@@ -37,6 +39,7 @@ class Settings:
     max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES
     suppliers_db_path: Path = DEFAULT_SUPPLIERS_DB_PATH
     auth_db_path: Path = DEFAULT_AUTH_DB_PATH
+    incidents_db_path: Path = DEFAULT_INCIDENTS_DB_PATH
     # Sin valores por defecto a propósito: vienen siempre del entorno
     # (JWT_SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES) y `require_auth()` los exige
     # al arrancar la API. `repr=False`: la clave nunca aparece en un repr/log.
@@ -97,6 +100,7 @@ class Settings:
         max_upload = environ.get("MAX_UPLOAD_BYTES")
         suppliers_db_path = environ.get("SUPPLIERS_DB_PATH", "").strip()
         auth_db_path = environ.get("AUTH_DB_PATH", "").strip()
+        incidents_db_path = environ.get("INCIDENTS_DB_PATH", "").strip()
         expire_minutes = environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "").strip()
         reset_minutes = environ.get("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "").strip()
         try:
@@ -120,6 +124,7 @@ class Settings:
             max_upload_bytes=max_upload_bytes,
             suppliers_db_path=Path(suppliers_db_path) if suppliers_db_path else DEFAULT_SUPPLIERS_DB_PATH,
             auth_db_path=Path(auth_db_path) if auth_db_path else DEFAULT_AUTH_DB_PATH,
+            incidents_db_path=Path(incidents_db_path) if incidents_db_path else DEFAULT_INCIDENTS_DB_PATH,
             jwt_secret_key=environ.get("JWT_SECRET_KEY", "").strip(),
             access_token_expire_minutes=access_token_expire_minutes,
             resend_api_key=environ.get("RESEND_API_KEY", "").strip(),

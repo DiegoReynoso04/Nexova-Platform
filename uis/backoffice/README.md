@@ -1,6 +1,6 @@
 # Backoffice
 
-Panel administrativo interno de **Nexova Solutions**. Tiene tres vistas de negocio: la portada con la ficha de la empresa, el **análisis de incidentes de soporte** (`/incidents`) y el **directorio de proveedores** (`/suppliers`), todas protegidas por sesión (AUTH-02): `/login`, `/register` y `/account/profile`.
+Panel administrativo interno de **Nexova Solutions**. Tiene cuatro vistas de negocio: la portada con la ficha de la empresa, el **análisis de incidentes de soporte** (`/incidents`), el **directorio de proveedores** (`/suppliers`) y el **gestor centralizado de incidencias** (`/incident-manager`, `/incident-manager/new`), todas protegidas por sesión (AUTH-02): `/login`, `/register` y `/account/profile`.
 
 ## Vistas
 
@@ -32,6 +32,16 @@ Registro oficial de proveedores de Nexova (Patricia Solís, HR Manager). Requisi
 - **Sin botón de eliminar**: el endpoint `DELETE` existe en la API, pero los proveedores se suspenden, no se borran.
 - Necesita la API en marcha y, para ver datos, el seeder ejecutado (`cd services/api && uv run seed`).
 
+### `/incident-manager` y `/incident-manager/new` — gestor centralizado de incidencias
+
+Registro estructurado de incidencias técnicas y operativas de Nexova. Requisitos: [`docs/centralized-incident-manager.md`](../../docs/centralized-incident-manager.md); contrato: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte E. Se abre desde **«Incidencias»** y **«Registrar incidencia»** en la cabecera. No es `/incidents` (el analizador del CSV).
+
+- **`/incident-manager`**: el **resumen** arriba (totales por estado, categoría, origen y sede, de `GET /api/incidents/summary`) y el **listado** debajo (`GET /api/incidents`), con filtros por estado, origen y sede enviados a la API. El listado distingue cargando, error con «Reintentar», vacío (mensaje, sin tabla) y con datos. Cada incidencia se puede avanzar en su ciclo de vida desde su fila (`PATCH /api/incidents/{id}/status`): solo se ofrecen las transiciones válidas (`open` → `in_progress`/`discarded`; `in_progress` → `resolved`/`discarded`; los finales no tienen selector). El cambio es optimista: si la API lo rechaza o falla la red, la fila vuelve a su estado anterior y muestra el aviso. Tras un cambio correcto el resumen se recarga. El resumen y el listado cargan y fallan por separado.
+- **`/incident-manager/new`**: título (máx. 120 caracteres, con contador), descripción, categoría, origen, sede (siempre visible y obligatoria, con las etiquetas del CONTEXT; se resalta con borde, fondo y un texto de ayuda cuando el origen es `branch`) y estado en solo lectura (`open`). Valida en cliente antes de enviar (sin petición si falta algo). Durante el envío, spinner y botón deshabilitado; los errores de la API se muestran en español junto a su campo (nunca el texto del servidor); tras el éxito, confirmación y formulario limpio.
+- Valores literales del dominio (en inglés) salvo las sedes, que usan sus nombres del CONTEXT.
+- Necesita la API en marcha; para ver datos históricos, el seed del CSV (`scripts/seed_incidents.py`, ver [`services/api/README.md`](../../services/api/README.md)).
+- Guía de revisión de todo el proyecto (API, seed, UI, suites y trazabilidad): [`docs/centralized-incident-manager-review.md`](../../docs/centralized-incident-manager-review.md).
+
 ### Autenticación — `/login`, `/register`, `/account/profile` (AUTH-02)
 
 Contexto: [`docs/auth-frontend.md`](../../docs/auth-frontend.md); contrato: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte C.
@@ -55,11 +65,11 @@ Contexto: [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md); co
 
 ## Stack técnico
 
-Mismo stack que [`uis/talent-pipeline-tracker`](../talent-pipeline-tracker/README.md), decisión registrada en [`memory-bank/techContext.md`](../../memory-bank/techContext.md): Next.js 16 (App Router), React 19, TypeScript estricto, Tailwind CSS v4 (`@import "tailwindcss"` en `app/globals.css`, sin `tailwind.config.ts`). Sin librerías de estado externas y sin dependencias añadidas para `/incidents` ni `/suppliers`.
+Mismo stack que [`uis/talent-pipeline-tracker`](../talent-pipeline-tracker/README.md), decisión registrada en [`memory-bank/techContext.md`](../../memory-bank/techContext.md): Next.js 16 (App Router), React 19, TypeScript estricto, Tailwind CSS v4 (`@import "tailwindcss"` en `app/globals.css`, sin `tailwind.config.ts`). Sin librerías de estado externas y sin dependencias añadidas para `/incidents`, `/suppliers` ni `/incident-manager`.
 
 ## Puesta en marcha
 
-Requisitos: Node.js 20 o superior para la app; **Node.js 24** para ejecutar los tests (`node --test` con TypeScript sin dependencias). Para `/incidents` y `/suppliers`, además, la API de `services/api` en marcha (ver su README); para ver proveedores, el seeder ejecutado (`cd services/api && uv run seed`).
+Requisitos: Node.js 20 o superior para la app; **Node.js 24** para ejecutar los tests (`node --test` con TypeScript sin dependencias). Para `/incidents`, `/suppliers` y `/incident-manager`, además, la API de `services/api` en marcha (ver su README); para ver proveedores, el seeder ejecutado (`cd services/api && uv run seed`).
 
 ```bash
 npm install
@@ -88,7 +98,7 @@ npm run build
 node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/support/resolve-alias.mjs --test --test-timeout=10000 "tests/*.test.mjs"
 ```
 
-Los tests (`tests/*.test.mjs`) usan el runner nativo de Node 24, sin dependencias: normalizadores, cliente HTTP, servicios de incidentes, proveedores y autenticación, estado/sesión de los hooks (cancelación, carreras, exportación, recarga tras cambios, sesión, login/registro y perfil), token en `localStorage`, cabecera Bearer y 401, protección de rutas, vocabulario y renovaciones de proveedores contra el CONTEXT, y una revisión estática del código de producción (sin `any`, `unknown` solo en `services/normalizers.ts`, `fetch`, `JSON.stringify` y `Authorization` solo en `lib/api-client.ts`, `localStorage` solo en `lib/auth-token.ts`, sin lectura del archivo y sin borrado de proveedores). `tests/support/resolve-alias.mjs` resuelve el alias `@/` para Node sin tocar `tsconfig.json`. El aviso `MODULE_TYPELESS_PACKAGE_JSON` se silencia porque `package.json` no declara `"type"`.
+Los tests (`tests/*.test.mjs`) usan el runner nativo de Node 24, sin dependencias: normalizadores, cliente HTTP, servicios de incidentes, proveedores, gestor de incidencias y autenticación, estado/sesión de los hooks (cancelación, carreras, exportación, recarga tras cambios, sesión, login/registro y perfil), token en `localStorage`, cabecera Bearer y 401, protección de rutas, vocabulario y renovaciones de proveedores contra el CONTEXT, vocabulario, etiquetas de sede y transiciones del gestor contra su CONTEXT, envío/listado/reversión optimista/resumen del gestor, y una revisión estática del código de producción (sin `any`, `unknown` solo en `services/normalizers.ts`, `fetch`, `JSON.stringify` y `Authorization` solo en `lib/api-client.ts`, `localStorage` solo en `lib/auth-token.ts`, sin lectura del archivo y sin borrado de proveedores). `tests/support/resolve-alias.mjs` resuelve el alias `@/` para Node sin tocar `tsconfig.json`. El aviso `MODULE_TYPELESS_PACKAGE_JSON` se silencia porque `package.json` no declara `"type"`.
 
 La unión con React (montaje/desmontaje), la descarga real y los flujos de autenticación (login, registro, perfil, redirecciones, logout) se validan manualmente en el navegador.
 
@@ -106,22 +116,29 @@ app/
 ├── page.tsx                    # portada: ficha de empresa + roadmap
 ├── incidents/page.tsx          # /incidents: Server Component (metadata) que renderiza la vista cliente
 ├── suppliers/page.tsx          # /suppliers: Server Component (metadata) que renderiza el directorio
+├── incident-manager/page.tsx   # /incident-manager: resumen + listado del gestor de incidencias
+├── incident-manager/new/page.tsx # /incident-manager/new: formulario de registro
 └── globals.css                 # Tailwind v4 + paleta y tokens semánticos compartidos con talent-pipeline-tracker
 
 components/
 ├── ui/                         # primitivas: button, loading-spinner, alert, nav-link, input
 ├── auth/                       # sesión, guard, navegación de cuenta, login, registro, perfil y contraseñas
 ├── incidents/                  # vista cliente (incident-analysis-view) + componentes presentacionales
-└── suppliers/                  # vista cliente (supplier-directory-view) + filtros, tabla, formulario, badges
+├── suppliers/                  # vista cliente (supplier-directory-view) + filtros, tabla, formulario, badges
+└── incident-manager/           # vistas cliente (board, form) + resumen, filtros, tabla, formulario, errores
 
 hooks/use-incident-analysis.ts  # estado de /incidents: reducer + sesión (cancelación, carreras, exportación)
 hooks/use-supplier-directory.ts # estado de /suppliers: reducer + sesión (filtros, alta, tarifa, estado, carreras)
+hooks/use-incident-board.ts     # listado del gestor: filtros, cuatro estados, cambio de estado optimista
+hooks/use-incident-summary.ts   # resumen del gestor (carga y error propios)
+hooks/use-incident-form.ts      # envío del formulario del gestor (formKey para limpiarlo)
 hooks/use-auth-session.ts       # sesión: token de localStorage + validación con GET /auth/me
 hooks/use-auth-form.ts          # envío de /login, /register y los formularios de contraseña
 hooks/use-profile.ts            # /account/profile: GET /auth/me + PUT /profiles/me
 services/
 ├── incidents.service.ts        # frontera HTTP de incidentes (prevalidación UX, mapeo de errores, export)
 ├── suppliers.service.ts        # frontera HTTP de proveedores (campos requeridos, body, 422 por campo)
+├── incident-manager.service.ts # frontera HTTP del gestor (validación en cliente, 400 → textos propios por campo)
 ├── auth.service.ts             # login, registro, usuario actual, perfil y contraseñas (services/api Partes C y D)
 └── normalizers.ts              # única frontera con `unknown` de red
 lib/
@@ -129,9 +146,11 @@ lib/
 ├── auth-token.ts               # JWT en localStorage (único uso de localStorage)
 ├── auth-routes.ts              # rutas públicas/abiertas y decisión del guard
 ├── supplier-renewal.ts         # renovaciones en los próximos 60 días (presentación)
+├── incident-manager-routes.ts  # rutas del gestor de incidencias
 └── company.ts                  # datos de Nexova, cada campo citado desde contexts/CONTEXT.md
 types/incidents.ts              # contrato que recibe el frontend (incidentes)
 types/suppliers.ts              # contrato y vocabulario del directorio de proveedores
+types/incident-manager.ts       # contrato, vocabulario, etiquetas de sede y transiciones del gestor
 types/auth.ts                   # contrato de autenticación y perfil
 tests/                          # tests node --test (.mjs) + support/
 

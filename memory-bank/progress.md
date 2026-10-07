@@ -4,9 +4,267 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-07 — Gestor centralizado de incidencias: scroll horizontal en móvil (`/incident-manager`)
+
+**Estado: hecho, validado y comiteado** (commit aparte, después de F6 `ca0bf00`), en `feature/centralized-incident-manager`. Sin push. El proyecto sigue pendiente de PR.
+
+**Fallo, encontrado y diagnosticado por el usuario en el navegador:**
+- A 375 px, `/incident-manager` tenía scroll horizontal en toda la página (scrollWidth 673 frente a clientWidth 375).
+- Causa: las etiquetas `<label className="sr-only">` de la columna Estado de `components/incident-manager/incident-table.tsx` son `position: absolute`, y el contenedor `overflow-x-auto` no era su bloque contenedor.
+
+**Qué se hizo:**
+- `relative` en ese contenedor. Sin cambiar el `min-w` de la tabla ni quitar las etiquetas accesibles.
+- Test estático nuevo en `tests/production-source.test.mjs`: todo `overflow-x-auto` de `components/` debe llevar `relative`. Lleva una lista explícita de excepciones pendientes y falla si una se corrige sin retirarla de la lista. Una mutación (quitar `relative`) lo hace fallar.
+- Docs: regla en `uis/backoffice/CLAUDE.md` (Arquitectura). La guía de revisión pasa el viewport móvil a "verificado por el usuario", citando el fallo y su arreglo.
+
+**Mismo patrón detectado (solo lectura, sin corregir):**
+- `components/suppliers/supplier-table.tsx`: `<caption className="sr-only">` y la etiqueta `sr-only` del editor de tarifa, que solo existe con el editor abierto.
+- `components/incidents/distribution-table.tsx`, `invalid-breakdown-table.tsx` y `satisfaction-panel.tsx` (`/incidents`): `<caption className="sr-only">`.
+- No se ha medido si llegan a ensanchar la página.
+
+**Validación ejecutada:**
+- Backoffice: `tsc`, `lint` y `build` limpios; tests 332 OK (331 + 1).
+- Navegador, sobre los servidores de desarrollo del usuario (backoffice en el 3000 y API en el 8000):
+
+  | Ruta | 375 px | 1280 px |
+  |---|---|---|
+  | `/incident-manager` | 375 = 375 | 1265 = 1265 |
+  | `/incident-manager/new` | 375 = 375 | 1265 = 1265 |
+
+  - A 375 px, la tabla conserva su scroll propio (768 frente a 341).
+  - Sin `relative` (desde la consola), scrollWidth vuelve a 672.
+
+**Incidencia de la sesión:**
+- Los puertos 3000 y 8000 los ocupaban los servidores del usuario, así que la API temporal no arrancó.
+- El usuario de prueba `qa-mobile@example.test` se creó por error en la API del usuario. Se usó solo para esta verificación de solo lectura y después se borró (`DELETE /users/{id}` → 204; el login posterior da 401).
+
+---
+
+## 2026-10-07 — Gestor centralizado de incidencias, F6: documentación de cierre (proyecto hecho, pendiente de PR)
+
+**Estado: hecho y comiteado** (commit de F6, solo documentación) en `feature/centralized-incident-manager`, después de F5 (`7ce4101`). **El proyecto completo (F1–F6) está hecho y pendiente de PR**: sin push y sin PR abierta.
+
+**Decisiones:** P4-1…P4-13 (ver la entrada de F1 y `services/api/SPECS.md` §29) son **decisiones del usuario** tomadas al aprobar el plan, incluido el cambio de P4-5 en F2 (SHA-256 en `seed_keys`). **No las han revisado ni aprobado el tech lead ni la CTO.**
+
+**Qué se hizo:**
+- **`docs/centralized-incident-manager-review.md` (nuevo), guía de revisión** con:
+  - comandos exactos de Windows PowerShell: venv con los tres paquetes editables, seed con el fixture sintético y su salida esperada (96 insertadas / 4 inválidas; la segunda vez, 0), API, backoffice, comprobación de `/api/incidents/summary` y comandos de las suites con sus totales;
+  - tabla de trazabilidad "Qué evaluaremos" → implementación → test, indicando qué puntos no tienen test automático (el resalte de `branch`, el spinner y el `disabled` en el DOM, la llamada del componente a la validación y la estructura de carpetas);
+  - lista de lo no verificado.
+- **Comandos de la guía comprobados en PowerShell:**
+  - seed dos veces con `INCIDENTS_DB_PATH` (96 y luego 0);
+  - `Invoke-RestMethod` de login y `/summary` contra una API sobre bases temporales, que devolvió exactamente la tabla documentada.
+- **`services/api/SPECS.md`:** §33 enlaza la UI y la guía (se quita "Pendiente: la UI (F5)"); §29 aclara que las decisiones son del usuario.
+- **Enlaces a la guía** desde el README de `services/api`, `uis/backoffice/README.md`, `packages/shared/README.md` y `AGENTS.md` §4 (el gestor ya no figura "en curso").
+- Sin cambios de código de producción ni de tests.
+
+**Validación ejecutada (última pasada):** `packages/shared` 81 OK; analizador 118 OK (7 skipped); `services/api` 289 OK; `src/` 97 OK; backoffice `tsc` y `lint` limpios, `build` OK y 331 tests OK.
+
+**Pendiente / no verificado** (detalle en la guía de revisión):
+- CSV real ausente: la aceptación (96; 27/56/13; 49/35/12) solo se comprobó con el fixture sintético.
+- Verificación visual, móvil y con lector de pantalla pendiente.
+- Con un filtro activo, una incidencia que cambia de estado sigue en el listado hasta la siguiente carga (decisión de implementación, no fijada por ninguna fuente).
+- Un 400 con `field` no se puede provocar desde la UI real (solo cubierto por tests).
+- No se hizo el recorrido manual en `/docs`.
+- No hay soporte bilingüe (no existía en hitos anteriores).
+- Revisión de P4-1…P4-13 por el tech lead o la CTO.
+- Push y PR.
+
+---
+
+## 2026-10-07 — Gestor centralizado de incidencias, F5: UI en `uis/backoffice` (`/incident-manager`, `/incident-manager/new`)
+
+**Estado: hecho, validado y comiteado** (commit de F5), en `feature/centralized-incident-manager`, después de F4 (`d7ce215`). Sin tocar `services/` ni `packages/`; sin dependencias nuevas. El usuario autorizó ampliar el "Alcance actual" de `uis/backoffice/CLAUDE.md` con una cuarta pieza.
+
+**Qué se hizo:**
+- **Rutas y menú:**
+  - `/incident-manager` (resumen arriba y listado debajo; menú «Incidencias»);
+  - `/incident-manager/new` (formulario; menú «Registrar incidencia»);
+  - `/incidents` (el analizador) sin cambios.
+- **Capas:** páginas Server Component → vistas cliente (`components/incident-manager/`) → `hooks/use-incident-board.ts`, `use-incident-summary.ts` y `use-incident-form.ts` (reducer puro + sesión sin React + hook) → `services/incident-manager.service.ts` → `lib/api-client.ts`. `unknown` solo en `services/normalizers.ts`.
+- **Vocabulario** en `types/incident-manager.ts` (excepción documentada, como `/suppliers`): enums, `BRANCH_LABELS`, `INCIDENT_TRANSITIONS` y `TITLE_MAX_LENGTH`. Valores literales; etiquetas solo en `branch`.
+- **Formulario:**
+  - campos `title` (con contador), `description`, `category`, `origin`, `branch` (siempre visible y obligatorio) y `status` en solo lectura (`open`, que se envía en el body);
+  - validación en cliente antes de enviar (obligatorios y título ≤ 120), sin petición de red si no pasa;
+  - con `origin = branch`, `branch` se resalta con borde, fondo y texto de ayuda;
+  - spinner y botón deshabilitado durante el envío;
+  - tras el éxito, confirmación y formulario limpio (`formKey` como `key`).
+- **Errores:** el normalizador descarta el `message` del servidor y el servicio elige un texto en español por `code`, `field` y `error`; el error se muestra junto a su campo.
+- **Listado:**
+  - filtros `status`/`origin`/`branch` enviados a la API;
+  - cuatro estados (`boardView`): cargando, error con «Reintentar», vacío sin tabla y con datos;
+  - cambio de estado por fila solo con transiciones válidas (los finales muestran «Estado final»), optimista con reversión y aviso si falla;
+  - tras un cambio correcto se recarga el resumen.
+- **Resumen:** hook propio, con carga y error propios. El normalizador convierte cada diccionario de la API en una lista `{value, count}` en el orden del CONTEXT, para no usar aserciones de tipo, prohibidas por el test estático.
+- **Tests** (runner nativo de Node 24): `incident-manager-contract`, `incident-manager.service` y `use-incident-manager` (nuevos), `production-source` (ampliado) y `support/incident-fakes.mjs`.
+- **Docs:** `uis/backoffice/CLAUDE.md` (cuarta pieza y sección propia), `uis/backoffice/README.md`, `uis/README.md`, `uis/README.es.md` y `AGENTS.md` §4 (verificación en el navegador del gestor).
+
+**Validación ejecutada:**
+- Backoffice: `npx tsc --noEmit` y `npm run lint` limpios; `npm run build` OK (rutas estáticas `/incident-manager` y `/incident-manager/new`); tests 331 OK frente a la línea base de 263 (+68).
+- Navegador (API real en el puerto 8000 con bases TinyDB temporales fuera del repo, seed del fixture de aceptación, usuario de prueba desechable; backoffice `npm run dev` en el 3000):
+  - resumen con 96 / 27-56-13 / 49-35-12 / customer 96 / central 96;
+  - cambio `open → in_progress` con el resumen recargado;
+  - transición rechazada por la API (estado cambiado por fuera con curl) → la fila vuelve a `in_progress` con el aviso en español;
+  - filtros `status` y `status + origin`, y estado vacío sin tabla;
+  - formulario vacío → 5 errores junto a su campo y ningún `POST` en el log de la API;
+  - título de 121 caracteres → error y sin `POST`;
+  - resalte de `branch` (fondo, borde de 4 px y texto) que desaparece con `internal`;
+  - envío con `fetch` retrasado: botón deshabilitado, «Registrando…», spinner y `aria-busy`; después, confirmación y formulario limpio;
+  - fallo simulado de `/summary` → error y «Reintentar resumen» mientras el listado sigue operativo; fallo simulado del listado → error y «Reintentar» sin tabla, y recuperación;
+  - menú con los dos enlaces nuevos; `/incidents` intacto;
+  - consola: solo el 400 provocado a propósito.
+
+**Pendiente / no verificado:**
+- Un 400 de la API con `field` no se pudo provocar desde la UI real, porque la validación en cliente y los selectores lo impiden; lo cubren los tests del servicio.
+- No se probó con lector de pantalla ni en viewport móvil.
+- `services/api/SPECS.md` §33 sigue diciendo "Pendiente: la UI (F5)": corregirlo en F6 (en esta fase no se tocaba `services/`).
+- F6 (docs y memory-bank finales).
+
+---
+
+## 2026-10-07 — Gestor centralizado de incidencias, F4: API `/api/incidents` (`services/api`)
+
+**Estado: hecho, validado y comiteado** (commit de F4), en `feature/centralized-incident-manager`, después de F3 (`ef040f5`). Sin tocar `uis/` (F5).
+
+**Qué se hizo:**
+- **`app/modules/incident_manager/router.py`:** router propio con prefijo `/api/incidents` y JWT obligatorio (dependencia del router en `app/main.py`, incluido después del del analizador). Rutas:
+  - `POST` (201, nace `open`);
+  - `GET` con filtros `status`/`origin`/`branch`/`category` (AND);
+  - `GET /summary`;
+  - `GET /{incident_id:uuid}`;
+  - `PATCH /{incident_id:uuid}/status`.
+- **Ninguna regla en la API:** usa `validate_incident_fields`, `validate_filters` y `validate_status_change` (nuevas en `nexova_shared`) y `check_transition` vía el repositorio.
+- **Errores solo de este router:**
+  - `IncidentManagerRoute` convierte `RequestValidationError` (body no JSON, no objeto o ausente) en 400 `validation_error` con `field = "body"` y `error = "invalid_body"`. Solo usa la ubicación del error, nunca `input` ni `msg`;
+  - el resto de 400 vienen de los `FieldError` de `nexova_shared`;
+  - transición no permitida → 400 `invalid_status_transition`;
+  - 404 `incident_not_found`; id no UUID → 404 `not_found` (convertidor `uuid`);
+  - 500 opaco del middleware existente.
+  - El handler global del 422 no se tocó: proveedores y auth siguen en 422.
+- **Errores nuevos en `app/core/errors.py`:** `IncidentFieldsError`, `InvalidStatusTransitionApiError`, `IncidentNotFoundError`.
+- **`nexova_shared`:**
+  - `IncidentFilters`, `validate_filters`, `validate_status_change`, `FILTER_FIELDS`, `STATUS_CHANGE_FIELDS` y el código `invalid_body`;
+  - el mensaje de campo desconocido ya no repite la clave recibida ("this field is not accepted");
+  - +9 tests en `test_rules.py`.
+- **Tests:** `services/api/tests/test_incident_manager_api.py`, 43 tests:
+  - cada ruta con su caso feliz y cada 400 de la lista del usuario;
+  - las 16 transiciones por HTTP;
+  - base vacía; totales tras el seed del fixture;
+  - 401 en las 5 rutas; 404;
+  - 500 forzado sin traza ni mensaje, también en los logs;
+  - OpenAPI;
+  - no regresión: 405 de `/analyze` y `/results/export`, 404 de `/api/incidents/unknown`, 422 de `/suppliers`, `/users` y `/profiles/me`.
+- **Docs:**
+  - `services/api/SPECS.md`: **Parte E** (§28–§33: requisitos, decisiones P4-1…P4-13, endpoints, errores, resumen, persistencia) y referencias en §4, §7 y §20;
+  - `services/api/README.md`: endpoints, sección del gestor, tests y estructura;
+  - `packages/shared/README.md`;
+  - `AGENTS.md` §4: verificar en `/docs`.
+
+**Validación ejecutada:** `services/api` 289 OK (246 + 43); `packages/shared` 81 OK; analizador 118 OK (7 skipped); `src/` 97 OK. En `/openapi.json` aparecen las 5 rutas nuevas, con los filtros como `enum`.
+
+---
+
+## 2026-10-07 — Gestor centralizado de incidencias, F3: seed de datos históricos (`scripts/seed_incidents.py`)
+
+**Estado: hecho, validado y comiteado** (commit de F3), en `feature/centralized-incident-manager`, después de F2 (`959a65b`). Sin rutas HTTP (F4) y sin tocar `uis/`.
+
+**Qué se hizo:**
+- **`scripts/seed_incidents.py`**, capa fina:
+  - `nexova_shared.incidents.prepare_seed_batch` lee el CSV con el lector y el esquema del analizador, aplica las 7 reglas y el mapeo;
+  - `IncidentRepository.seed` inserta solo lo nuevo (idempotente por el SHA-256 de la clave de origen).
+- **Argumentos:**
+  - el CSV es opcional; por defecto `data/raw/incidents/incidents-nexova.csv`;
+  - `--db`, opcional; por defecto `INCIDENTS_DB_PATH` o `services/api/data/incidents.json`.
+- **Informe final en español**, como el seeder de proveedores: filas leídas, insertadas, ya existentes, inválidas (fila + códigos de regla), no mapeables (fila + motivo), duplicadas en el archivo (fila) y total en la base. Nunca contenido de las filas.
+- **Códigos de salida:** `1` si el CSV no existe, no es UTF-8 o su cabecera no tiene las columnas del analizador (no se crea la base); `2` si fallan los argumentos, la configuración o el entorno (sin el venv).
+- **Entorno:** se ejecuta con el venv de `services/api`. Si `nexova_shared` o `app` no están instalados, añade sus carpetas del monorepo a `sys.path`, como `scripts/analyze.py`.
+- **Tests:** `services/api/tests/test_incident_manager_seed.py` (14 tests).
+- **Docs:**
+  - `services/api/README.md`: sección del gestor, con el comando exacto del seed con el fixture sintético (Windows y Linux/macOS, verificado en PowerShell), tabla de tests y estructura;
+  - `scripts/README.md` y `README.es.md`: tabla de scripts;
+  - `AGENTS.md` §4: párrafo del gestor (el seed se verifica ejecutándolo dos veces sobre una base temporal).
+
+**Validación ejecutada (base temporal fuera del repo, en el scratchpad de la sesión):**
+- 1.ª ejecución con el fixture de aceptación: 100 filas; 96 insertadas; 4 inválidas (filas 18 `missing_client_company`, 45 `invalid_category`, 71 `invalid_email`, 93 `closed_without_score`); 0 no mapeables; 0 duplicadas; total 96; exit 0.
+- 2.ª ejecución: 0 insertadas, 96 ya existentes, total 96; exit 0.
+- Resumen del repositorio: open 27 / in_progress 0 / resolved 56 / discarded 13; technical_failure 49 / process_error 35 / client_complaint 12 y el resto de categorías 0; customer 96 (branch e internal 0); central 96 (resto de sedes 0).
+- En el archivo de la base hay 0 apariciones de `@`, `ticket_id`, `NXV-`, `example.invalid` y `AGT-`.
+- CSV inexistente → exit 1; cabecera de otro esquema → exit 1 (`missing required columns`).
+- Suites: `services/api` 246 OK (232 + 14); `packages/shared` 72; analizador 118 (7 skipped); `src/` 97.
+
+**Aviso:** en Git Bash, con la salida redirigida, las tildes del informe se ven mal, porque Python escribe en cp1252 y la terminal lee UTF-8. En PowerShell se ven bien. No se cambió la codificación de salida.
+
+---
+
+## 2026-10-07 — Gestor centralizado de incidencias, F2: modelo y repositorio TinyDB (`services/api`)
+
+**Estado: hecho, validado y comiteado** (commit de F2), en `feature/centralized-incident-manager`, después del commit de F1 (`164a183`). Sin rutas HTTP todavía (F4) y sin tocar `uis/`.
+
+**Cambio de decisión del usuario sobre P4-5 (2026-10-07):** `seed_keys` guarda el **SHA-256** de la clave de origen, no el `ticket_id` en claro, porque el CONTEXT dice que `ticket_id` no se almacena. Se aplica en `nexova_shared.incidents.source_key`, que ahora devuelve directamente el SHA-256 en hexadecimal de `ticket_id:<id>` o, si falta, de `title_created_at:<title>\n<created_at ISO>`. Así ningún objeto en memoria lleva la clave en claro. Cubierto con 3 tests nuevos en `packages/shared/tests/test_csv_mapping.py` y con uno del repositorio que busca `NXV-`, `ticket_id` y `@` en el archivo de la base.
+
+**Qué se hizo:**
+- **`app/modules/incident_manager/`:**
+  - `models.py`: `Incident` (id UUID, enums de `nexova_shared`, fechas `AwareDatetime`) e `IncidentSummary` (`total` + `by_status`/`by_category`/`by_origin`/`by_branch` con todas las claves);
+  - `repository.py` (`IncidentRepository`), con el mismo patrón que proveedores (lock, abrir y cerrar por operación, un worker):
+    - `find` con filtros combinables (AND), de la más reciente a la más antigua (desempate por `id`);
+    - `get`;
+    - `create`, a partir de un `IncidentDraft` ya validado; `id` UUID v4 y `created_at` = `updated_at` en UTC;
+    - `change_status`, que aplica solo transiciones válidas (`check_transition`; si no, `InvalidStatusTransitionError` sin escribir nada) y actualiza `updated_at`;
+    - `summary`;
+    - `seed`, idempotente por `seed_keys` (`key_sha256` + `incident_id`), con `updated_at` = `created_at` del CSV y todo en una sola operación.
+  - Las lecturas **no crean el archivo**: sin base o con la base vacía devuelven `[]` y totales a cero.
+- **Configuración:** `INCIDENTS_DB_PATH` (por defecto `services/api/data/incidents.json`, ignorado por git) en `app/core/config.py`, `.env.example`, README y SPECS §7. `app.modules.incident_manager` añadido a `[tool.setuptools] packages`.
+- **`tests/test_architecture.py`:** nueva regla que prohíbe en `app/` cualquier literal del vocabulario del gestor (estados, orígenes, categorías, sedes y etiquetas de sede), salvo `"branch"`, que también es nombre de campo.
+- **`tests/test_incident_manager_repository.py`** (26 tests): base inexistente o vacía, creación, filtros, resumen, transiciones (válidas, inválidas, finales), seed idempotente, totales del CONTEXT, privacidad del archivo y configuración.
+
+**Validación ejecutada:** `services/api` 232 OK (205 + 26 del repositorio + 1 de arquitectura); `packages/shared` 72 OK (70 + 2 netos del cambio de P4-5); analizador 118 OK (7 skipped); `src/` 97 OK.
+
+---
+
+## 2026-10-07 — Gestor centralizado de incidencias, F1: validación compartida en `packages/shared`
+
+**Estado: hecho, validado y comiteado** (commit de F1, tras el visto bueno del usuario), en la rama `feature/centralized-incident-manager` (creada desde `main` en `677e735`, merge de la PR #16). Contexto: [`docs/centralized-incident-manager.md`](../docs/centralized-incident-manager.md) (CONTEXT del proyecto, versionado en esta fase) + enunciado del proyecto (pegado por el usuario; exige `scripts/seed_incidents.py`, `packages/shared/`, endpoints `/api/incidents…` y UI de registro, listado y resumen).
+
+**Decisiones del usuario sobre el plan (2026-10-07):**
+- P4-1 (a): mover la validación a `packages/shared` y dejar el analizador como fachada.
+- P4-2: 400 solo en las rutas nuevas, con una lista de errores `{field, error, message}`; un JSON mal formado también devuelve 400.
+- P4-3: router aparte con id UUID (convertidor `{incident_id:uuid}`), para conservar el 405 de `GET /api/incidents/analyze`.
+- P4-4: TinyDB + Pydantic.
+- P4-5 (a): tabla `seed_keys` (clave `ticket_id` o `title + created_at`), fuera del modelo.
+- P4-6: CSV por argumento, por defecto `data/raw/incidents/incidents-nexova.csv`, ejecutado con el venv de `services/api`; el README tendrá el comando exacto con el fixture sintético.
+- P4-7: `/incident-manager` y `/incident-manager/new` en `uis/backoffice`, reutilizando `services/api`; autorizado ampliar el alcance de `uis/backoffice/CLAUDE.md`.
+- P4-8: estado en solo lectura como `open`; `title` ≤ 120; `description` sin máximo.
+- P4-9: JWT sin roles. P4-10: solo transiciones válidas en el listado. P4-11: valores literales, con etiquetas solo para `branch`. P4-12 y P4-13 aceptadas.
+
+**Qué se hizo:**
+- **`packages/shared/` (nuevo paquete Python `nexova_shared`, solo librería estándar):**
+  - `incident_csv/`: `schema.py`, `reader.py` y `validation.py` movidos desde el analizador sin cambios de comportamiento (`SCORE_LABELS` se queda en el analizador);
+  - `incidents/vocabulary.py`: enums y etiquetas de sede del CONTEXT, `TITLE_MAX_LENGTH` = 120;
+  - `incidents/rules.py`: `validate_incident_fields` y ciclo de vida;
+  - `incidents/csv_mapping.py`: mapeos, título, fecha a medianoche UTC, `customer`/`central`, clave de idempotencia y `prepare_seed_batch` (cargable / inválida / no mapeable / duplicada);
+  - `pyproject.toml` y `README.md` propios.
+- **`packages/incident-analyzer`:** `schema.py`, `reader.py` y `validation.py` pasan a reexportar desde `nexova_shared`; `__init__.py` añade `packages/shared` a `sys.path` si no está instalado. **Ningún test del analizador se modificó.**
+- **Docs:** `AGENTS.md` §4 (fila nueva de `packages/shared`), README del analizador y de `services/api` (instalación con tres paquetes), `services/api/SPECS.md` §1 (dónde viven esquema y reglas), `techContext.md` (inventario, decisión nueva, comando del venv) y `projectbrief.md` (proyecto nuevo, en curso).
+- **Corrección del memory-bank:** las menciones de "PR #16 abierta / sin merge" pasan a "integrada en `main`, merge `677e735` (2026-10-07)", y el estado verificado de `origin/main` pasa de `98c8ad2` a `677e735`.
+- Sin dependencias nuevas; `services/api/app` y `uis/` no se tocaron.
+
+**Validación ejecutada:**
+- Línea base antes del cambio: analizador 118 tests OK (7 skipped: aceptación con el CSV real, ausente); `services/api` 205 OK; `src/` (`npm run check`) 97 OK.
+- Después del cambio: analizador 118 OK (7 skipped), igual; `packages/shared` 70 OK (nuevos); `services/api` 205 OK con `nexova_shared` instalado en el venv; `src/` no se tocó.
+- Salida de `scripts/analyze.py` idéntica byte a byte antes y después (reporte del fixture de aceptación y del de 13 filas, y `results.csv` exportado).
+- `test_contract.py` lee las tablas del CONTEXT; una mutación de prueba (cambiar una etiqueta de sede) lo hace fallar.
+- Con el fixture sintético de aceptación: 96 válidas → open 27 / resolved 56 / discarded 13 y technical_failure 49 / process_error 35 / client_complaint 12, como el CONTEXT.
+
+**Pendiente / no verificado:**
+- El CSV real (`incidents-nexova.csv`) no está en el checkout: las cifras se verifican con el fixture sintético.
+- El fixture no tiene descripciones de más de 120 caracteres; el recorte se cubre con tests unitarios.
+- F2–F6 sin empezar en el momento del commit de F1.
+
+---
+
 ## 2026-10-06 — AUTH-03: documentación para revisión (guía para el profesor)
 
-**Estado: hecho** (solo documental, sin impacto técnico en el código), sin commit todavía, en la rama `feature/password-reset` (después del commit `cb9d0d5`; PR #16 abierta).
+**Estado: hecho** (solo documental, sin impacto técnico en el código), sin commit todavía, en la rama `feature/password-reset` (después del commit `cb9d0d5`). Se comiteó en `2a1926a` dentro de la PR #16, integrada en `main` (merge `677e735`, 2026-10-07).
 
 - **`docs/auth-password-reset.md` es ahora el documento principal de AUTH-03.** Se amplía con:
   - endpoints (propósito, autenticación, request, respuesta, errores y seguridad);
@@ -65,7 +323,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 - Revisión de P3-1…P3-6 por el tech lead o la CTO.
 - Decisión sobre M-1, M-2 y M-3.
 - Riesgo residual de H-1 (SPECS §27): un admin puede fijar contraseñas con `PUT /users/{id}` sin la actual, también la suya; ese cambio no invalida enlaces de reset pendientes ni queda en `password_audit`.
-- ~~Commit y PR~~: hecho, commit `cb9d0d5` y PR #16 abierta contra `main`.
+- ~~Commit y PR~~: hecho, commit `cb9d0d5` y PR #16, integrada en `main` (merge `677e735`, 2026-10-07).
 
 ---
 
@@ -408,12 +666,20 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
     - L-6: aviso de éxito oculto si hay otra sesión abierta.
 - **Deuda pendiente — `LastResultStore` global al proceso, no por usuario (registrada el 2026-10-05, sin corregir):** `services/api` guarda en memoria un único "último análisis" de incidentes para todo el proceso (`services/api/SPECS.md` §6, D-API-5). Desde AUTH-01/AUTH-02 hay varios usuarios autenticados, así que un usuario puede exportar el último resultado generado por otro. Hoy el resultado solo contiene métricas agregadas (sin filas ni emails) y el frontend descarta una exportación cuyo `X-Analysis-Id` no coincide con el análisis que muestra, pero la API no lo impide. **No se corrige ahora:** es una decisión de arquitectura pendiente del tech lead, a revisar antes de llevar el módulo de incidentes a un uso multiusuario real o a la Fase 4.
 
+- **Gestor centralizado de incidencias — límites conocidos (2026-10-07, sin corregir):**
+  - aceptación solo con el fixture sintético (el CSV real no está en el repo);
+  - con un filtro activo, una incidencia que cambia de estado sigue en el listado hasta la siguiente carga;
+  - el `seed` y la API no deben escribir a la vez en `incidents.json` (mismo criterio que D-SUP-10).
+  - `/suppliers` e `/incidents` tienen el mismo patrón que causó el scroll horizontal en móvil de `/incident-manager` (elementos `sr-only` dentro de un `overflow-x-auto` sin `relative`): sin medir ni corregir; figuran como excepciones pendientes en `tests/production-source.test.mjs`.
+  - Detalle en `docs/centralized-incident-manager-review.md`.
+
 ## Próximos pasos conocidos (no implementados aquí)
 
+- **Gestor centralizado de incidencias:** hecho en F1–F6 en `feature/centralized-incident-manager` (commits `164a183`, `959a65b`, `ef040f5`, `d7ce215`, `7ce4101` y el de F6), **pendiente de PR**. Guía de revisión: `docs/centralized-incident-manager-review.md`. Pendientes: la PR, la revisión de P4-1…P4-13 (decisiones del usuario) por el tech lead o la CTO, la aceptación con el CSV real y la verificación visual/móvil.
 - **Backend general de Nexova:** `docs/ARCHITECTURE_PROPOSAL.md` está pendiente de revisión por el CTO. Si se aprueba, sus dominios (candidatos, vacantes, pipeline, matching) tendrán que decidir cómo convivir con el `services/api/` ya existente del procesador de incidentes (mismo servicio o no, prefijo `/api/v1` o no). Nada de eso se ha iniciado.
 - **Procesador de incidentes:** Fases 1, 2 y 3 (`/incidents` en `uis/backoffice`) hechas e integradas en `main` (PR #6). Existe un fixture sintético de aceptación que reproduce las cifras del contexto (entrada 2026-09-27, PR #7). Pendientes: el test de aceptación con el CSV real (las cifras 100/96/4 no están verificadas con datos reales) y la Fase 4 (integración). Antes de la Fase 4 o de un uso multiusuario real, revisar la deuda de `LastResultStore` (ver "Decisiones y problemas conocidos").
 - `uis/backoffice` es un punto de entrada — tiene `/incidents` y `/suppliers`; el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.
 - **Directorio de proveedores:** hecho e integrado en `main` con el PR #9 (entrada 2026-09-29). Migración futura de TinyDB a Postgres cuando exista el ORM (decisión del tech lead) — `User`/`Profile` de AUTH-01 **no** migran: se quedan en TinyDB y Postgres solo guardará `user_uuid`.
 - **AUTH-01:** hecho e integrado en `main` con el PR #10 (entrada 2026-09-30). Su siguiente fase (que el frontend envíe el token y `PUT` en CORS) la cubrió AUTH-02.
-- **AUTH-03:** implementado en `feature/password-reset` (entradas 2026-10-05 y 2026-10-06), validado de extremo a extremo con email real y con H-1 de la auditoría corregido. Commit `cb9d0d5` en la PR #16, abierta y sin merge. La guía para revisarlo está en `docs/auth-password-reset.md`. Pendiente: la revisión y el merge de la PR. También pendientes las propuestas P3-1…P3-6 y la decisión sobre M-1, M-2 y M-3.
+- **AUTH-03:** implementado en `feature/password-reset` (entradas 2026-10-05 y 2026-10-06), validado de extremo a extremo con email real y con H-1 de la auditoría corregido. Commits `cb9d0d5` y `2a1926a`, integrados en `main` con la PR #16 (merge `677e735`, 2026-10-07). La guía para revisarlo está en `docs/auth-password-reset.md`. El merge no aprueba las propuestas P3-1…P3-6 ni decide sobre M-1, M-2 y M-3, que siguen pendientes.
 - **AUTH-02:** hecho e integrado en `main` con la PR #13 (merge `a4b6369`, entrada 2026-10-02 / 2026-10-05). Pendientes: revisión de las propuestas P-1…P-7 (`docs/auth-frontend.md` §3.3), registro desde la UI del tracker y refresh tokens (fuera de alcance). Los 4 errores de lint `react-hooks/set-state-in-effect` del tracker son anteriores a AUTH-02.

@@ -4,11 +4,11 @@ Núcleo de análisis del CSV de incidentes de soporte de **Nexova** (servicio de
 
 Fuente de verdad funcional: [`docs/COMPANY_INCIDENT_FILE_ANALIZER_PROJECT.md`](../../docs/COMPANY_INCIDENT_FILE_ANALIZER_PROJECT.md).
 
-Es el **único** lugar con lógica de análisis. Sus consumidores son capas finas encima: la CLI [`scripts/analyze.py`](../../scripts/analyze.py) y la API HTTP [`services/api`](../../services/api/README.md). Cualquier otro consumidor debe importar este paquete en vez de reimplementar reglas o métricas. El paquete no depende de ningún framework web.
+Es el **único** lugar con lógica de análisis (métricas, reporte y exportación). La **lectura y validación del CSV** (esquema, las 7 reglas) viven desde el gestor centralizado de incidencias en [`packages/shared`](../shared/README.md) (`nexova_shared.incident_csv`), que también usa el seed `scripts/seed_incidents.py`; este paquete las reexporta sin cambios (`incident_analyzer.validate_row`, `incident_analyzer.reader.read_rows`… siguen funcionando). Sus consumidores son capas finas encima: la CLI [`scripts/analyze.py`](../../scripts/analyze.py) y la API HTTP [`services/api`](../../services/api/README.md). Cualquier otro consumidor debe importar este paquete en vez de reimplementar reglas o métricas. El paquete no depende de ningún framework web.
 
 ## Requisitos
 
-Python 3.11 o superior. **Solo librería estándar** — sin dependencias de ejecución ni de test (`unittest`).
+Python 3.11 o superior. **Solo librería estándar** — sin dependencias de ejecución ni de test (`unittest`). Necesita `nexova_shared` (`packages/shared`): si no está instalado en el entorno, el paquete añade `packages/shared` a `sys.path` al importarse, así que los tests y la CLI siguen funcionando desde la raíz sin instalar nada.
 
 ## Uso
 
@@ -38,9 +38,9 @@ write_results_csv(result, "results.csv")
 
 | Módulo | Responsabilidad |
 |---|---|
-| `schema.py` | Campos, categorías, estados, las 7 reglas (`Rule`), etiquetas de puntuación, `IncidentRow` |
-| `reader.py` | CSV → `IncidentRow` (valores con `strip()`); `IncidentFileError` con mensajes sin contenido |
-| `validation.py` | `validate_row` → `ValidationResult` (número de fila + reglas); `parse_score` |
+| `schema.py` | Reexporta de `nexova_shared.incident_csv.schema` campos, categorías, estados, las 7 reglas (`Rule`) e `IncidentRow`; define solo las etiquetas de puntuación (son del reporte) |
+| `reader.py` | Reexporta `read_rows` / `IncidentFileError` de `nexova_shared.incident_csv.reader` (CSV → `IncidentRow`, valores con `strip()`, mensajes sin contenido) |
+| `validation.py` | Reexporta `validate_row` → `ValidationResult` (número de fila + reglas) y `parse_score` de `nexova_shared.incident_csv.validation` |
 | `metrics.py` | `MetricsAccumulator` → `AnalysisResult` (solo conteos, `Decimal` + ROUND_HALF_UP) |
 | `analyze.py` | Orquestación: leer → validar → agregar. `analyze_binary_stream` decodifica bytes (UTF-8 con BOM opcional, sin cerrar el stream) y `analyze_file` la reutiliza |
 | `report.py` | Texto del reporte de consola |
