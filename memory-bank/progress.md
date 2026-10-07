@@ -4,6 +4,38 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-07 — Gestor centralizado de incidencias, F6: documentación de cierre (proyecto hecho, pendiente de PR)
+
+**Estado: hecho y comiteado** (commit de F6, solo documentación) en `feature/centralized-incident-manager`, después de F5 (`7ce4101`). **El proyecto completo (F1–F6) está hecho y pendiente de PR**: sin push y sin PR abierta.
+
+**Decisiones:** P4-1…P4-13 (ver la entrada de F1 y `services/api/SPECS.md` §29) son **decisiones del usuario** tomadas al aprobar el plan, incluido el cambio de P4-5 en F2 (SHA-256 en `seed_keys`). **No las han revisado ni aprobado el tech lead ni la CTO.**
+
+**Qué se hizo:**
+- **`docs/centralized-incident-manager-review.md` (nuevo), guía de revisión** con:
+  - comandos exactos de Windows PowerShell: venv con los tres paquetes editables, seed con el fixture sintético y su salida esperada (96 insertadas / 4 inválidas; la segunda vez, 0), API, backoffice, comprobación de `/api/incidents/summary` y comandos de las suites con sus totales;
+  - tabla de trazabilidad "Qué evaluaremos" → implementación → test, indicando qué puntos no tienen test automático (el resalte de `branch`, el spinner y el `disabled` en el DOM, la llamada del componente a la validación y la estructura de carpetas);
+  - lista de lo no verificado.
+- **Comandos de la guía comprobados en PowerShell:**
+  - seed dos veces con `INCIDENTS_DB_PATH` (96 y luego 0);
+  - `Invoke-RestMethod` de login y `/summary` contra una API sobre bases temporales, que devolvió exactamente la tabla documentada.
+- **`services/api/SPECS.md`:** §33 enlaza la UI y la guía (se quita "Pendiente: la UI (F5)"); §29 aclara que las decisiones son del usuario.
+- **Enlaces a la guía** desde el README de `services/api`, `uis/backoffice/README.md`, `packages/shared/README.md` y `AGENTS.md` §4 (el gestor ya no figura "en curso").
+- Sin cambios de código de producción ni de tests.
+
+**Validación ejecutada (última pasada):** `packages/shared` 81 OK; analizador 118 OK (7 skipped); `services/api` 289 OK; `src/` 97 OK; backoffice `tsc` y `lint` limpios, `build` OK y 331 tests OK.
+
+**Pendiente / no verificado** (detalle en la guía de revisión):
+- CSV real ausente: la aceptación (96; 27/56/13; 49/35/12) solo se comprobó con el fixture sintético.
+- Verificación visual, móvil y con lector de pantalla pendiente.
+- Con un filtro activo, una incidencia que cambia de estado sigue en el listado hasta la siguiente carga (decisión de implementación, no fijada por ninguna fuente).
+- Un 400 con `field` no se puede provocar desde la UI real (solo cubierto por tests).
+- No se hizo el recorrido manual en `/docs`.
+- No hay soporte bilingüe (no existía en hitos anteriores).
+- Revisión de P4-1…P4-13 por el tech lead o la CTO.
+- Push y PR.
+
+---
+
 ## 2026-10-07 — Gestor centralizado de incidencias, F5: UI en `uis/backoffice` (`/incident-manager`, `/incident-manager/new`)
 
 **Estado: hecho, validado y comiteado** (commit de F5), en `feature/centralized-incident-manager`, después de F4 (`d7ce215`). Sin tocar `services/` ni `packages/`; sin dependencias nuevas. El usuario autorizó ampliar el "Alcance actual" de `uis/backoffice/CLAUDE.md` con una cuarta pieza.
@@ -598,9 +630,15 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
     - L-6: aviso de éxito oculto si hay otra sesión abierta.
 - **Deuda pendiente — `LastResultStore` global al proceso, no por usuario (registrada el 2026-10-05, sin corregir):** `services/api` guarda en memoria un único "último análisis" de incidentes para todo el proceso (`services/api/SPECS.md` §6, D-API-5). Desde AUTH-01/AUTH-02 hay varios usuarios autenticados, así que un usuario puede exportar el último resultado generado por otro. Hoy el resultado solo contiene métricas agregadas (sin filas ni emails) y el frontend descarta una exportación cuyo `X-Analysis-Id` no coincide con el análisis que muestra, pero la API no lo impide. **No se corrige ahora:** es una decisión de arquitectura pendiente del tech lead, a revisar antes de llevar el módulo de incidentes a un uso multiusuario real o a la Fase 4.
 
+- **Gestor centralizado de incidencias — límites conocidos (2026-10-07, sin corregir):**
+  - aceptación solo con el fixture sintético (el CSV real no está en el repo);
+  - con un filtro activo, una incidencia que cambia de estado sigue en el listado hasta la siguiente carga;
+  - el `seed` y la API no deben escribir a la vez en `incidents.json` (mismo criterio que D-SUP-10).
+  - Detalle en `docs/centralized-incident-manager-review.md`.
+
 ## Próximos pasos conocidos (no implementados aquí)
 
-- **Gestor centralizado de incidencias:** F1 (validación compartida en `packages/shared`, `164a183`), F2 (modelo + repositorio TinyDB en `services/api`, `959a65b`) F3 (`scripts/seed_incidents.py`, `ef040f5`) F4 (API `/api/incidents`, SPECS Parte E, `d7ce215`) y F5 (UI `/incident-manager` y `/incident-manager/new` en `uis/backoffice`) hechas y comiteadas en `feature/centralized-incident-manager` (entradas 2026-10-07). Sigue F6 (docs; incluye corregir SPECS §33), una fase por commit y con visto bueno entre fases. Decisiones P4-1…P4-13 en la entrada de F1.
+- **Gestor centralizado de incidencias:** hecho en F1–F6 en `feature/centralized-incident-manager` (commits `164a183`, `959a65b`, `ef040f5`, `d7ce215`, `7ce4101` y el de F6), **pendiente de PR**. Guía de revisión: `docs/centralized-incident-manager-review.md`. Pendientes: la PR, la revisión de P4-1…P4-13 (decisiones del usuario) por el tech lead o la CTO, la aceptación con el CSV real y la verificación visual/móvil.
 - **Backend general de Nexova:** `docs/ARCHITECTURE_PROPOSAL.md` está pendiente de revisión por el CTO. Si se aprueba, sus dominios (candidatos, vacantes, pipeline, matching) tendrán que decidir cómo convivir con el `services/api/` ya existente del procesador de incidentes (mismo servicio o no, prefijo `/api/v1` o no). Nada de eso se ha iniciado.
 - **Procesador de incidentes:** Fases 1, 2 y 3 (`/incidents` en `uis/backoffice`) hechas e integradas en `main` (PR #6). Existe un fixture sintético de aceptación que reproduce las cifras del contexto (entrada 2026-09-27, PR #7). Pendientes: el test de aceptación con el CSV real (las cifras 100/96/4 no están verificadas con datos reales) y la Fase 4 (integración). Antes de la Fase 4 o de un uso multiusuario real, revisar la deuda de `LastResultStore` (ver "Decisiones y problemas conocidos").
 - `uis/backoffice` es un punto de entrada — tiene `/incidents` y `/suppliers`; el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.

@@ -492,6 +492,8 @@ Fuentes, por orden: el enunciado del proyecto (pegado por el usuario en la sesi�
 
 ## 29. Decisiones de implementación (usuario, 2026-10-07; P4-1…P4-13)
 
+Las tomó **el usuario** al aprobar el plan del proyecto. No han sido revisadas ni aprobadas por el tech lead ni por la CTO.
+
 | ID | Decisión |
 |---|---|
 | P4-1 | La validación del CSV se movió de `packages/incident-analyzer` a `packages/shared` (`nexova_shared.incident_csv`); el analizador la reexporta sin cambios. El modelo del gestor también vive allí (`nexova_shared.incidents`). La API y el seed la reutilizan sin duplicarla |
@@ -584,4 +586,6 @@ Tras el seed del fixture sintético de aceptación (o del CSV real): `total` 96;
 
 - TinyDB en `INCIDENTS_DB_PATH` (§7): tablas `incidents` y `seed_keys`. Mismo patrón que D-SUP-10 (lock, un worker, no ejecutar el seed mientras la API escribe). Las lecturas no crean el archivo.
 - CORS: sin cambios (`PATCH` ya estaba permitido; `Content-Type: application/json` es una cabecera que Starlette admite siempre en el preflight).
-- Pendiente: la UI (F5). Fuera de alcance del enunciado: alertas de `sla_breach` (el filtro `?category=sla_breach` ya existe), responsables, tiempos de resolución, borrado y edición de otros campos.
+- UI: `uis/backoffice` → `/incident-manager` (resumen + listado con filtros y cambio de estado) y `/incident-manager/new` (formulario). Reglas en [`uis/backoffice/CLAUDE.md`](../../uis/backoffice/CLAUDE.md) ("Gestor centralizado de incidencias") y uso en [`uis/backoffice/README.md`](../../uis/backoffice/README.md).
+- Guía de revisión (puesta en marcha en PowerShell, salidas esperadas, trazabilidad de los requisitos y lo no verificado): [`docs/centralized-incident-manager-review.md`](../../docs/centralized-incident-manager-review.md).
+- Fuera de alcance del enunciado: alertas de `sla_breach` (el filtro `?category=sla_breach` ya existe), responsables, tiempos de resolución, borrado y edición de otros campos.

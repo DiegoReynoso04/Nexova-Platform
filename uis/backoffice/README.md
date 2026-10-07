@@ -40,6 +40,7 @@ Registro estructurado de incidencias técnicas y operativas de Nexova. Requisito
 - **`/incident-manager/new`**: título (máx. 120 caracteres, con contador), descripción, categoría, origen, sede (siempre visible y obligatoria, con las etiquetas del CONTEXT; se resalta con borde, fondo y un texto de ayuda cuando el origen es `branch`) y estado en solo lectura (`open`). Valida en cliente antes de enviar (sin petición si falta algo). Durante el envío, spinner y botón deshabilitado; los errores de la API se muestran en español junto a su campo (nunca el texto del servidor); tras el éxito, confirmación y formulario limpio.
 - Valores literales del dominio (en inglés) salvo las sedes, que usan sus nombres del CONTEXT.
 - Necesita la API en marcha; para ver datos históricos, el seed del CSV (`scripts/seed_incidents.py`, ver [`services/api/README.md`](../../services/api/README.md)).
+- Guía de revisión de todo el proyecto (API, seed, UI, suites y trazabilidad): [`docs/centralized-incident-manager-review.md`](../../docs/centralized-incident-manager-review.md).
 
 ### Autenticación — `/login`, `/register`, `/account/profile` (AUTH-02)
 

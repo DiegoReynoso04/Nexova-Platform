@@ -49,6 +49,8 @@ python -m pip install -e packages/shared -e packages/incident-analyzer -e "servi
 
 Igual que el núcleo del analizador, `nexova-shared` **no** se declara como dependencia en ningún `pyproject.toml`: el nombre está libre en PyPI y declararlo haría que pip lo buscase allí (*dependency confusion*).
 
+Guía de revisión del gestor de incidencias (cómo levantarlo, salidas esperadas y trazabilidad): [`docs/centralized-incident-manager-review.md`](../../docs/centralized-incident-manager-review.md).
+
 ### Tests
 
 ```bash
