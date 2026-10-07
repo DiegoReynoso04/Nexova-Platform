@@ -102,6 +102,36 @@ describe('código de producción', () => {
     }
   });
 
+  // Un elemento `position: absolute` (p. ej. `sr-only`) dentro de un contenedor
+  // con overflow que no es su bloque contenedor no queda recortado y ensancha la
+  // página: en /incident-manager provocaba scroll horizontal a 375 px. Todo
+  // contenedor `overflow-x-auto` de components/ debe llevar `relative`.
+  // Excepciones pendientes (mismo patrón, fuera del alcance del arreglo del
+  // gestor): si alguna se corrige, hay que quitarla de esta lista.
+  const OVERFLOW_WITHOUT_RELATIVE_PENDING = [
+    'components/incidents/distribution-table.tsx',
+    'components/incidents/invalid-breakdown-table.tsx',
+    'components/incidents/satisfaction-panel.tsx',
+    'components/suppliers/supplier-table.tsx',
+  ];
+
+  test('todo contenedor overflow-x-auto de components/ lleva relative', () => {
+    const containers = PRODUCTION_FILES.filter((file) => file.startsWith('components/')).flatMap((file) =>
+      [...codeWithoutComments(file).matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\})/g)]
+        .map((match) => match[1] ?? match[2])
+        .filter((classes) => /(^|\s)overflow-x-auto(\s|$)/.test(classes))
+        .map((classes) => ({ file, relative: /(^|\s)relative(\s|$)/.test(classes) }))
+    );
+    assert.ok(containers.some((item) => item.file === 'components/incident-manager/incident-table.tsx'));
+    for (const { file, relative } of containers) {
+      const pending = OVERFLOW_WITHOUT_RELATIVE_PENDING.includes(file);
+      assert.equal(relative, !pending, pending ? `${file} ya lleva relative: quítalo de la lista de pendientes` : `${file}: overflow-x-auto sin relative`);
+    }
+    for (const file of OVERFLOW_WITHOUT_RELATIVE_PENDING) {
+      assert.ok(containers.some((item) => item.file === file), `${file} ya no tiene overflow-x-auto: quítalo de la lista`);
+    }
+  });
+
   test('incluye las vistas de contraseña (AUTH-03)', () => {
     for (const file of [
       'app/forgot-password/page.tsx',

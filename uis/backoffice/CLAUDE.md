@@ -97,6 +97,7 @@ Autorizada por el ticket AUTH-02 ([`docs/auth-frontend.md`](../../docs/auth-fron
 ## Arquitectura
 
 - Al consumir una API propia (hoy: análisis de incidentes, directorio de proveedores y gestor de incidencias), seguir el mismo patrón de frontera de confianza que `uis/talent-pipeline-tracker`: `services/normalizers.ts` como único lugar con `unknown` de red, errores tipados en `lib/api-client.ts`, y componentes sin HTTP directo.
+- **Contenedores con scroll horizontal:** todo `overflow-x-auto` de `components/` lleva también `relative`. Así los elementos `position: absolute` de dentro (p. ej. `sr-only`) quedan recortados y no ensanchan la página; sin él, `/incident-manager` tenía scroll horizontal a 375 px. Lo comprueba `tests/production-source.test.mjs`, con una lista explícita de excepciones pendientes (`/suppliers`, `/incidents`).
 
 <!-- BEGIN:nextjs-agent-rules -->
 

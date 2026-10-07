@@ -174,10 +174,33 @@ Los tests de Python se citan como `archivo` → `Clase.test`; los del backoffice
 | La validación del proyecto anterior está en `packages/shared/` y la reutilizan el script y la API sin duplicación | `nexova_shared.incident_csv` (reexportado por `incident_analyzer`) y `nexova_shared.incidents` (usado por el seed y por el router) | `packages/shared/tests/test_source.py` → `AnalyzerReusesSharedValidationTests`; `services/api/tests/test_architecture.py` → `test_no_core_literals_in_api`, `test_no_incident_manager_vocabulary_in_api` |
 | El código está organizado en `scripts/`, `services/`, `uis/` y `packages/shared/` | Estructura del repositorio (ver "Qué se construyó") | **Sin test automático**: es estructural; se comprueba con el árbol del repositorio |
 
+## Verificado por el usuario: viewport móvil
+
+**El usuario probó `/incident-manager` a 375 px y encontró un fallo:** toda la página tenía scroll horizontal (`document.documentElement.scrollWidth` 673 frente a `clientWidth` 375).
+
+- **Causa (diagnosticada por el usuario en el navegador):** en `components/incident-manager/incident-table.tsx`, las etiquetas `<label className="sr-only">` de la columna Estado son `position: absolute`. El contenedor con `overflow-x-auto` no era su bloque contenedor, así que no las recortaba y ensanchaban el documento.
+- **Arreglo:** `relative` en ese contenedor. El `min-w` de la tabla y las etiquetas accesibles no cambian.
+- **Comprobado después del arreglo, en el navegador:**
+
+  | Ruta | 375 px | 1280 px |
+  |---|---|---|
+  | `/incident-manager` | scrollWidth 375 = clientWidth 375 | 1265 = 1265 |
+  | `/incident-manager/new` | 375 = 375 | 1265 = 1265 |
+
+  - El 1265 corresponde a 1280 px menos la barra de scroll vertical.
+  - A 375 px la tabla conserva su scroll horizontal propio (768 de contenido frente a 341 visibles, desplazable).
+  - Quitando `relative` desde la consola, el scrollWidth vuelve a 672: la causa queda confirmada.
+- **Prevención:** `tests/production-source.test.mjs` exige `relative` en todo contenedor `overflow-x-auto` de `components/`. Hay una lista explícita de excepciones pendientes con el mismo patrón, fuera del alcance de este arreglo:
+  - la tabla de `/suppliers` (`<caption className="sr-only">` y la etiqueta `sr-only` del editor de tarifa);
+  - las tres tablas de `/incidents` (`<caption className="sr-only">`).
+
+  El test falla si una de ellas se corrige y no se retira de la lista.
+
 ## Lo que no está verificado
 
 - **CSV real ausente.** `incidents-nexova.csv` no está en el repositorio (ni en `data/raw/incidents/`): la aceptación de los totales (96 válidas; 27/56/13; 49/35/12) se comprobó **solo con el fixture sintético** de `packages/incident-analyzer/tests/fixtures/`, que reproduce las cifras del CONTEXT. `packages/incident-analyzer/tests/test_acceptance.py` sigue como *skipped (PENDING)*.
-- **Verificación visual y móvil pendientes.** La comprobación en el navegador (F5) se hizo con el panel del navegador oculto, interactuando por DOM y JavaScript: no hay capturas, ni revisión visual del diseño, ni prueba en viewport móvil, ni con lector de pantalla.
+- **Revisión visual y con lector de pantalla pendientes.** La comprobación de F5 se hizo con el panel del navegador oculto, interactuando por DOM y JavaScript: no hay capturas ni revisión del diseño, ni prueba con lector de pantalla. El viewport móvil sí se probó (ver la sección anterior), pero solo se midió el ancho de la página, no el aspecto visual.
+- **`/suppliers` e `/incidents` a 375 px.** Tienen el mismo patrón (elementos `sr-only` dentro de un `overflow-x-auto` sin `relative`), pero no se han medido ni corregido.
 - **Filtros tras un cambio de estado.** Con un filtro activo (p. ej. `status=open`), una incidencia que cambia de estado **sigue en el listado** con su estado nuevo hasta la siguiente carga (cambiar un filtro o «Reintentar»): no desaparece al instante. El resumen sí se recarga. Ninguna fuente fija este comportamiento; es una decisión de implementación.
 - **400 con `field` desde la UI real.** La validación en cliente y los desplegables impiden provocarlo desde el formulario: el comportamiento (mensaje en español junto al campo) solo está cubierto por los tests del servicio.
 - **Recorrido manual en `/docs`.** La API se probó con `TestClient` y desde el backoffice en el navegador, pero no se hizo el recorrido manual en Swagger (*Authorize* → alta → filtros → cambio de estado → `/summary`) que pide `AGENTS.md` §4.

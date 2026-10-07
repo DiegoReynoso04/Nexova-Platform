@@ -26,7 +26,11 @@ function formatDateTime(iso: string): string {
 // transiciones del ciclo de vida; los estados finales no ofrecen selector.
 export function IncidentTable({ incidents, rows, onChangeStatus, onDismissRowError }: IncidentTableProps) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+    // `relative`: los elementos `sr-only` de las filas (position: absolute) toman
+    // este contenedor como bloque contenedor y quedan recortados por su
+    // overflow. Sin él, ensanchaban el documento en móvil (scroll horizontal
+    // de toda la página a 375 px).
+    <div className="relative overflow-x-auto rounded-lg border border-border bg-surface">
       <table className="w-full min-w-[48rem] border-collapse text-left text-sm">
         <caption className="sr-only">Incidencias registradas</caption>
         <thead className="border-b border-border bg-canvas text-xs uppercase tracking-wide text-ink-muted">

@@ -4,6 +4,42 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-07 — Gestor centralizado de incidencias: scroll horizontal en móvil (`/incident-manager`)
+
+**Estado: hecho, validado y comiteado** (commit aparte, después de F6 `ca0bf00`), en `feature/centralized-incident-manager`. Sin push. El proyecto sigue pendiente de PR.
+
+**Fallo, encontrado y diagnosticado por el usuario en el navegador:**
+- A 375 px, `/incident-manager` tenía scroll horizontal en toda la página (scrollWidth 673 frente a clientWidth 375).
+- Causa: las etiquetas `<label className="sr-only">` de la columna Estado de `components/incident-manager/incident-table.tsx` son `position: absolute`, y el contenedor `overflow-x-auto` no era su bloque contenedor.
+
+**Qué se hizo:**
+- `relative` en ese contenedor. Sin cambiar el `min-w` de la tabla ni quitar las etiquetas accesibles.
+- Test estático nuevo en `tests/production-source.test.mjs`: todo `overflow-x-auto` de `components/` debe llevar `relative`. Lleva una lista explícita de excepciones pendientes y falla si una se corrige sin retirarla de la lista. Una mutación (quitar `relative`) lo hace fallar.
+- Docs: regla en `uis/backoffice/CLAUDE.md` (Arquitectura). La guía de revisión pasa el viewport móvil a "verificado por el usuario", citando el fallo y su arreglo.
+
+**Mismo patrón detectado (solo lectura, sin corregir):**
+- `components/suppliers/supplier-table.tsx`: `<caption className="sr-only">` y la etiqueta `sr-only` del editor de tarifa, que solo existe con el editor abierto.
+- `components/incidents/distribution-table.tsx`, `invalid-breakdown-table.tsx` y `satisfaction-panel.tsx` (`/incidents`): `<caption className="sr-only">`.
+- No se ha medido si llegan a ensanchar la página.
+
+**Validación ejecutada:**
+- Backoffice: `tsc`, `lint` y `build` limpios; tests 332 OK (331 + 1).
+- Navegador, sobre los servidores de desarrollo del usuario (backoffice en el 3000 y API en el 8000):
+
+  | Ruta | 375 px | 1280 px |
+  |---|---|---|
+  | `/incident-manager` | 375 = 375 | 1265 = 1265 |
+  | `/incident-manager/new` | 375 = 375 | 1265 = 1265 |
+
+  - A 375 px, la tabla conserva su scroll propio (768 frente a 341).
+  - Sin `relative` (desde la consola), scrollWidth vuelve a 672.
+
+**Incidencia de la sesión:**
+- Los puertos 3000 y 8000 los ocupaban los servidores del usuario, así que la API temporal no arrancó.
+- El usuario de prueba `qa-mobile@example.test` se creó por error en la API del usuario. Se usó solo para esta verificación de solo lectura y después se borró (`DELETE /users/{id}` → 204; el login posterior da 401).
+
+---
+
 ## 2026-10-07 — Gestor centralizado de incidencias, F6: documentación de cierre (proyecto hecho, pendiente de PR)
 
 **Estado: hecho y comiteado** (commit de F6, solo documentación) en `feature/centralized-incident-manager`, después de F5 (`7ce4101`). **El proyecto completo (F1–F6) está hecho y pendiente de PR**: sin push y sin PR abierta.
@@ -634,6 +670,7 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
   - aceptación solo con el fixture sintético (el CSV real no está en el repo);
   - con un filtro activo, una incidencia que cambia de estado sigue en el listado hasta la siguiente carga;
   - el `seed` y la API no deben escribir a la vez en `incidents.json` (mismo criterio que D-SUP-10).
+  - `/suppliers` e `/incidents` tienen el mismo patrón que causó el scroll horizontal en móvil de `/incident-manager` (elementos `sr-only` dentro de un `overflow-x-auto` sin `relative`): sin medir ni corregir; figuran como excepciones pendientes en `tests/production-source.test.mjs`.
   - Detalle en `docs/centralized-incident-manager-review.md`.
 
 ## Próximos pasos conocidos (no implementados aquí)
