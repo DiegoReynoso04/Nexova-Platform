@@ -38,4 +38,4 @@ create-admin = "app.auth.create_admin:main"
 dev = ["httpx>=0.28,<0.29"]
 
 [tool.setuptools]
-packages = ["app", "app.auth", "app.core", "app.modules", "app.modules.incidents", "app.routes"]
+packages = ["app", "app.auth", "app.core", "app.modules", "app.modules.incident_manager", "app.modules.incidents", "app.routes"]

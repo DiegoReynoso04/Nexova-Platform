@@ -67,6 +67,7 @@ class SeedIncident:
     """Una fila ya transformada, lista para insertar. `updated_at` = `created_at` al insertar."""
 
     row_number: int
+    # SHA-256 (hex) de la clave de origen; ver `source_key`.
     source_key: str
     draft: IncidentDraft
     created_at: datetime
@@ -114,15 +115,18 @@ def parse_csv_date(raw: str) -> datetime | None:
 
 
 def source_key(ticket_id: str, title: str, created_at: datetime) -> str:
-    """Identificador del registro de origen para la idempotencia del seed.
+    """Identificador del registro de origen para la idempotencia del seed: SHA-256 en hexadecimal.
 
-    `ticket_id` si viene informado; si no, `title + created_at`. El título va
-    resumido con SHA-256 porque la clave se guarda y puede acabar en consola.
+    Se resume `ticket_id:<ticket_id>` si viene informado; si no,
+    `title_created_at:<title>\\n<created_at ISO>`. El CONTEXT dice que
+    `ticket_id` no se almacena: el seed guarda solo este resumen, nunca la clave
+    en claro (tampoco el título).
     """
     if ticket_id:
-        return f"{_TICKET_ID_KEY}:{ticket_id}"
-    digest = hashlib.sha256(f"{title}\n{created_at.isoformat()}".encode()).hexdigest()
-    return f"{_FALLBACK_KEY}:{digest}"
+        key = f"{_TICKET_ID_KEY}:{ticket_id}"
+    else:
+        key = f"{_FALLBACK_KEY}:{title}\n{created_at.isoformat()}"
+    return hashlib.sha256(key.encode()).hexdigest()
 
 
 def map_csv_row(row: IncidentRow) -> SeedIncident | RowIssue:

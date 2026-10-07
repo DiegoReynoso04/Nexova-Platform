@@ -1,3 +1,4 @@
+import hashlib
 import unittest
 from collections import Counter
 from datetime import UTC, datetime
@@ -116,13 +117,28 @@ class FieldMappingTests(unittest.TestCase):
 
 
 class SourceKeyTests(unittest.TestCase):
-    def test_ticket_id_is_the_key(self) -> None:
-        self.assertEqual(mapped(ticket_id="NXV-000042").source_key, "ticket_id:NXV-000042")
+    def test_key_is_the_sha256_of_the_ticket_id(self) -> None:
+        # P4-5: el CONTEXT dice que ticket_id no se almacena; solo se guarda su resumen.
+        key = mapped(ticket_id="NXV-000042").source_key
+        self.assertEqual(key, hashlib.sha256(b"ticket_id:NXV-000042").hexdigest())
+        self.assertRegex(key, r"\A[0-9a-f]{64}\Z")
+        self.assertNotIn("NXV", key)
+        self.assertNotIn("000042", key)
+
+    def test_different_ticket_ids_give_different_keys(self) -> None:
+        self.assertNotEqual(mapped(ticket_id="NXV-000001").source_key, mapped(ticket_id="NXV-000002").source_key)
+
+    def test_ticket_id_key_does_not_depend_on_title_or_date(self) -> None:
+        first = mapped(ticket_id="NXV-000042", description="Synthetic one", date="2026-08-01")
+        second = mapped(ticket_id="NXV-000042", description="Synthetic two", date="2026-08-02")
+        self.assertEqual(first.source_key, second.source_key)
 
     def test_title_and_created_at_when_ticket_id_is_missing(self) -> None:
         created_at = datetime(2026, 8, 1, tzinfo=UTC)
         key = source_key("", "Printer not responding", created_at)
-        self.assertTrue(key.startswith("title_created_at:"))
+        self.assertEqual(
+            key, hashlib.sha256(b"title_created_at:Printer not responding\n2026-08-01T00:00:00+00:00").hexdigest()
+        )
         self.assertEqual(key, source_key("", "Printer not responding", created_at))
         self.assertNotEqual(key, source_key("", "Printer not responding", datetime(2026, 8, 2, tzinfo=UTC)))
         self.assertNotEqual(key, source_key("", "Another title", created_at))

@@ -21,7 +21,7 @@ Es el único lugar con reglas de validación de incidencias. Sus consumidores so
 | `incident_csv/validation.py` | `validate_row` → `ValidationResult` (número de fila + reglas); `parse_score` | ídem |
 | `incidents/vocabulary.py` | `IncidentStatus`, `IncidentOrigin`, `IncidentCategory`, `Branch` y sus etiquetas (`BRANCH_LABELS`), `TITLE_MAX_LENGTH` = 120 | [`docs/centralized-incident-manager.md`](../../docs/centralized-incident-manager.md) |
 | `incidents/rules.py` | `validate_incident_fields` (obligatorios, valores permitidos, título ≤ 120, campos desconocidos) → `IncidentDraft` o `IncidentValidationError` con un `FieldError(field, error, message)` por problema; ciclo de vida (`ALLOWED_TRANSITIONS`, `can_transition`, `check_transition`) | ídem |
-| `incidents/csv_mapping.py` | Mapeo CSV → modelo (estados, categorías, `description` → `title`, `date` → `created_at` a medianoche UTC, `origin` = `customer`, `branch` = `central`), clave de idempotencia (`ticket_id` o `title + created_at`) y `prepare_seed_batch`, que separa cada fila en cargable, inválida (7 reglas), no mapeable o duplicada | ídem |
+| `incidents/csv_mapping.py` | Mapeo CSV → modelo (estados, categorías, `description` → `title`, `date` → `created_at` a medianoche UTC, `origin` = `customer`, `branch` = `central`), clave de idempotencia (SHA-256 de `ticket_id` o, si falta, de `title + created_at`: el `ticket_id` nunca se guarda en claro) y `prepare_seed_batch`, que separa cada fila en cargable, inválida (7 reglas), no mapeable o duplicada | ídem |
 
 Reglas del paquete:
 

@@ -205,6 +205,7 @@ Variables de entorno del proceso (la API no carga archivos `.env` por sí sola; 
 | `JWT_SECRET_KEY` | **ninguno (obligatoria)** | clave HS256, ≥ 32 caracteres; sin ella la API no arranca (Parte C) |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | **ninguno (obligatoria)** | entero > 0; sin ella la API no arranca (Parte C) |
 | `AUTH_DB_PATH` | `services/api/data/auth.json` | archivo TinyDB de `User` y `Profile` (Parte C). La usan la API y `create-admin` |
+| `INCIDENTS_DB_PATH` | `services/api/data/incidents.json` | archivo TinyDB del gestor centralizado de incidencias (tablas `incidents` y `seed_keys`). Lo usan el repositorio `app/modules/incident_manager/` y `scripts/seed_incidents.py`. Sus rutas HTTP se documentarán con F4 |
 
 ---
 
