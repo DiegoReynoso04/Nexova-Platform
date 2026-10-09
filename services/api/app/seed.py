@@ -10,11 +10,15 @@ venv del servicio: `python -m app.seed`.
 - Cada registro pasa por `SupplierCreate` (misma validación que la API).
 - Usa la misma base que la API (`SUPPLIERS_DB_PATH` o services/api/data/suppliers.json).
   La API no ejecuta el seeder por sí sola: la carga es siempre explícita.
+- Errores de configuración o una base que no se puede abrir, escribir o está
+  corrupta: mensaje en stderr y código de salida 1, sin traceback.
 """
 
+import sys
 from typing import Any
 
-from app.core.config import Settings
+from app.core.config import ConfigError, Settings
+from app.core.errors import StorageUnavailableError
 from app.database import SeedResult, SupplierRepository
 from app.models import SupplierCreate
 
@@ -184,8 +188,23 @@ def run_seed(repository: SupplierRepository) -> SeedResult:
 
 def main() -> None:
     """Punto de entrada de `uv run seed` (`[project.scripts]` en pyproject.toml)."""
-    settings = Settings.from_env()
-    result = run_seed(SupplierRepository(settings.suppliers_db_path))
+    try:
+        settings = Settings.from_env()
+    except ConfigError as error:
+        # Los mensajes de ConfigError son fijos: nombran la variable, nunca su valor.
+        print(f"Error de configuración: {error}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        result = run_seed(SupplierRepository(settings.suppliers_db_path))
+    except StorageUnavailableError:
+        # El repositorio ya registró el almacén y la clase del error; aquí solo
+        # el nombre del archivo, nunca la ruta completa ni el mensaje original.
+        print(
+            f"Error: no se pudo abrir o escribir la base de proveedores ({settings.suppliers_db_path.name}). "
+            "Revisa SUPPLIERS_DB_PATH, los permisos y que sea un archivo TinyDB válido.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     print(f"Base de datos: {settings.suppliers_db_path}")
     print(f"Proveedores insertados: {result.inserted}")
     print(f"Ya existentes (omitidos): {result.skipped}")

@@ -174,11 +174,43 @@ class ExitCodeTests(SeedScriptTestCase):
         self.assertIn("not valid UTF-8", err)
         self.assertNotIn("x@example.invalid", err)
 
+    def test_read_error_without_strerror_shows_the_class_name(self) -> None:
+        # S4 aplicado también aquí: un OSError sin errno no debe imprimir "None".
+        with mock.patch.object(seed_incidents, "read_batch", side_effect=OSError()):
+            code, out, err = self.run_seed(ACCEPTANCE_FIXTURE, "--db", self.db)
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn(f"error: cannot read {ACCEPTANCE_FIXTURE}: OSError", err)
+        self.assertNotIn("None", err)
+        self.assertFalse(self.db.exists())
+
     def test_header_only_is_a_valid_empty_load(self) -> None:
         code, out, _ = self.run_seed(self.write_csv(), "--db", self.db)
         self.assertEqual(code, 0)
         self.assertIn("Insertadas: 0", out.splitlines())
         self.assertIn("Total de incidencias en la base: 0", out.splitlines())
+
+
+class StorageErrorTests(SeedScriptTestCase):
+    """S1 de la auditoría: una base que no se puede abrir o está corrupta → código 2, sin traceback."""
+
+    def assertStorageError(self, code: int, out: str, err: str) -> None:
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("error: cannot open or write the incidents database (incidents.json)", err)
+        # Línea de log_storage_failure (handler de último recurso de logging): almacén y clase.
+        self.assertIn("storage incidents is unavailable:", err)
+        self.assertNotIn("Traceback", err)
+        self.assertNotIn(str(self.tmp), err)
+
+    def test_database_path_is_a_directory(self) -> None:
+        self.db.mkdir()
+        self.assertStorageError(*self.run_seed(ACCEPTANCE_FIXTURE, "--db", self.db))
+
+    def test_corrupt_database(self) -> None:
+        self.db.write_text('{"incidents": {"1": {"title": "leak@example.invalid"', encoding="utf-8")
+        code, out, err = self.run_seed(ACCEPTANCE_FIXTURE, "--db", self.db)
+        self.assertStorageError(code, out, err)
+        self.assertIn("JSONDecodeError", err)
+        self.assertNotIn("leak@example.invalid", err)
 
 
 class DefaultsTests(SeedScriptTestCase):

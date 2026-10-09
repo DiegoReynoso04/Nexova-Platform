@@ -4,9 +4,51 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-10 — Auditoría de gestión de errores: S1–S4 (scripts y CLIs sin traceback)
+
+**Estado: hecho y validado, sin commit todavía**, en `feature/error-handling-audit`, después de `24f0e0d` (A1 y A2). Es la segunda fase pedida por el usuario: solo S1–S4.
+
+**Qué se hizo:**
+- **S1, `scripts/seed_incidents.py`:**
+  - Solo se protege la llamada `IncidentRepository(db_path).seed(...)`, y solo contra `StorageUnavailableError`, que es la forma en que llega un fallo de TinyDB desde A2.
+  - Mensaje en stderr con el nombre del archivo, nunca la ruta completa ni `str(exc)`.
+  - Código `2` ("entorno"). El docstring, el README de `services/api` y la guía de revisión del gestor ya lo dicen.
+- **S2, `services/api/app/seed.py` (`uv run seed`):** `main()` captura `ConfigError` de `Settings.from_env()` y `StorageUnavailableError` del repositorio, cada uno en su `try`. Ambos dan mensaje en stderr y `sys.exit(1)`. Los mensajes de `ConfigError` nombran la variable, nunca su valor.
+- **S3, `services/api/app/auth/create_admin.py`:** `run()` devuelve 1, sin traceback y sin crear nada, en tres casos tratados por separado:
+  - `ConfigError`;
+  - `EOFError` o `KeyboardInterrupt` de `input()` y `getpass` («Operación cancelada. No se ha creado ningún usuario.»);
+  - `StorageUnavailableError`.
+
+  La contraseña no aparece en ninguna salida.
+- **S4, `scripts/analyze.py`:**
+  - Ctrl+C en la pregunta de exportar equivale a «no exportar» (código `0`).
+  - `describe_os_error` sustituye `error.strerror` (que puede ser `None`) por el nombre de la clase.
+  - `scripts/seed_incidents.py` usa también su propia copia de `describe_os_error` al leer el CSV, para que los scripts no se importen entre sí.
+  - **No hecho:** el `BrokenPipeError` al redirigir la salida a `head`. En Windows, escribir en una tubería cerrada da `OSError` con `EINVAL` y no `BrokenPipeError`, así que no hay un test fiable y pequeño. Queda documentado.
+- **Registro en stderr:** en los scripts, el logger `nexova.api` no tiene handler, así que `log_storage_failure` sale por el handler de último recurso de `logging` (`storage <almacén> is unavailable: <Clase>`), justo antes del mensaje del script.
+  - **Se acepta:** no es un duplicado. Aporta la clase del error (`JSONDecodeError` frente a `PermissionError`), que el script no conoce porque `StorageUnavailableError` no arrastra la excepción original.
+  - **Sin datos sensibles:** no lleva ruta ni contenido.
+- **Tests:**
+  - `test_incident_manager_seed.py` +3 (`--db` como directorio, base corrupta y `OSError` sin `strerror` al leer el CSV);
+  - `test_suppliers_seed.py` +2 (configuración de email incompleta y base corrupta);
+  - `test_create_admin.py` +4 (EOF, Ctrl+C, base corrupta y `ConfigError`); la base común se extrajo a `CreateAdminTestCase`;
+  - `packages/incident-analyzer/tests/test_cli_errors.py` nuevo, con 3 tests;
+  - los tests de `KeyboardInterrupt` convierten una regresión en un `fail` normal, para no abortar la suite.
+
+**Validación ejecutada:**
+- **Suites:** `services/api` pasa de 303 a **312 OK**; `packages/incident-analyzer` de 118 a **121 OK** (7 omitidos).
+- **Mutaciones:** devolviendo cada archivo a `24f0e0d`, fallan los 12 tests nuevos (3 + 2 + 4 + 3).
+- **Seed del gestor:** dos ejecuciones sobre una base temporal con el fixture de aceptación dan 96 insertadas y luego 0.
+- **`uv run seed`:** dos ejecuciones con `SUPPLIERS_DB_PATH` temporal dan 15 y luego 0. uv reconstruyó el paquete editable de la API; el núcleo y `nexova_shared` siguieron instalados.
+- **Bases de prueba:** siempre fuera del repo, sin tocar `services/api/data/`.
+
+**Observación, sin corregir:** riesgo de duplicación en `IncidentRepository.seed`, registrado en "Decisiones y problemas conocidos". Por eso el mensaje de S1 no promete «no se ha insertado nada».
+
+---
+
 ## 2026-10-10 — Auditoría de gestión de errores: A1 (respuestas cortadas de Resend) y A2 (TinyDB no disponible → 503) en `services/api`
 
-**Estado: hecho y validado, sin commit todavía**, en la rama `feature/error-handling-audit`, creada desde `main` en `6dfa013` (merge de la PR #17). Origen: auditoría de solo lectura del 2026-10-09 sobre todo el código de producción (backend, scripts, backoffice, tracker y web). Encontró 2 hallazgos ALTO, 6 MEDIO y 10 BAJO, ninguno crítico. El informe se entregó en la conversación y no está versionado. El usuario pidió implementar solo A1 y A2. El resto sigue pendiente (ver "Próximos pasos").
+**Estado: hecho, validado y comiteado** (`24f0e0d`, `fix(api)`), en la rama `feature/error-handling-audit`, creada desde `main` en `6dfa013` (merge de la PR #17). Origen: auditoría de solo lectura del 2026-10-09 sobre todo el código de producción (backend, scripts, backoffice, tracker y web). Encontró 2 hallazgos ALTO, 6 MEDIO y 10 BAJO, ninguno crítico. El informe se entregó en la conversación y no está versionado. El usuario pidió implementar solo A1 y A2. El resto sigue pendiente (ver "Próximos pasos").
 
 **Qué se hizo:**
 - **A1 (era L-4 de AUTH-03):** `app/auth/email.py` añade `http.client.HTTPException` a los errores que `ResendEmailSender.send` convierte en `EmailDeliveryError` (con `from None`). `IncompleteRead`, `BadStatusLine` y `LineTooLong` no son `OSError`. Hasta ahora escapaban de la tarea en segundo plano y las registraba el middleware del 500 ("unhandled error"), no `log_email_delivery_failure`.
@@ -36,7 +78,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - **Log:** solo `storage <almacén> is unavailable: <Clase>`, sin rutas ni emails.
 
 **Efectos colaterales conocidos:**
-- `scripts/seed_incidents.py`, `uv run seed` y `create-admin` también usan estos repositorios. Con una base corrupta ahora reciben `StorageUnavailableError` (antes, `JSONDecodeError`) y siguen terminando con traceback. Es el hallazgo S1–S3, pendiente.
+- `scripts/seed_incidents.py`, `uv run seed` y `create-admin` también usan estos repositorios. Con una base corrupta ahora reciben `StorageUnavailableError` (antes, `JSONDecodeError`) y seguían terminando con traceback (S1–S3). *(Resuelto el 2026-10-10 en la entrada de arriba.)*
 - **Frontends sin cambios:**
   - **Backoffice:** el 503 es «Error del servidor». En el guard de sesión es «No se pudo comprobar la sesión», con «Reintentar».
   - **Tracker:** las rutas de auth muestran «La API respondió con el código 503» (hallazgo T2).
@@ -705,7 +747,12 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
     - L-6: aviso de éxito oculto si hay otra sesión abierta.
 - **Deuda pendiente — `LastResultStore` global al proceso, no por usuario (registrada el 2026-10-05, sin corregir):** `services/api` guarda en memoria un único "último análisis" de incidentes para todo el proceso (`services/api/SPECS.md` §6, D-API-5). Desde AUTH-01/AUTH-02 hay varios usuarios autenticados, así que un usuario puede exportar el último resultado generado por otro. Hoy el resultado solo contiene métricas agregadas (sin filas ni emails) y el frontend descarta una exportación cuyo `X-Analysis-Id` no coincide con el análisis que muestra, pero la API no lo impide. **No se corrige ahora:** es una decisión de arquitectura pendiente del tech lead, a revisar antes de llevar el módulo de incidentes a un uso multiusuario real o a la Fase 4.
 
-- **Almacenamiento TinyDB no disponible o corrupto → 503 `storage_unavailable` (2026-10-10, A2):** antes era un 500 genérico. El caso más grave: un `auth.json` corrupto tumbaba el login y todas las rutas protegidas. Sigue sin haber escritura atómica: TinyDB reescribe el archivo entero y un corte a mitad lo deja corrupto. Ahora eso da 503 y un registro claro, pero recuperarse exige restaurar una copia o borrar el archivo (README de `services/api`). Ni el seed ni `create-admin` lo tratan todavía (S1–S3).
+- **Almacenamiento TinyDB no disponible o corrupto → 503 `storage_unavailable` (2026-10-10, A2):** antes era un 500 genérico. El caso más grave: un `auth.json` corrupto tumbaba el login y todas las rutas protegidas. Sigue sin haber escritura atómica: TinyDB reescribe el archivo entero y un corte a mitad lo deja corrupto. Ahora eso da 503 y un registro claro, pero recuperarse exige restaurar una copia o borrar el archivo (README de `services/api`). El seed del gestor, `uv run seed` y `create-admin` lo tratan desde el 2026-10-10 (S1–S3): mensaje en stderr y código de salida, sin traceback.
+- **Riesgo de duplicación en `IncidentRepository.seed` (detectado el 2026-10-10, sin corregir):**
+  - **Causa:** `services/api/app/modules/incident_manager/repository.py` (`seed`) hace dos escrituras no atómicas en `incidents.json`: primero `incidents_table.insert_multiple` y después `keys_table.insert_multiple` (`seed_keys`).
+  - **Consecuencia:** si la segunda falla (disco lleno, permisos, el proceso muere a mitad), quedan incidencias sin su clave de origen. La siguiente ejecución del seed las vuelve a insertar, rompiendo la idempotencia. Si el fallo es de E/S, desde A2 el seed lo comunica (código 2), pero no deshace la primera escritura.
+  - **Alcance:** es un problema de consistencia de datos, no de gestión de errores, así que quedó fuera de la auditoría.
+  - **Arreglo posible, sin decidir:** una única escritura con las dos tablas, o reconciliar las incidencias huérfanas antes de insertar.
 - **Gestor centralizado de incidencias — límites conocidos (2026-10-07, sin corregir):**
   - aceptación solo con el fixture sintético (el CSV real no está en el repo);
   - con un filtro activo, una incidencia que cambia de estado sigue en el listado hasta la siguiente carga;
@@ -716,9 +763,9 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 ## Próximos pasos conocidos (no implementados aquí)
 
 - **Auditoría de gestión de errores (2026-10-09):**
-  - A1 y A2 hechos en `feature/error-handling-audit` (entrada del 2026-10-10), pendientes de commit y PR.
+  - A1 y A2 hechos y comiteados en `feature/error-handling-audit` (`24f0e0d`); S1–S4 hechos, sin commit todavía (entradas del 2026-10-10). Pendiente la PR.
   - Pendientes, por capa:
-    - scripts: S1 (`seed_incidents.py` sin código de salida ante un fallo de la base), S2–S4;
+    - scripts: ~~S1–S4~~ hechos el 2026-10-10 (entrada de ese día), salvo el `BrokenPipeError` de `analyze.py`, que queda documentado y sin hacer;
     - backoffice: B1 (sin `error.tsx`, `global-error.tsx` ni `not-found.tsx`), B2–B4;
     - tracker: T1 (lo mismo que B1), T2 (código HTTP y mensajes de normalizadores en la UI), T3 (sin timeout al leer el cuerpo), T4 (un fallo tras guardar se muestra como fallo de conexión), T5 y T6;
     - website: W1 (sin `404.html`).

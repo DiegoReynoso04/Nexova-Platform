@@ -20,7 +20,7 @@ python scripts/analyze.py ruta/al/archivo.csv --export --output out/metrics.csv
 python scripts/analyze.py ruta/al/archivo.csv --no-export         # ni exporta ni pregunta (CI)
 ```
 
-Códigos de salida: `0` correcto, `1` archivo ilegible o inválido (cabecera sin columnas requeridas, no UTF-8, CSV malformado), `2` argumentos incorrectos.
+Códigos de salida: `0` correcto, `1` archivo ilegible o inválido (cabecera sin columnas requeridas, no UTF-8, CSV malformado) o resultado que no se puede escribir, `2` argumentos incorrectos. Ctrl+C o el fin de entrada en la pregunta de exportar equivalen a responder `n` (el análisis termina con `0`).
 
 Si la consola no puede codificar los caracteres de caja (`cp1252` en Windows al redirigir la salida), el reporte usa automáticamente una variante ASCII.
 

@@ -589,7 +589,7 @@ Tras el seed del fixture sintético de aceptación (o del CSV real): `total` 96;
 
 ## 33. Persistencia, CORS y pendiente
 
-- TinyDB en `INCIDENTS_DB_PATH` (§7): tablas `incidents` y `seed_keys`. Mismo patrón que D-SUP-10 (lock, un worker, no ejecutar el seed mientras la API escribe). Las lecturas no crean el archivo. Un archivo ilegible o corrupto responde 503 `storage_unavailable` (§31); el seed (`scripts/seed_incidents.py`) recibe el mismo `StorageUnavailableError` y hoy termina con traceback (S1 de la auditoría, pendiente).
+- TinyDB en `INCIDENTS_DB_PATH` (§7): tablas `incidents` y `seed_keys`. Mismo patrón que D-SUP-10 (lock, un worker, no ejecutar el seed mientras la API escribe). Las lecturas no crean el archivo. Un archivo ilegible o corrupto responde 503 `storage_unavailable` (§31); el seed (`scripts/seed_incidents.py`) recibe el mismo `StorageUnavailableError` y termina con código `2`, sin traceback (S1 de la auditoría, 2026-10-10).
 - CORS: sin cambios (`PATCH` ya estaba permitido; `Content-Type: application/json` es una cabecera que Starlette admite siempre en el preflight).
 - UI: `uis/backoffice` → `/incident-manager` (resumen + listado con filtros y cambio de estado) y `/incident-manager/new` (formulario). Reglas en [`uis/backoffice/CLAUDE.md`](../../uis/backoffice/CLAUDE.md) ("Gestor centralizado de incidencias") y uso en [`uis/backoffice/README.md`](../../uis/backoffice/README.md).
 - Guía de revisión (puesta en marcha en PowerShell, salidas esperadas, trazabilidad de los requisitos y lo no verificado): [`docs/centralized-incident-manager-review.md`](../../docs/centralized-incident-manager-review.md).
