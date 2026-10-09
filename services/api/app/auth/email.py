@@ -10,6 +10,7 @@ configurado y `DisabledEmailSender` si no; los tests inyectan un sender falso
 en `app.state.email_sender`.
 """
 
+import http.client
 import json
 import urllib.error
 import urllib.request
@@ -79,7 +80,10 @@ class ResendEmailSender:
             # 4xx/5xx: se cierra la respuesta sin leerla y se descarta la causa.
             exc.close()
             raise EmailDeliveryError("email provider rejected the message") from None
-        except (urllib.error.URLError, TimeoutError, OSError):
+        # `http.client.HTTPException` (IncompleteRead, BadStatusLine, LineTooLong…)
+        # no hereda de OSError: sin ella, una respuesta cortada escapaba de la
+        # tarea en segundo plano y la registraba el middleware del 500.
+        except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException):
             raise EmailDeliveryError("email provider rejected the message") from None
 
 

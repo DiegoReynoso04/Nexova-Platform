@@ -4,9 +4,48 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-10 — Auditoría de gestión de errores: A1 (respuestas cortadas de Resend) y A2 (TinyDB no disponible → 503) en `services/api`
+
+**Estado: hecho y validado, sin commit todavía**, en la rama `feature/error-handling-audit`, creada desde `main` en `6dfa013` (merge de la PR #17). Origen: auditoría de solo lectura del 2026-10-09 sobre todo el código de producción (backend, scripts, backoffice, tracker y web). Encontró 2 hallazgos ALTO, 6 MEDIO y 10 BAJO, ninguno crítico. El informe se entregó en la conversación y no está versionado. El usuario pidió implementar solo A1 y A2. El resto sigue pendiente (ver "Próximos pasos").
+
+**Qué se hizo:**
+- **A1 (era L-4 de AUTH-03):** `app/auth/email.py` añade `http.client.HTTPException` a los errores que `ResendEmailSender.send` convierte en `EmailDeliveryError` (con `from None`). `IncompleteRead`, `BadStatusLine` y `LineTooLong` no son `OSError`. Hasta ahora escapaban de la tarea en segundo plano y las registraba el middleware del 500 ("unhandled error"), no `log_email_delivery_failure`.
+- **A2:** nuevo `app/core/storage.py` con `GuardedJSONStorage`, el storage de TinyDB que usan los tres repositorios (`database.py`, `auth/repository.py`, `modules/incident_manager/repository.py`).
+  - **Qué captura:** solo los fallos del archivo. Es decir, `OSError` en la apertura, `read`, `write` y `close`; `JSONDecodeError` y `UnicodeDecodeError` en `read`; y JSON que no tiene la forma `{tabla: {id: documento}}`.
+  - **Qué responde:** 503 `storage_unavailable` con el `detail` fijo `storage is temporarily unavailable`.
+  - **Qué registra:** la nueva `log_storage_failure` de `core/errors.py` solo anota el almacén (`suppliers`, `auth`, `incidents`) y la clase de la excepción.
+  - **Ámbito de la captura:** no envuelve el `yield` de los context managers. Si lo hiciera, el `ValidationError` de Pydantic y `InvalidStatusTransitionError` (ambos `ValueError` lanzados dentro del `with`) acabarían en un 503 falso.
+  - **Sin la excepción original:** el error se lanza fuera del `except`, así que no arrastra ni `__cause__` ni `__context__`. Importa porque `JSONDecodeError.doc` guarda el archivo entero.
+- **Docs:**
+  - `services/api/SPECS.md`: 503 en §4, §5, §12, §18, §31 y §33.
+  - `services/api/README.md`: endpoints, códigos de proveedores, tabla de tests y estructura.
+- **Memory-bank:** se corrige que el gestor centralizado de incidencias figuraba "pendiente de PR". Se integró en `main` con la PR #17 (merge `6dfa013`, 2026-10-08).
+
+**Validación ejecutada:**
+- **Suite de `services/api`:** 289 → **303 OK**. Son +2 en `test_password_reset.py` (con 3 subtests cada uno) y +12 en el nuevo `test_storage.py`.
+- **Mutaciones:**
+  - con el `email.py` anterior fallan los 6 subtests de A1;
+  - sin la traducción del storage fallan los 6 tests de corrupción;
+  - con la captura "ingenua" alrededor del `yield` fallan los 2 tests de regresión del ámbito.
+- **Paquetes Python sin ejecutar:** no se tocaron `packages/` ni `scripts/`, así que no se ejecutaron sus suites.
+- **Prueba manual:**
+  - **Montaje:** uvicorn en el puerto 8011 con tres bases temporales en el scratchpad, fuera del repo, y una clave JWT generada al momento. No se tocaron `services/api/data/` ni la API del usuario.
+  - **Bases sanas:** 200; el 422 de proveedores y el 400 del gestor se mantienen.
+  - **Bases corruptas:** `suppliers.json` corrupto, `incidents.json` no UTF-8 y `auth.json` corrupto responden 503 en `/suppliers`, `/api/incidents/summary`, `/auth/login`, `/auth/me` y en una ruta protegida.
+  - **Recuperación:** al restaurar `auth.json`, el login vuelve a responder (401 con un email inexistente).
+  - **Log:** solo `storage <almacén> is unavailable: <Clase>`, sin rutas ni emails.
+
+**Efectos colaterales conocidos:**
+- `scripts/seed_incidents.py`, `uv run seed` y `create-admin` también usan estos repositorios. Con una base corrupta ahora reciben `StorageUnavailableError` (antes, `JSONDecodeError`) y siguen terminando con traceback. Es el hallazgo S1–S3, pendiente.
+- **Frontends sin cambios:**
+  - **Backoffice:** el 503 es «Error del servidor». En el guard de sesión es «No se pudo comprobar la sesión», con «Reintentar».
+  - **Tracker:** las rutas de auth muestran «La API respondió con el código 503» (hallazgo T2).
+
+---
+
 ## 2026-10-07 — Gestor centralizado de incidencias: scroll horizontal en móvil (`/incident-manager`)
 
-**Estado: hecho, validado y comiteado** (commit aparte, después de F6 `ca0bf00`), en `feature/centralized-incident-manager`. Sin push. El proyecto sigue pendiente de PR.
+**Estado: hecho, validado y comiteado** (commit aparte, después de F6 `ca0bf00`), en `feature/centralized-incident-manager`. *(Corregido el 2026-10-10: integrado en `main` con la PR #17, merge `6dfa013`, 2026-10-08.)*
 
 **Fallo, encontrado y diagnosticado por el usuario en el navegador:**
 - A 375 px, `/incident-manager` tenía scroll horizontal en toda la página (scrollWidth 673 frente a clientWidth 375).
@@ -40,9 +79,9 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
-## 2026-10-07 — Gestor centralizado de incidencias, F6: documentación de cierre (proyecto hecho, pendiente de PR)
+## 2026-10-07 — Gestor centralizado de incidencias, F6: documentación de cierre (proyecto hecho; integrado en `main` con la PR #17)
 
-**Estado: hecho y comiteado** (commit de F6, solo documentación) en `feature/centralized-incident-manager`, después de F5 (`7ce4101`). **El proyecto completo (F1–F6) está hecho y pendiente de PR**: sin push y sin PR abierta.
+**Estado: hecho y comiteado** (commit de F6 `ca0bf00`, solo documentación) en `feature/centralized-incident-manager`, después de F5 (`7ce4101`). **El proyecto completo (F1–F6) está hecho.** *(Corregido el 2026-10-10: entonces estaba sin push ni PR. Se integró en `main` con la PR #17, merge `6dfa013`, 2026-10-08.)*
 
 **Decisiones:** P4-1…P4-13 (ver la entrada de F1 y `services/api/SPECS.md` §29) son **decisiones del usuario** tomadas al aprobar el plan, incluido el cambio de P4-5 en F2 (SHA-256 en `seed_keys`). **No las han revisado ni aprobado el tech lead ni la CTO.**
 
@@ -68,7 +107,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 - No se hizo el recorrido manual en `/docs`.
 - No hay soporte bilingüe (no existía en hitos anteriores).
 - Revisión de P4-1…P4-13 por el tech lead o la CTO.
-- Push y PR.
+- ~~Push y PR~~: hecho, PR #17, merge `6dfa013` (2026-10-08).
 
 ---
 
@@ -661,11 +700,12 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
     - L-1: bcrypt antes de validar el token;
     - L-2: `PASSWORD_RESET_URL` admite `http://`;
     - L-3: el token aparece en la URL de la primera carga;
-    - L-4: `http.client.HTTPException` no se captura en el sender;
+    - ~~L-4: `http.client.HTTPException` no se captura en el sender~~ — corregido el 2026-10-10 (A1 de la auditoría de gestión de errores, rama `feature/error-handling-audit`);
     - L-5: retención de las IP de la auditoría;
     - L-6: aviso de éxito oculto si hay otra sesión abierta.
 - **Deuda pendiente — `LastResultStore` global al proceso, no por usuario (registrada el 2026-10-05, sin corregir):** `services/api` guarda en memoria un único "último análisis" de incidentes para todo el proceso (`services/api/SPECS.md` §6, D-API-5). Desde AUTH-01/AUTH-02 hay varios usuarios autenticados, así que un usuario puede exportar el último resultado generado por otro. Hoy el resultado solo contiene métricas agregadas (sin filas ni emails) y el frontend descarta una exportación cuyo `X-Analysis-Id` no coincide con el análisis que muestra, pero la API no lo impide. **No se corrige ahora:** es una decisión de arquitectura pendiente del tech lead, a revisar antes de llevar el módulo de incidentes a un uso multiusuario real o a la Fase 4.
 
+- **Almacenamiento TinyDB no disponible o corrupto → 503 `storage_unavailable` (2026-10-10, A2):** antes era un 500 genérico. El caso más grave: un `auth.json` corrupto tumbaba el login y todas las rutas protegidas. Sigue sin haber escritura atómica: TinyDB reescribe el archivo entero y un corte a mitad lo deja corrupto. Ahora eso da 503 y un registro claro, pero recuperarse exige restaurar una copia o borrar el archivo (README de `services/api`). Ni el seed ni `create-admin` lo tratan todavía (S1–S3).
 - **Gestor centralizado de incidencias — límites conocidos (2026-10-07, sin corregir):**
   - aceptación solo con el fixture sintético (el CSV real no está en el repo);
   - con un filtro activo, una incidencia que cambia de estado sigue en el listado hasta la siguiente carga;
@@ -675,7 +715,15 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 
 ## Próximos pasos conocidos (no implementados aquí)
 
-- **Gestor centralizado de incidencias:** hecho en F1–F6 en `feature/centralized-incident-manager` (commits `164a183`, `959a65b`, `ef040f5`, `d7ce215`, `7ce4101` y el de F6), **pendiente de PR**. Guía de revisión: `docs/centralized-incident-manager-review.md`. Pendientes: la PR, la revisión de P4-1…P4-13 (decisiones del usuario) por el tech lead o la CTO, la aceptación con el CSV real y la verificación visual/móvil.
+- **Auditoría de gestión de errores (2026-10-09):**
+  - A1 y A2 hechos en `feature/error-handling-audit` (entrada del 2026-10-10), pendientes de commit y PR.
+  - Pendientes, por capa:
+    - scripts: S1 (`seed_incidents.py` sin código de salida ante un fallo de la base), S2–S4;
+    - backoffice: B1 (sin `error.tsx`, `global-error.tsx` ni `not-found.tsx`), B2–B4;
+    - tracker: T1 (lo mismo que B1), T2 (código HTTP y mensajes de normalizadores en la UI), T3 (sin timeout al leer el cuerpo), T4 (un fallo tras guardar se muestra como fallo de conexión), T5 y T6;
+    - website: W1 (sin `404.html`).
+  - B5, el contacto de soporte en los errores, necesita un dato de negocio que hoy no tiene ninguna fuente.
+- **Gestor centralizado de incidencias:** hecho en F1–F6 en `feature/centralized-incident-manager` (commits `164a183`, `959a65b`, `ef040f5`, `d7ce215`, `7ce4101`, `ca0bf00` y el arreglo móvil `ee944ae`). Integrado en `main` con la PR #17 (merge `6dfa013`, 2026-10-08). Guía de revisión: `docs/centralized-incident-manager-review.md`. Pendientes: la revisión de P4-1…P4-13 (decisiones del usuario) por el tech lead o la CTO, la aceptación con el CSV real y la verificación visual en móvil y con lector de pantalla.
 - **Backend general de Nexova:** `docs/ARCHITECTURE_PROPOSAL.md` está pendiente de revisión por el CTO. Si se aprueba, sus dominios (candidatos, vacantes, pipeline, matching) tendrán que decidir cómo convivir con el `services/api/` ya existente del procesador de incidentes (mismo servicio o no, prefijo `/api/v1` o no). Nada de eso se ha iniciado.
 - **Procesador de incidentes:** Fases 1, 2 y 3 (`/incidents` en `uis/backoffice`) hechas e integradas en `main` (PR #6). Existe un fixture sintético de aceptación que reproduce las cifras del contexto (entrada 2026-09-27, PR #7). Pendientes: el test de aceptación con el CSV real (las cifras 100/96/4 no están verificadas con datos reales) y la Fase 4 (integración). Antes de la Fase 4 o de un uso multiusuario real, revisar la deuda de `LastResultStore` (ver "Decisiones y problemas conocidos").
 - `uis/backoffice` es un punto de entrada — tiene `/incidents` y `/suppliers`; el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.

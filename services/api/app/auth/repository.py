@@ -37,6 +37,7 @@ from tinydb import Query, TinyDB
 from tinydb.table import Document, Table
 
 from app.auth.models import AuditEvent, Profile, ProfileFields, UserInDB, UserRole
+from app.core.storage import GuardedJSONStorage, Store
 
 USERS_TABLE = "users"
 PROFILES_TABLE = "profiles"
@@ -70,14 +71,18 @@ class AuthRepository:
     def now(self) -> datetime:
         return self._clock()
 
+    def _open(self) -> TinyDB:
+        # Un archivo ilegible o corrupto responde 503 (GuardedJSONStorage).
+        return TinyDB(self.path, storage=GuardedJSONStorage, store=Store.AUTH, create_dirs=True, encoding="utf-8", indent=2)
+
     @contextmanager
     def _db(self) -> Iterator[TinyDB]:
-        with self._lock, TinyDB(self.path, create_dirs=True, encoding="utf-8", indent=2) as db:
+        with self._lock, self._open() as db:
             yield db
 
     @contextmanager
     def _tables(self) -> Iterator[tuple[Table, Table]]:
-        with self._lock, TinyDB(self.path, create_dirs=True, encoding="utf-8", indent=2) as db:
+        with self._lock, self._open() as db:
             yield db.table(USERS_TABLE), db.table(PROFILES_TABLE)
 
     def create_user(

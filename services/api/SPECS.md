@@ -169,6 +169,7 @@ Formato único: `{"detail": ..., "code": "..."}`.
 | 415 | `unsupported_file_type` | el nombre no termina en `.csv` | `only .csv files are accepted` (no repite el nombre) |
 | 422 | `validation_error` | falta el campo `file`, otro nombre de campo, cuerpo JSON, `file` enviado como texto | lista de `{loc, msg, type}`. Se eliminan `input`, `ctx` y `url` del formato nativo de FastAPI |
 | 400 | `bad_request` | multipart ilegible (error del parser de Starlette) | `Bad Request` |
+| 503 | `storage_unavailable` | un archivo TinyDB (`SUPPLIERS_DB_PATH`, `AUTH_DB_PATH` o `INCIDENTS_DB_PATH`) no se puede abrir, leer o escribir, o no es una base válida (JSON inválido, no UTF-8, forma distinta de `{tabla: {id: documento}}`). Afecta a las Partes B, C, D y E; con `auth.json` dañado falla también toda ruta protegida, porque el token se valida contra esa base. Hallazgo A2 de la auditoría de gestión de errores (2026-10-09), implementado el 2026-10-10 a petición del usuario | `storage is temporarily unavailable` — nunca la ruta del archivo ni el mensaje de la excepción |
 | 500 | `internal_error` | cualquier excepción no prevista | `internal server error` — sin mensaje, tipo ni traza |
 
 ---
@@ -178,6 +179,7 @@ Formato único: `{"detail": ..., "code": "..."}`.
 - **Datos de registros:** la API solo maneja `AnalysisResult`, que contiene conteos, enums y etiquetas fijas. No hay forma de que un valor de una fila llegue a una respuesta.
 - **Errores:** los `detail` son textos fijos o mensajes del núcleo que solo citan columnas y números de fila. El 422 no reproduce lo enviado (`input`/`ctx`/`url` eliminados). El 415 no repite el nombre del archivo.
 - **500:** un middleware propio captura la excepción y responde el cuerpo fijo. **No** se usa `exception_handler(Exception)`, porque Starlette relanza la excepción tras ejecutarlo y el servidor registraría la traza con su mensaje. Solo se registra el **nombre de la clase** de la excepción.
+- **503 de almacenamiento:** lo produce `GuardedJSONStorage` (`app/core/storage.py`), el storage de TinyDB de los tres repositorios. Captura solo los fallos del archivo (`OSError` al abrir, leer, escribir o cerrar; `JSONDecodeError` y `UnicodeDecodeError` al leer; JSON con otra forma) y lanza el error **fuera** del `except`, sin `__cause__` ni `__context__`: un `JSONDecodeError` guarda en `.doc` el archivo entero (emails, hashes). Registra solo el nombre del almacén (`suppliers`, `auth`, `incidents`) y la clase de la excepción (`log_storage_failure` en `core/errors.py`). Los errores del resto de la operación (Pydantic, reglas de nexova_shared, transiciones) no pasan por el storage y siguen siendo 422, 400 o 500.
 - **Logs:** no se registran bodies, filas ni mensajes de excepción. El access log de uvicorn registra método, ruta y estado.
 - **Disco:** con el límite por defecto (1 MiB) el upload nunca pasa a un archivo temporal. Si se sube `MAX_UPLOAD_BYTES` por encima de 1 MiB, Starlette puede volcar a disco temporal el archivo durante la petición.
 - **Estado:** el último resultado guarda solo `AnalysisResult` + `analysis_id` + `analyzed_at`. Ni el CSV ni sus bytes.
@@ -280,7 +282,7 @@ Las respuestas incluyen siempre los 11 campos; los opcionales ausentes van como 
 | `PATCH /suppliers/{id}/status` | `{"status": "active"}` o `{"status": "suspended"}` | **200** + proveedor (`updated_at` sin cambios) | 404, 422 |
 | `DELETE /suppliers/{id}` | — | **204** sin cuerpo | 404 |
 
-Errores con el formato común `{detail, code}` (§4); el 422 devuelve la lista `{loc, msg, type}` sin `input`.
+Errores con el formato común `{detail, code}` (§4); el 422 devuelve la lista `{loc, msg, type}` sin `input`. Cualquier ruta responde **503** `storage_unavailable` si `suppliers.json` no se puede leer o escribir o está corrupto (§4, §5).
 
 ## 13. Persistencia y CORS
 
@@ -365,6 +367,8 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 | `PUT /profiles/me` | token | `{name?, phone?, address?}` (`user_id` → 422) | **200** `Profile` | 401, 422 |
 
 `UserRead` = `{id, email, role, is_active, created_at}`: ninguna respuesta contiene `password` ni `hashed_password`.
+
+**503 `storage_unavailable`** (§4, §5): toda ruta que lee o escribe `auth.json` lo responde si el archivo no se puede leer o escribir o está corrupto. Incluye `POST /auth/login`, `POST /users`, las rutas de la Parte D y **cualquier ruta protegida de las Partes A, B y E**, porque `get_current_user` busca el usuario del token en esa base.
 
 ## 19. JWT y `get_current_user`
 
@@ -560,6 +564,7 @@ Ciclo de vida (CONTEXT): `open → in_progress | discarded`; `in_progress → re
 | 401 | `not_authenticated` | `could not validate credentials` (§19) |
 | 404 | `incident_not_found` | `incident not found` |
 | 404 | `not_found` | `Not Found` (id que no es un UUID, como cualquier ruta inexistente) |
+| 503 | `storage_unavailable` | `storage is temporarily unavailable`: `incidents.json` (o `auth.json`, al validar el token) no se puede leer o escribir o está corrupto (§4, §5). Formato común `{detail, code}`, no la lista del 400 |
 | 500 | `internal_error` | `internal server error`, sin traza ni mensaje (§5) |
 
 Ejemplo (alta sin `branch`):
@@ -584,7 +589,7 @@ Tras el seed del fixture sintético de aceptación (o del CSV real): `total` 96;
 
 ## 33. Persistencia, CORS y pendiente
 
-- TinyDB en `INCIDENTS_DB_PATH` (§7): tablas `incidents` y `seed_keys`. Mismo patrón que D-SUP-10 (lock, un worker, no ejecutar el seed mientras la API escribe). Las lecturas no crean el archivo.
+- TinyDB en `INCIDENTS_DB_PATH` (§7): tablas `incidents` y `seed_keys`. Mismo patrón que D-SUP-10 (lock, un worker, no ejecutar el seed mientras la API escribe). Las lecturas no crean el archivo. Un archivo ilegible o corrupto responde 503 `storage_unavailable` (§31); el seed (`scripts/seed_incidents.py`) recibe el mismo `StorageUnavailableError` y hoy termina con traceback (S1 de la auditoría, pendiente).
 - CORS: sin cambios (`PATCH` ya estaba permitido; `Content-Type: application/json` es una cabecera que Starlette admite siempre en el preflight).
 - UI: `uis/backoffice` → `/incident-manager` (resumen + listado con filtros y cambio de estado) y `/incident-manager/new` (formulario). Reglas en [`uis/backoffice/CLAUDE.md`](../../uis/backoffice/CLAUDE.md) ("Gestor centralizado de incidencias") y uso en [`uis/backoffice/README.md`](../../uis/backoffice/README.md).
 - Guía de revisión (puesta en marcha en PowerShell, salidas esperadas, trazabilidad de los requisitos y lo no verificado): [`docs/centralized-incident-manager-review.md`](../../docs/centralized-incident-manager-review.md).
