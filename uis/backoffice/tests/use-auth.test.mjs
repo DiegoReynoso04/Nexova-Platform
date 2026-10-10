@@ -9,8 +9,10 @@ import {
   INITIAL_VALIDATION_STATE,
   createAuthSessionController,
   deriveSessionStatus,
+  sessionErrorCopy,
   validationReducer,
 } from '../hooks/use-auth-session.ts';
+import { routeAccess } from '../lib/auth-routes.ts';
 import { INITIAL_AUTH_FORM_STATE, authFormReducer, createAuthFormController } from '../hooks/use-auth-form.ts';
 import { INITIAL_PROFILE_STATE, createProfileController, profileReducer } from '../hooks/use-profile.ts';
 import { ApiAbortError } from '../lib/api-client.ts';
@@ -129,6 +131,78 @@ describe('sesión: controlador', () => {
     assert.equal(h.me.calls[1].aborted, true);
     await tick();
     assert.deepEqual(h.actions, []);
+  });
+});
+
+// B3 de la auditoría de gestión de errores: «Reintentar» del guard muestra
+// carga y el texto depende del tipo de error.
+describe('sesión: reintento con carga y textos por tipo de error', () => {
+  function failedHarness(kind) {
+    const me = controllable();
+    const r = recorder(validationReducer, INITIAL_VALIDATION_STATE);
+    const controller = createAuthSessionController(r.dispatch, { getCurrentUser: me.fn });
+    controller.activate();
+    void controller.validate('t1');
+    me.calls[0].reject(new AuthServiceError({ kind }));
+    return { controller, me, ...r };
+  }
+
+  test('validation_started pone en carga solo el reintento del mismo token en error', () => {
+    const failed = validationReducer(INITIAL_VALIDATION_STATE, { type: 'failed', token: 't1', error: { kind: 'network' } });
+    const retrying = validationReducer(failed, { type: 'validation_started', token: 't1' });
+    assert.deepEqual(retrying, { status: 'retrying', token: 't1', error: { kind: 'network' } });
+    assert.deepEqual(deriveSessionStatus('t1', retrying), { status: 'retrying', error: { kind: 'network' } });
+    // El guard sigue mostrando el aviso (con «Reintentar» en carga), no la vista.
+    assert.equal(routeAccess('/', 'retrying'), 'error');
+    // Sin error previo, o con otro token, no cambia nada: ya se ve como `checking`.
+    assert.equal(validationReducer(INITIAL_VALIDATION_STATE, { type: 'validation_started', token: 't1' }), INITIAL_VALIDATION_STATE);
+    assert.equal(validationReducer(failed, { type: 'validation_started', token: 't2' }), failed);
+  });
+
+  test('«Reintentar» (validate forzado) despacha validation_started y termina en sesión válida', async () => {
+    const h = failedHarness('network');
+    await tick();
+    assert.equal(h.state().status, 'error');
+    void h.controller.validate('t1', true);
+    assert.deepEqual(h.actions.at(-1), { type: 'validation_started', token: 't1' });
+    assert.equal(h.state().status, 'retrying');
+    h.me.calls[1].resolve(USER);
+    await tick();
+    assert.deepEqual(h.state(), { status: 'authenticated', token: 't1', user: USER });
+  });
+
+  test('si el reintento vuelve a fallar, el estado vuelve a error con el nuevo tipo', async () => {
+    const h = failedHarness('network');
+    await tick();
+    void h.controller.validate('t1', true);
+    h.me.calls[1].reject(new AuthServiceError({ kind: 'server_error' }));
+    await tick();
+    assert.deepEqual(h.state(), { status: 'error', token: 't1', error: { kind: 'server_error' } });
+  });
+
+  test('la primera validación de un token no despacha validation_started', () => {
+    const me = controllable();
+    const r = recorder(validationReducer, INITIAL_VALIDATION_STATE);
+    const controller = createAuthSessionController(r.dispatch, { getCurrentUser: me.fn });
+    controller.activate();
+    void controller.validate('t1');
+    assert.deepEqual(r.actions, []);
+  });
+
+  test('cada tipo de error tiene su texto, sin detalles técnicos', () => {
+    const kinds = ['network', 'timeout', 'server_error', 'config', 'unexpected_response'];
+    const bodies = kinds.map((kind) => sessionErrorCopy({ kind }).body);
+    assert.equal(new Set(bodies).size, kinds.length, 'textos distintos por tipo');
+    assert.match(sessionErrorCopy({ kind: 'network' }).body, /conectar con el servidor/);
+    assert.match(sessionErrorCopy({ kind: 'timeout' }).body, /tardó demasiado/);
+    assert.match(sessionErrorCopy({ kind: 'server_error' }).body, /problema al comprobar tu sesión/);
+    assert.match(sessionErrorCopy({ kind: 'config' }).body, /no está bien configurada/);
+    assert.match(sessionErrorCopy({ kind: 'unexpected_response' }).body, /de forma inesperada/);
+    for (const kind of [...kinds, 'request_invalid']) {
+      const { title, body } = sessionErrorCopy({ kind });
+      assert.equal(title, 'No se pudo comprobar la sesión');
+      assert.doesNotMatch(`${title} ${body}`, /\bAPI\b|NEXT_PUBLIC_|services\/api|\(\d{3}\)/, kind);
+    }
   });
 });
 

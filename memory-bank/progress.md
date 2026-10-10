@@ -4,9 +4,48 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-10 — Auditoría de gestión de errores: B1–B4 en `uis/backoffice`
+
+**Estado: hecho y validado, sin commit todavía**, en `feature/error-handling-audit`, después de `a6f3722`. Es la tercera fase pedida por el usuario: solo B1–B4.
+
+**B5 no se hace** (contacto de soporte en los errores): el contexto no define ningún contacto y no se inventa. Los errores ofrecen «Reintentar» y un enlace a inicio.
+
+**Qué se hizo:**
+- **B1, límites de error (Next 16.3.2):** se crean `app/error.tsx`, `app/global-error.tsx` y `app/not-found.tsx`.
+  - **Firma de props:** según `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/error.md` y `dist/client/components/error-boundary.d.ts`, es `{ error: Error & { digest?: string }; retry: () => void }`, y también existe `reset`.
+  - **Comportamiento:** textos fijos en español, «Reintentar» con `retry()` y enlace a `/`. El error no se lee: ni `console.*`, ni `message`, `digest` o `stack`.
+  - **`global-error.tsx`:** tiene su propio `<html>`/`<body>`, importa `globals.css` y no usa ni la sesión ni el guard.
+- **B2, textos de error:** se quitan `«(422)»`, `«services/api»` y `«NEXT_PUBLIC_API_URL»` de `supplier-error`, `incident-error`, `auth-error` y `analysis-error`, y también del estado vacío de `supplier-directory-view`, que mostraba `«uv run seed» en services/api`. Las menciones a «la API» pasan a «el servidor». Se mantienen el tipo de error y su acción.
+- **B3, reintento del guard:** nueva acción `validation_started` y nuevo estado `retrying` en `hooks/use-auth-session.ts`.
+  - **Cuándo se emite:** solo en el reintento forzado. La primera validación de un token ya se ve como `checking`, y un 401 sigue sin despachar nada.
+  - **Ruta:** `routeAccess` trata `retrying` como `error`, así que el aviso se mantiene y el botón muestra «Reintentando…» con spinner y `aria-busy`.
+  - **Textos:** `sessionErrorCopy` da uno por tipo de error (red, timeout, servidor, configuración, respuesta inesperada y un genérico).
+- **B4, `lib/api-client.ts`:** `blob()` trata los errores como `json()`. Los aborts se relanzan y `send` los convierte en abort o timeout; cualquier otro fallo de lectura pasa a ser `ApiNetworkError`.
+- **Optional chaining (sin cambios):** todos los campos anulables de los tipos que producen los normalizadores ya tienen fallback al mostrarse. Son `percentage`, `average_score`, `contract_renewal_date`, `contact_email`, `notes`, `profile` y sus campos, y `field`.
+- **Docs:** `uis/backoffice/CLAUDE.md` (reglas de límites de error, textos sin detalles técnicos y reintento del guard) y `README.md` (revisión estática).
+
+**Validación ejecutada:**
+- **Backoffice:**
+  - `tsc` y `lint` limpios;
+  - `build` OK (13 rutas, incluida `/_not-found`);
+  - tests: de 332 a **344 OK** (+2 `production-source`, +2 `api-client`, +5 `use-auth` y los tests por archivo de los 3 archivos nuevos).
+- **Mutaciones:** cada arreglo deshecho hace fallar su test. Los casos probados: sin `app/error.tsx`; `global-error` usando la sesión; `supplier-error` original; `use-auth-session` y `auth-routes` originales; reintento sin `validation_started`; y `api-client` original.
+- **Navegador:**
+  - **Montaje:** `next start` en el 3010, con un build que apunta a una API temporal en el 8011, bases temporales fuera del repo y CORS para el 3010. Un usuario de prueba desechable.
+  - **(1) Ruta inexistente:** se ve «Página no encontrada» con el enlace a `/`.
+  - **(2) Error de render:** se provocó con una ruta temporal, ya borrada. Se ve «Algo ha fallado / No se pudo mostrar esta página» dentro del layout, y «Reintentar» recupera la vista.
+  - **(3) API parada:** `/suppliers`, `/incident-manager` (resumen y listado) e `/incidents` muestran «No se pudo conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo. Si el problema continúa, avisa al equipo técnico.».
+  - **(4) `auth.json` corrupto:** el guard muestra «No se pudo comprobar la sesión. El servidor tuvo un problema al comprobar tu sesión. Inténtalo de nuevo en unos minutos.», con «Reintentar» y «Cerrar sesión». La API registró `storage auth is unavailable: JSONDecodeError`.
+  - **(5) Reintento:** con `fetch` retrasado, «Reintentar» pasa a «Reintentando…», deshabilitado, con `aria-busy` y spinner, y el aviso se mantiene. Al restaurar `auth.json`, el reintento recupera la vista.
+  - **Consola:** solo errores de red del navegador (códigos 401, 404 y 503 y conexiones rechazadas, sin cuerpos ni tokens) y el error provocado a propósito, que React registra con su mensaje y su traza.
+  - **Después:** sin ruta temporal, build final con la configuración normal y puertos 3010 y 8011 libres.
+- **Sin tocar:** no se usaron los puertos 3000 ni 8000, ni `services/api/data/`.
+
+---
+
 ## 2026-10-10 — Auditoría de gestión de errores: S1–S4 (scripts y CLIs sin traceback)
 
-**Estado: hecho y validado, sin commit todavía**, en `feature/error-handling-audit`, después de `24f0e0d` (A1 y A2). Es la segunda fase pedida por el usuario: solo S1–S4.
+**Estado: hecho, validado y comiteado** (`a6f3722`, `fix(scripts)`), en `feature/error-handling-audit`, después de `24f0e0d` (A1 y A2). Es la segunda fase pedida por el usuario: solo S1–S4.
 
 **Qué se hizo:**
 - **S1, `scripts/seed_incidents.py`:**
@@ -763,10 +802,10 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 ## Próximos pasos conocidos (no implementados aquí)
 
 - **Auditoría de gestión de errores (2026-10-09):**
-  - A1 y A2 hechos y comiteados en `feature/error-handling-audit` (`24f0e0d`); S1–S4 hechos, sin commit todavía (entradas del 2026-10-10). Pendiente la PR.
+  - A1 y A2 comiteados en `24f0e0d` y S1–S4 en `a6f3722` (entradas del 2026-10-10). B1–B4 hechos, sin commit todavía. Pendiente la PR.
   - Pendientes, por capa:
     - scripts: ~~S1–S4~~ hechos el 2026-10-10 (entrada de ese día), salvo el `BrokenPipeError` de `analyze.py`, que queda documentado y sin hacer;
-    - backoffice: B1 (sin `error.tsx`, `global-error.tsx` ni `not-found.tsx`), B2–B4;
+    - backoffice: ~~B1–B4~~ hechos el 2026-10-10; B5 no se hace (ver abajo);
     - tracker: T1 (lo mismo que B1), T2 (código HTTP y mensajes de normalizadores en la UI), T3 (sin timeout al leer el cuerpo), T4 (un fallo tras guardar se muestra como fallo de conexión), T5 y T6;
     - website: W1 (sin `404.html`).
   - B5, el contacto de soporte en los errores, necesita un dato de negocio que hoy no tiene ninguna fuente.

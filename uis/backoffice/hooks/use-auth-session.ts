@@ -7,7 +7,9 @@
 // - Con token, la sesión se valida una vez por token con `GET /auth/me`. Si la
 //   API responde 401, lib/api-client.ts borra el token y el estado pasa solo a
 //   `anonymous` (el guard redirige a /login). Un fallo de red no borra nada:
-//   se muestra como `error` con opción de reintentar.
+//   se muestra como `error` con opción de reintentar. Mientras se reintenta,
+//   el estado es `retrying`: el guard mantiene el aviso y muestra la carga en
+//   «Reintentar».
 //
 // Igual que los demás hooks: reducer puro + controlador sin React (probado con
 // `node --test`) + el hook que los une.
@@ -26,9 +28,12 @@ import type { AuthUiError, CurrentUser } from '@/types/auth';
 export type ValidationState =
   | { status: 'idle' }
   | { status: 'authenticated'; token: string; user: CurrentUser }
-  | { status: 'error'; token: string; error: AuthUiError };
+  | { status: 'error'; token: string; error: AuthUiError }
+  /** Reintento en curso tras un error: se conserva el error para seguir mostrándolo. */
+  | { status: 'retrying'; token: string; error: AuthUiError };
 
 export type ValidationAction =
+  | { type: 'validation_started'; token: string }
   | { type: 'validated'; token: string; user: CurrentUser }
   | { type: 'failed'; token: string; error: AuthUiError };
 
@@ -36,6 +41,12 @@ export const INITIAL_VALIDATION_STATE: ValidationState = { status: 'idle' };
 
 export function validationReducer(state: ValidationState, action: ValidationAction): ValidationState {
   switch (action.type) {
+    case 'validation_started':
+      // Solo un reintento sobre el mismo token cambia el estado: la primera
+      // validación de un token ya se ve como `checking` (estado derivado).
+      return state.status === 'error' && state.token === action.token
+        ? { status: 'retrying', token: action.token, error: state.error }
+        : state;
     case 'validated':
       return { status: 'authenticated', token: action.token, user: action.user };
     case 'failed':
@@ -49,7 +60,8 @@ export type SessionStatus =
   | { status: 'anonymous' }
   | { status: 'checking' }
   | { status: 'authenticated'; user: CurrentUser }
-  | { status: 'error'; error: AuthUiError };
+  | { status: 'error'; error: AuthUiError }
+  | { status: 'retrying'; error: AuthUiError };
 
 /** `token`: `undefined` = aún no leído (servidor/hidratación), `null` = sin sesión. */
 export function deriveSessionStatus(token: string | null | undefined, validation: ValidationState): SessionStatus {
@@ -59,7 +71,32 @@ export function deriveSessionStatus(token: string | null | undefined, validation
     return { status: 'authenticated', user: validation.user };
   }
   if (validation.status === 'error' && validation.token === token) return { status: 'error', error: validation.error };
+  if (validation.status === 'retrying' && validation.token === token) return { status: 'retrying', error: validation.error };
   return { status: 'checking' };
+}
+
+/** Texto del guard cuando no se pudo comprobar la sesión, según el tipo de error. */
+export interface SessionErrorCopy {
+  title: string;
+  body: string;
+}
+
+export function sessionErrorCopy(error: AuthUiError): SessionErrorCopy {
+  const title = 'No se pudo comprobar la sesión';
+  switch (error.kind) {
+    case 'network':
+      return { title, body: 'No se pudo conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo.' };
+    case 'timeout':
+      return { title, body: 'El servidor tardó demasiado en responder. Inténtalo de nuevo.' };
+    case 'server_error':
+      return { title, body: 'El servidor tuvo un problema al comprobar tu sesión. Inténtalo de nuevo en unos minutos.' };
+    case 'config':
+      return { title, body: 'La aplicación no está bien configurada. Avisa al equipo técnico.' };
+    case 'unexpected_response':
+      return { title, body: 'El servidor respondió de forma inesperada. Inténtalo de nuevo; si se repite, avisa al equipo técnico.' };
+    default:
+      return { title, body: 'Inténtalo de nuevo o cierra la sesión y vuelve a entrar.' };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +154,8 @@ export function createAuthSessionController(
       controller?.abort();
       const current = new AbortController();
       controller = current;
+      // Reintento explícito («Reintentar» del guard): la vista muestra la carga.
+      if (force) emit({ type: 'validation_started', token });
 
       try {
         const user = await dependencies.getCurrentUser({ signal: current.signal });

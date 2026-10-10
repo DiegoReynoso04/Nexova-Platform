@@ -119,7 +119,7 @@ export function SupplierDirectoryView() {
               <p className="rounded-lg border border-dashed border-border bg-surface p-6 text-center text-sm text-ink-muted">
                 {filters.country !== null || filters.category !== null
                   ? 'Ningún proveedor coincide con los filtros.'
-                  : 'El directorio está vacío. Carga los proveedores iniciales con «uv run seed» en services/api.'}
+                  : 'El directorio está vacío. Pide al equipo técnico que cargue los proveedores iniciales.'}
               </p>
             ) : (
               <SupplierTable

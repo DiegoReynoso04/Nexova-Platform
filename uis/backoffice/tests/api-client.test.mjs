@@ -166,6 +166,39 @@ describe('errores de transporte', () => {
     assert.deepEqual(delivered, body, '401 (skipAuth)');
   });
 
+  // B4 de la auditoría: blob() trata los fallos de lectura igual que json().
+  function bodyStream(onStart) {
+    return new ReadableStream({ start: onStart });
+  }
+
+  test('fallo de red al leer el blob → ApiNetworkError sin el error original', async () => {
+    const failing = () =>
+      new Response(bodyStream((controller) => controller.error(new TypeError(`connection reset ${LEAK}`))), { status: 200 });
+    const client = createApiClient({ fetch: recordingFetch(failing).fetch, getBaseUrl: () => BASE_URL });
+    await assert.rejects(client.get('/x', OPTIONS, (response) => response.blob()), (error) => assertSafeError(error, ApiNetworkError));
+  });
+
+  test('abort o timeout mientras se lee el blob → se relanza como abort o timeout, no como fallo de red', async () => {
+    // Cuerpo que no termina nunca y se corta, como en un fetch real, al abortar la petición.
+    const endless = async (_input, init) =>
+      new Response(
+        bodyStream((controller) => {
+          init.signal.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')));
+        }),
+        { status: 200 }
+      );
+    const client = createApiClient({ fetch: endless, getBaseUrl: () => BASE_URL });
+
+    const caller = new AbortController();
+    const pending = client.get('/x', { timeoutMs: 1_000, signal: caller.signal }, (response) => response.blob());
+    setTimeout(() => caller.abort(), 10);
+    await assert.rejects(pending, (error) => assertSafeError(error, ApiAbortError));
+
+    await assert.rejects(client.get('/x', { timeoutMs: 20 }, (response) => response.blob()), (error) =>
+      assertSafeError(error, ApiTimeoutError)
+    );
+  });
+
   test('los errores lanzados por el handler se propagan sin transformar', async () => {
     const transport = recordingFetch(() => jsonResponse(200, {}));
     const client = createApiClient({ fetch: transport.fetch, getBaseUrl: () => BASE_URL });

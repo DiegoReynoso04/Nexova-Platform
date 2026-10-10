@@ -6,6 +6,7 @@ import { useEffect, type ReactNode } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { sessionErrorCopy } from '@/hooks/use-auth-session';
 import { HOME_PATH, LOGIN_PATH, routeAccess } from '@/lib/auth-routes';
 
 import { useSession } from './session-provider';
@@ -28,14 +29,19 @@ export function AuthGuard({ children }: { children: ReactNode }) {
 
   if (access === 'render') return <>{children}</>;
 
-  if (access === 'error' && session.status === 'error') {
+  if (access === 'error' && (session.status === 'error' || session.status === 'retrying')) {
+    // Durante el reintento se mantiene el aviso y «Reintentar» muestra la carga.
+    const { title, body } = sessionErrorCopy(session.error);
+    const retrying = session.status === 'retrying';
     return (
       <div className="flex flex-col gap-3">
-        <Alert variant="error" title="No se pudo comprobar la sesión">
-          <p>La API no respondió al validar tu sesión. Comprueba que está en marcha e inténtalo de nuevo.</p>
+        <Alert variant="error" title={title}>
+          <p>{body}</p>
         </Alert>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={session.retry}>Reintentar</Button>
+          <Button onClick={session.retry} isLoading={retrying}>
+            {retrying ? 'Reintentando…' : 'Reintentar'}
+          </Button>
           <Button variant="secondary" onClick={session.logout}>
             Cerrar sesión
           </Button>
