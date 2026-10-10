@@ -480,11 +480,26 @@ window.fetch = async (input, init = {}) => {
 
 ### 7.5 Smoke test de los caminos normales
 
-Comprueba que los caminos sin error siguen funcionando. **Durante la auditoría solo se recorrieron en el navegador** el login de las dos apps (con usuarios de prueba creados por la API) y la lectura del listado y de un detalle del tracker. El resto lo cubren los tests automáticos de cada app y está pendiente de recorrer a mano:
+Comprueba que los caminos sin error siguen funcionando.
 
-1. **`/incidents`:** analizar `packages/incident-analyzer/tests/fixtures/incidents-synthetic.csv` y descargar la exportación (`results.csv`).
-2. **`/suppliers`:** dar de alta un proveedor, cambiar su tarifa y suspenderlo.
+**El usuario lo verificó a mano el 2026-10-10**, siguiendo esta guía y con bases temporales. Todo funcionó:
+
+| Zona | Qué se comprobó |
+|---|---|
+| Autenticación | Registro, login, perfil y logout |
+| `/incidents` | Análisis de `packages/incident-analyzer/tests/fixtures/incidents-acceptance-synthetic.csv` (100 registros: 96 válidos y 4 inválidos) y descarga de la exportación `results.csv` |
+| `/suppliers` | Alta con un error de campo (mostrado sin «(422)»), alta correcta, cambio de tarifa y suspensión |
+| `/incident-manager` | Validación en cliente, resalte de `branch`, alta y cambio `open → in_progress` con el resumen actualizado |
+| Páginas no encontradas | Not-found del backoffice y del tracker; `404.html` de la web servido en local, en escritorio y a 375 px |
+| Tracker | Listado, filtros, detalle, y una nota añadida y borrada |
+| API parada | Mensaje sin detalles técnicos y recuperación con «Reintentar» |
+
+**No se probaron a mano** la creación ni la edición de candidaturas en el tracker. Escriben en la API de candidaturas de 4Geeks (`NEXT_PUBLIC_API_URL`) y el tracker no permite borrarlas, así que dejarían registros permanentes. Lo cubren los tests automáticos: `classifySubmitError` y el POST simulado de `tests/errors.test.mjs`, y la key del formulario en `tests/production-source.test.mjs`. El cambio de estado o etapa tampoco está entre lo comprobado a mano.
+
+Para repetirlo:
+
+1. **`/incidents`:** analizar el fixture de aceptación y descargar la exportación.
+2. **`/suppliers`:** dar de alta un proveedor (primero con un campo incorrecto), cambiar su tarifa y suspenderlo.
 3. **`/incident-manager/new`:** registrar una incidencia. Después, en `/incident-manager`, cambiarla de estado y comprobar que el resumen se actualiza.
-4. **Tracker:** crear una candidatura, editarla, cambiar su estado o etapa, y añadir y borrar una nota.
-   - **Ojo:** esto escribe en la API de candidaturas configurada en `NEXT_PUBLIC_API_URL`; úsala solo si se puede escribir en ella.
-   - Comprueba también que «Nueva candidatura» se abre vacía tras crear una.
+4. **Tracker:** listado, filtros, detalle, y añadir y borrar una nota.
+   - Crear y editar candidaturas escribe en la API configurada en `NEXT_PUBLIC_API_URL` y no se puede deshacer desde el tracker: solo debe hacerse contra una API en la que se pueda escribir.
