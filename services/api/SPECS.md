@@ -38,7 +38,7 @@ El documento de contexto de Nexova **no define ninguna API HTTP**: describe un s
 |---|---|
 | D-API-1 | Rutas `POST /api/incidents/analyze` y `GET /api/incidents/results/export`. **Sin** prefijo `/api/v1` (a diferencia de `docs/ARCHITECTURE_PROPOSAL.md`, que sigue siendo una propuesta pendiente) |
 | D-API-2 | Porcentajes y media de satisfacción como **string decimal** (`"29.2"`, `"3.84"`), `null` si no son calculables. El redondeo lo hace solo el núcleo |
-| D-API-3 | Tests con `unittest` + `fastapi.testclient.TestClient` (sin pytest) |
+| D-API-3 | Tests con `unittest` + `fastapi.testclient.TestClient` (sin pytest). *Actualizado en AUTH-088 (2026-10-10): pytest y pytest-cov, autorizados por el ticket, están en el grupo `dev` de uv; `uv run pytest` ejecuta también la suite `unittest`, que sigue pasando con el comando de `AGENTS.md` §4* |
 | D-API-4 | Límite técnico `MAX_UPLOAD_BYTES`, por defecto **1 MiB (1048576 bytes)**, aplicado al **body HTTP completo** (cabeceras y delimitadores multipart incluidos), **no al CSV**. No es un requisito del cliente. Ver §3.1 "Límite de tamaño" |
 | D-API-5 | El último resultado es **el último análisis que termina correctamente**; un POST fallido no lo modifica |
 | D-API-11 | `Cache-Control: no-store` en las respuestas 200 de `POST /api/incidents/analyze` y `GET /api/incidents/results/export` |

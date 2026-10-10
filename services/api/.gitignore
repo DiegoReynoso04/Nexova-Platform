@@ -1,0 +1,4 @@
+# Cobertura de pytest-cov (AUTH-088): `uv run pytest --cov` y `coverage html`.
+.coverage
+.coverage.*
+htmlcov/

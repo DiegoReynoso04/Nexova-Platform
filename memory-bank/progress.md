@@ -4,9 +4,38 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-10 — AUTH-088, F1: pytest y pytest-cov en `services/api`
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase antes del commit), en `feature/auth-088-test-suite`, que sale de `main` en `843ae26` (merge de la PR #18). Primera de las fases del plan de AUTH-088 (batería de pruebas unitarias de la API de autenticación), aprobado por el usuario; las siguientes (F2–F8) escriben los tests, `services/api/TESTING.md` y Jest en el backoffice.
+
+**Qué se hizo:**
+- **`pyproject.toml`:**
+  - `uv add --dev --no-sync --bounds minor pytest pytest-cov httpx` → `[dependency-groups] dev`, con los rangos ajustados a mano al estilo del proyecto: `httpx>=0.28,<0.29`, `pytest>=9.1,<9.2` y `pytest-cov>=7.1,<7.2` (`--bounds minor` dejaba httpx en `<0.28.2`). Se conserva el extra `dev` (httpx) para la instalación con pip.
+  - `[tool.pytest.ini_options]`: `testpaths`, `pythonpath` hacia `packages/shared` y `packages/incident-analyzer` (siguen sin declararse) y `addopts = -p no:logging`.
+  - `[tool.coverage]`: `source = ["app"]`, `branch = true` y `show_missing = true`.
+  - Comentarios corregidos: la orden de pip incluye `packages/shared`; ya no dice «sin pytest».
+- **`uv.lock`:** solo añade `pytest` 9.1.1, `pytest-cov` 7.1.0 y sus transitivas (`coverage` 7.16.2, `pluggy`, `iniconfig`, `packaging`, `pygments`, `colorama`, `tomli`). Ninguna versión existente cambia.
+- **`services/api/.gitignore` (nuevo):** `.coverage`, `.coverage.*` y `htmlcov/`.
+- **Docs:** `SPECS.md` D-API-3 y el README de `services/api` (dependencias y tests con uv) ya no dicen que no hay pytest.
+
+**Hallazgos verificados:**
+- **uv 0.12.21:** `uv run` sincroniza de forma inexacta y conserva los paquetes instalados con pip; `uv sync` es exacto y los desinstala. Probado en un venv desechable con `UV_PROJECT_ENVIRONMENT` y después en el real.
+- **`pythonpath`:** con los dos paquetes desinstalados por `uv sync`, la suite pasó igual con pytest (312) en el venv desechable.
+- **Plugin de logging de pytest:** añade un handler al logger raíz, así que `logging.lastResort` deja de escribir en stderr. Con él fallaban 4 tests de scripts (base corrupta en `create-admin`, el seed de proveedores y el seed del gestor), que esperan la línea `storage … is unavailable` en stderr. No es un bug del producto. Se desactiva con `-p no:logging`, sin tocar los tests.
+- **Control de aplicaciones de Windows (error 4551):** bloquea algunos lanzadores `.exe` de uv sin firmar (`pytest.exe` en `%TEMP%` y `coverage.exe` en el venv real; `pytest.exe` del venv real sí arranca). Se usa `python -m coverage`. No se tocó la política.
+
+**Validación ejecutada:**
+- `pip list` del venv real antes y después: solo altas (los 8 paquetes nuevos), y `nexova-shared` y `nexova-incident-analyzer` siguen instalados.
+- `uv run pytest`: 312 OK (1904 subtests), con un único aviso, el `StarletteDeprecationWarning` conocido.
+- Comando `unittest` de `AGENTS.md` §4: 312 OK. `packages/shared`: 81 OK. `packages/incident-analyzer`: 121 OK (7 omitidos).
+- **Cobertura de partida** (suite existente): global 97 %; módulo de autenticación (`app/auth/*` y `app/routes/{auth,users,profiles}.py`) **96 %**, con `uv run python -m coverage report --include=… --fail-under=70`.
+- `services/api/data/*.json` sin cambios (huella antes y después). Venvs desechables borrados.
+
+---
+
 ## 2026-10-10 — Auditoría de gestión de errores: cierre (W1, verificación final de la rama)
 
-**Estado: hecho, validado y comiteado** en `feature/error-handling-audit`, que sale de `main` en `6dfa013` (merge de la PR #17). **Pendiente: push y PR**, que hace el usuario.
+**Estado: hecho, validado y comiteado** en `feature/error-handling-audit`, que sale de `main` en `6dfa013` (merge de la PR #17). ~~Pendiente: push y PR, que hace el usuario.~~ *Corregido el 2026-10-10: integrada en `main` con la PR #18 (merge `843ae26`).*
 
 **Origen:** auditoría de solo lectura del 2026-10-09 sobre todo el código de producción. Encontró 2 hallazgos ALTO, 6 MEDIO y 10 BAJO, ninguno crítico; el informe se entregó en la conversación y no está versionado. El usuario pidió corregirlos por fases.
 
@@ -54,7 +83,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 **Informe y guía de revisión:** [`docs/error-handling-audit.md`](../docs/error-handling-audit.md). Incluye el informe completo de hallazgos (A1–W1), lo revisado como correcto por diseño, el antes y el ahora para el usuario, la trazabilidad de los 8 criterios del ticket y las guías de verificación manual. Se añadió después del cierre, con un commit `docs` propio.
 
-**Pendientes:** el push y la PR (los hace el usuario), y la revisión de las decisiones de la auditoría: el 503 nuevo en el contrato de la API, `retry()` de Next 16 y el bloqueo del reenvío en el tracker.
+**Pendientes:** ~~el push y la PR (los hace el usuario)~~ (hecho: PR #18, merge `843ae26`) y la revisión de las decisiones de la auditoría: el 503 nuevo en el contrato de la API, `retry()` de Next 16 y el bloqueo del reenvío en el tracker.
 
 ---
 
@@ -909,7 +938,7 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 
 - **Auditoría de gestión de errores (2026-10-09):**
   - Hecha y comiteada en `feature/error-handling-audit`: `24f0e0d`, `a6f3722`, `2454dcd`, `dc91918`, `899ce1e` y el cierre del memory-bank (entradas del 2026-10-10).
-  - Pendiente: push y PR, que hace el usuario.
+  - ~~Pendiente: push y PR, que hace el usuario.~~ Integrada en `main` con la PR #18 (merge `843ae26`).
   - No se hace, con su motivo en la entrada de cierre:
     - B5: no hay contacto de soporte definido;
     - T5: se acerca más a un refactor;

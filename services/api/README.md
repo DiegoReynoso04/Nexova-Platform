@@ -57,7 +57,7 @@ Documentación interactiva de FastAPI en `http://localhost:8000/docs` con el ser
 
 ## Requisitos
 
-Python 3.11 o superior (verificado con 3.14.6). Dependencias (`pyproject.toml`), acotadas a las versiones probadas (versiones exactas en [`uv.lock`](./uv.lock), versionado): `fastapi>=0.141,<0.142`, `python-multipart>=0.0.32,<0.1`, `uvicorn>=0.53,<0.54`, `tinydb>=4.9,<4.10`, `libpass[bcrypt]>=1.9.3,<1.10` y `python-jose[cryptography]>=3.5,<3.6` (AUTH-01) y, para tests (extra `dev`), `httpx>=0.28,<0.29`. Sin pytest ni librerías de configuración.
+Python 3.11 o superior (verificado con 3.14.6). Dependencias (`pyproject.toml`), acotadas a las versiones probadas (versiones exactas en [`uv.lock`](./uv.lock), versionado): `fastapi>=0.141,<0.142`, `python-multipart>=0.0.32,<0.1`, `uvicorn>=0.53,<0.54`, `tinydb>=4.9,<4.10`, `libpass[bcrypt]>=1.9.3,<1.10` y `python-jose[cryptography]>=3.5,<3.6` (AUTH-01) y, para tests, `httpx>=0.28,<0.29` (extra `dev`, para pip) más `pytest>=9.1,<9.2` y `pytest-cov>=7.1,<7.2` (grupo `dev` de uv, AUTH-088; repite httpx). Sin librerías de configuración.
 
 ## Instalación (desde la raíz del monorepo)
 
@@ -228,7 +228,7 @@ Con uv, desde `services/api` y con el venv ya instalado:
 uv run --no-sync python -m unittest discover -s tests -t .
 ```
 
-**Sin `--no-sync`** (por ejemplo `uv run --extra dev python -m unittest …`), uv sincroniza el venv y puede desinstalar el núcleo `incident-analyzer` (ver [Seeder](#seeder)). La suite usa `unittest` y **no hay pytest** (D-API-3 en `SPECS.md`): `uv run pytest` responde `program not found`.
+Con pytest (AUTH-088), desde `services/api`: `uv run pytest` (recoge también los tests `unittest`) y `uv run pytest --cov` para la cobertura. `uv run` sincroniza el venv sin borrar paquetes que no declara (verificado con uv 0.12.21: `nexova-shared` y `nexova-incident-analyzer` siguen instalados); `uv sync`, en cambio, es exacto y **sí** los desinstala. Aunque falten, pytest los encuentra en el monorepo (`pythonpath` en `pyproject.toml`), pero el comando `unittest` de arriba los necesita instalados: reinstalarlos con `pip install --no-deps -e packages/shared -e packages/incident-analyzer` desde la raíz.
 
 La suite del núcleo (Fase 1) no necesita el venv: `python -m unittest discover -s packages/incident-analyzer/tests -t packages/incident-analyzer` con cualquier Python ≥ 3.11.
 
