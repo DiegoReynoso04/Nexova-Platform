@@ -4,9 +4,50 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-10 — Auditoría de gestión de errores: cierre (W1, verificación final de la rama)
+
+**Estado: hecho, validado y comiteado** en `feature/error-handling-audit`, que sale de `main` en `6dfa013` (merge de la PR #17). **Pendiente: push y PR**, que hace el usuario.
+
+**Origen:** auditoría de solo lectura del 2026-10-09 sobre todo el código de producción. Encontró 2 hallazgos ALTO, 6 MEDIO y 10 BAJO, ninguno crítico; el informe se entregó en la conversación y no está versionado. El usuario pidió corregirlos por fases.
+
+**Commits de la rama:**
+
+| Commit | Fase | Qué |
+|---|---|---|
+| `24f0e0d` | `fix(api)` | A1: `http.client.HTTPException` → `EmailDeliveryError`. A2: almacenamiento TinyDB ilegible o corrupto → 503 `storage_unavailable` (`GuardedJSONStorage`) |
+| `a6f3722` | `fix(scripts)` | S1–S4: el seed del gestor, `uv run seed`, `create-admin` y `analyze.py` terminan con mensaje en stderr y código de salida, sin traceback; `describe_os_error` |
+| `2454dcd` | `fix(backoffice)` | B1–B4: `app/error.tsx`, `global-error.tsx` y `not-found.tsx`; textos sin detalles técnicos; reintento del guard con carga; `blob()` con el mismo tratamiento que `json()` |
+| `dc91918` | `fix(tracker)` | T1–T4 y T6: límites de error; textos fijos por tipo (`describeApiError`); timeout que cubre el cuerpo; `classifySubmitError` y bloqueo del reenvío; reintento del guard con carga |
+| `899ce1e` | `fix(website)` | W1: `uis/website/404.html` con navegación, enlace a inicio y al formulario, y rutas absolutas |
+| este | `docs(memory-bank)` | Cierre y sincronización |
+
+**Verificación final de `main..HEAD`:**
+- **Validaciones de AGENTS.md §4, de `main` a `HEAD`:**
+  - `services/api`: 289 → 312;
+  - `packages/incident-analyzer`: 118 → 121 (7 omitidos);
+  - `packages/shared`: 81 → 81;
+  - `src/`: 97 → 97;
+  - backoffice: tests 332 → 344; `tsc` y `lint` limpios; `build` OK (12 rutas en los dos);
+  - tracker: tests 35 → 55; `tsc` limpio; `lint` con los mismos 4 errores anteriores; `build` OK (9 rutas).
+- **Cómo se midió `main`:** en un worktree temporal de `6dfa013`. El `build` de las apps no pudo ejecutarse allí, porque Turbopack rechaza el enlace de `node_modules` que apunta fuera del proyecto. El de referencia es el del propio repo al empezar las fases 3 y 4, con el código de cada app idéntico a `main` (`git diff --quiet` lo confirma). En un checkout recién hecho, `tsc` de las apps necesita antes los tipos que Next genera en `.next/types`.
+- **Diff limpio:** `git diff main..HEAD --stat` es idéntico con y sin `--ignore-cr-at-eol`. No hay `.vscode/`, `.env`, `*.tsbuildinfo`, `.next/` ni bases de datos, ni cambios en `package.json`, `pyproject.toml` o lockfiles.
+- **Búsquedas en las líneas añadidas de producción:** sin `console.*`, `except Exception`, `except: pass` ni `error.message` en JSX. «código» y «traceback» solo aparecen en comentarios y docstrings.
+- **Búsquedas en todo el código de las dos apps:** `NEXT_PUBLIC_` solo aparece en la lectura de `process.env`, en comentarios JSDoc, en el mensaje interno de `ApiConfigError` del backoffice (nunca se muestra: la UI lo traduce) y en el fail-fast del tracker (SPECS §3.2, solo en build y dev).
+
+**Lo que NO se hizo y por qué:**
+- **B5, contacto de soporte en los errores:** el contexto no define ningún contacto y no se inventa. Los errores ofrecen «Reintentar» y un enlace a inicio.
+- **T5, señal de cancelación externa en `request()` del tracker:** se acerca más a un refactor que a gestión de errores.
+- **`BrokenPipeError` de `analyze.py`:** en Windows, escribir en una tubería cerrada da `OSError` con `EINVAL` y no `BrokenPipeError`, así que no hay un test fiable y pequeño.
+- **Riesgo de duplicación de `IncidentRepository.seed`:** dos escrituras no atómicas. Queda registrado y sin corregir, porque es consistencia de datos y no gestión de errores (ver "Decisiones y problemas conocidos").
+- **Consola del navegador en los límites de error:** React registra en la consola, con su mensaje y su traza, los errores que capturan `error.tsx` y `global-error.tsx`. El código propio no los registra. La regla para que no expongan datos (ningún error lanzado en producción lleva datos de la API o del usuario en su mensaje) está en el `CLAUDE.md` del backoffice.
+
+**Pendientes:** el push y la PR (los hace el usuario), y la revisión de las decisiones de la auditoría: el 503 nuevo en el contrato de la API, `retry()` de Next 16 y el bloqueo del reenvío en el tracker.
+
+---
+
 ## 2026-10-10 — Auditoría de gestión de errores: T1–T4 y T6 en `uis/talent-pipeline-tracker`
 
-**Estado: hecho y validado, sin commit todavía**, en `feature/error-handling-audit`, después de `2454dcd`. Es la cuarta fase pedida por el usuario.
+**Estado: hecho, validado y comiteado** (`dc91918`, `fix(tracker)`), en `feature/error-handling-audit`, después de `2454dcd`. Es la cuarta fase pedida por el usuario.
 
 **T5 no se hace** (señal de cancelación externa): se acerca más a un refactor que a gestión de errores.
 
@@ -78,7 +119,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 **Validación ejecutada:**
 - **Backoffice:**
   - `tsc` y `lint` limpios;
-  - `build` OK (13 rutas, incluida `/_not-found`);
+  - `build` OK (12 rutas, las mismas que en `main`: `app/not-found.tsx` sustituye a la página `/_not-found` por defecto). *Corregido en el cierre: decía «13 rutas»;*
   - tests: de 332 a **344 OK** (+2 `production-source`, +2 `api-client`, +5 `use-auth` y los tests por archivo de los 3 archivos nuevos).
 - **Mutaciones:** cada arreglo deshecho hace fallar su test. Los casos probados: sin `app/error.tsx`; `global-error` usando la sesión; `supplier-error` original; `use-auth-session` y `auth-routes` originales; reintento sin `validation_started`; y `api-client` original.
 - **Navegador:**
@@ -838,6 +879,7 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 - **Deuda pendiente — `LastResultStore` global al proceso, no por usuario (registrada el 2026-10-05, sin corregir):** `services/api` guarda en memoria un único "último análisis" de incidentes para todo el proceso (`services/api/SPECS.md` §6, D-API-5). Desde AUTH-01/AUTH-02 hay varios usuarios autenticados, así que un usuario puede exportar el último resultado generado por otro. Hoy el resultado solo contiene métricas agregadas (sin filas ni emails) y el frontend descarta una exportación cuyo `X-Analysis-Id` no coincide con el análisis que muestra, pero la API no lo impide. **No se corrige ahora:** es una decisión de arquitectura pendiente del tech lead, a revisar antes de llevar el módulo de incidentes a un uso multiusuario real o a la Fase 4.
 
 - **Almacenamiento TinyDB no disponible o corrupto → 503 `storage_unavailable` (2026-10-10, A2):** antes era un 500 genérico. El caso más grave: un `auth.json` corrupto tumbaba el login y todas las rutas protegidas. Sigue sin haber escritura atómica: TinyDB reescribe el archivo entero y un corte a mitad lo deja corrupto. Ahora eso da 503 y un registro claro, pero recuperarse exige restaurar una copia o borrar el archivo (README de `services/api`). El seed del gestor, `uv run seed` y `create-admin` lo tratan desde el 2026-10-10 (S1–S3): mensaje en stderr y código de salida, sin traceback.
+- **Errores capturados por los límites de error de Next (2026-10-10, por diseño):** React registra en la consola del navegador, con su mensaje y su traza, los errores que capturan `app/error.tsx` y `app/global-error.tsx` (backoffice y tracker). El código propio no los registra ni los muestra. Por eso ningún error lanzado en el código de producción puede llevar datos de la API o del usuario en su mensaje.
 - **Riesgo de duplicación en `IncidentRepository.seed` (detectado el 2026-10-10, sin corregir):**
   - **Causa:** `services/api/app/modules/incident_manager/repository.py` (`seed`) hace dos escrituras no atómicas en `incidents.json`: primero `incidents_table.insert_multiple` y después `keys_table.insert_multiple` (`seed_keys`).
   - **Consecuencia:** si la segunda falla (disco lleno, permisos, el proceso muere a mitad), quedan incidencias sin su clave de origen. La siguiente ejecución del seed las vuelve a insertar, rompiendo la idempotencia. Si el fallo es de E/S, desde A2 el seed lo comunica (código 2), pero no deshace la primera escritura.
@@ -853,13 +895,13 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 ## Próximos pasos conocidos (no implementados aquí)
 
 - **Auditoría de gestión de errores (2026-10-09):**
-  - A1 y A2 comiteados en `24f0e0d`, S1–S4 en `a6f3722` y B1–B4 en `2454dcd` (entradas del 2026-10-10). T1–T4 y T6 hechos, sin commit todavía. Pendiente la PR.
-  - Pendientes, por capa:
-    - scripts: ~~S1–S4~~ hechos el 2026-10-10 (entrada de ese día), salvo el `BrokenPipeError` de `analyze.py`, que queda documentado y sin hacer;
-    - backoffice: ~~B1–B4~~ hechos el 2026-10-10; B5 no se hace (ver abajo);
-    - tracker: ~~T1–T4 y T6~~ hechos el 2026-10-10; T5 (señal de cancelación externa en `request()`) no se hace, porque se acerca más a un refactor que a gestión de errores;
-    - website: W1 (sin `404.html`).
-  - B5, el contacto de soporte en los errores, necesita un dato de negocio que hoy no tiene ninguna fuente.
+  - Hecha y comiteada en `feature/error-handling-audit`: `24f0e0d`, `a6f3722`, `2454dcd`, `dc91918`, `899ce1e` y el cierre del memory-bank (entradas del 2026-10-10).
+  - Pendiente: push y PR, que hace el usuario.
+  - No se hace, con su motivo en la entrada de cierre:
+    - B5: no hay contacto de soporte definido;
+    - T5: se acerca más a un refactor;
+    - el `BrokenPipeError` de `analyze.py`: sin test fiable en Windows;
+    - el riesgo de duplicación del seed: es consistencia de datos.
 - **Gestor centralizado de incidencias:** hecho en F1–F6 en `feature/centralized-incident-manager` (commits `164a183`, `959a65b`, `ef040f5`, `d7ce215`, `7ce4101`, `ca0bf00` y el arreglo móvil `ee944ae`). Integrado en `main` con la PR #17 (merge `6dfa013`, 2026-10-08). Guía de revisión: `docs/centralized-incident-manager-review.md`. Pendientes: la revisión de P4-1…P4-13 (decisiones del usuario) por el tech lead o la CTO, la aceptación con el CSV real y la verificación visual en móvil y con lector de pantalla.
 - **Backend general de Nexova:** `docs/ARCHITECTURE_PROPOSAL.md` está pendiente de revisión por el CTO. Si se aprueba, sus dominios (candidatos, vacantes, pipeline, matching) tendrán que decidir cómo convivir con el `services/api/` ya existente del procesador de incidentes (mismo servicio o no, prefijo `/api/v1` o no). Nada de eso se ha iniciado.
 - **Procesador de incidentes:** Fases 1, 2 y 3 (`/incidents` en `uis/backoffice`) hechas e integradas en `main` (PR #6). Existe un fixture sintético de aceptación que reproduce las cifras del contexto (entrada 2026-09-27, PR #7). Pendientes: el test de aceptación con el CSV real (las cifras 100/96/4 no están verificadas con datos reales) y la Fase 4 (integración). Antes de la Fase 4 o de un uso multiusuario real, revisar la deuda de `LastResultStore` (ver "Decisiones y problemas conocidos").

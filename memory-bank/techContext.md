@@ -50,6 +50,8 @@ Verificado el 2026-10-10 (`git fetch` + `git log origin/main`): `origin/main` es
 - Actualización 2026-10-10 (`git fetch`): `origin/main` está en **`6dfa013`**, el merge de la PR #17 (2026-10-08). Esa PR integra el gestor centralizado de incidencias: `packages/shared`, `services/api` → `app/modules/incident_manager/`, `scripts/seed_incidents.py` y `uis/backoffice` → `/incident-manager`, desde `feature/centralized-incident-manager` (F1–F6 y el arreglo móvil `ee944ae`). *(Corrige la nota anterior, que lo daba como "no está en `main`, pendiente de PR".)* El merge no aprueba las decisiones P4-1…P4-13, que siguen pendientes de revisión.
 - **Repositorio renombrado (2026-09-30):** `DiegoReynoso04/Milestone-0-Elige-tu-empresa` → `DiegoReynoso04/nexova-platform` (GitHub lo muestra como `Nexova-Platform`; el nombre no distingue mayúsculas y las URLs antiguas redirigen). El remoto `origin` local ya apunta a `https://github.com/DiegoReynoso04/nexova-platform.git`. La carpeta local puede seguir llamándose `Milestone-0-Elige-tu-empresa`: no afecta a nada.
 
+- **No está en `main` (2026-10-10):** la auditoría de gestión de errores vive en la rama `feature/error-handling-audit` (6 commits sobre `6dfa013`), pendiente de push y PR.
+
 Un agente que trabaje sobre `main` (tras `git fetch`) ve el árbol completo: `src/`, `uis/website/`, `uis/talent-pipeline-tracker/`, `uis/backoffice/`, `packages/incident-analyzer/`, `scripts/analyze.py`, `services/api/`.
 
 ## Decisiones de arquitectura registradas
@@ -195,6 +197,31 @@ Un agente que trabaje sobre `main` (tras `git fetch`) ve el árbol completo: `sr
 - **Un solo camino para cambiar la propia contraseña (H-1, 2026-10-06):** `PUT /users/{id}` responde 403 a quien no es admin si envía `password` (en `app/routes/users.py`, `update_user`, junto a la regla de `role`). Así solo queda `POST /auth/change-password`, que exige la actual. El admin conserva la capacidad de AUTH-01; su riesgo residual (sin contraseña actual, sin invalidar enlaces y sin auditoría) está en `SPECS.md` §27 y en D-AUTH-13/D-PWD-12.
 - **Auditoría:** tabla `password_audit` (evento, `user_id`, IP de `request.client.host`, motivo, fecha). Las IP son datos personales; sin endpoint ni retención.
 - **Frontend:** `OPEN_PATHS` nuevo en `lib/auth-routes.ts` de cada app (`/reset-password` con o sin sesión); `/forgot-password` entra en `PUBLIC_PATHS`. `/reset-password` y `/login` leen el query string con `useSearchParams` dentro de `<Suspense>` (obligatorio para el build en Next 16). El tracker distingue los 400 por ruta (su `ApiError` no lleva `code`). Aviso del test estático del backoffice: la regla anti-`as` (`\bas\s+…`) da falso positivo con palabras que terminan en "ñas" seguidas de espacio (la `ñ` no es carácter de palabra para `\b`).
+
+### Gestión de errores (auditoría del 2026-10-10, rama `feature/error-handling-audit`)
+
+Detalle en `progress.md` (entradas del 2026-10-10). Decisiones técnicas permanentes:
+
+- **API (`services/api`):** se mantiene el formato `{detail, code}`.
+  - **503 `storage_unavailable`:** cuando un archivo TinyDB no se puede abrir, leer o escribir, o está corrupto. Lo produce `GuardedJSONStorage` (ver la decisión de la API HTTP, arriba).
+  - **Email:** `http.client.HTTPException` se trata como `EmailDeliveryError`.
+  - **Regla:** todo almacén TinyDB nuevo usa `GuardedJSONStorage` con su `Store`.
+- **Scripts y CLIs:** se captura solo la excepción concreta alrededor de la operación (`StorageUnavailableError`, `ConfigError`, `OSError`, `EOFError`/`KeyboardInterrupt`), nunca un `except` genérico. El mensaje va a stderr con el nombre del archivo, sin la ruta completa ni `str(exc)`.
+  - **Códigos de salida:** `seed_incidents.py` 0/1/2 (2 = entorno, incluida la base); `uv run seed` y `create-admin` 1; `analyze.py` 0/1/2.
+  - **Mensajes de `OSError`:** `describe_os_error` usa el nombre de la clase si `strerror` es `None`. Cada script tiene su copia, porque los scripts no se importan entre sí.
+  - **Línea de registro:** en los scripts, `log_storage_failure` sale por el handler de último recurso de `logging`. Es intencionado: aporta la clase del error.
+- **Frontends Next 16 (backoffice y tracker):**
+  - **Límites de error:** `app/error.tsx` (dentro del layout), `app/global-error.tsx` (con su propio `<html>`/`<body>`, sin sesión ni guard) y `app/not-found.tsx`. Firma de props de Next 16.3: `{ error: Error & { digest?: string }; retry: () => void }`. Se usa `retry()` y no `reset()`, como recomienda la documentación. El error no se lee.
+  - **Textos fijos por tipo de error:** en el backoffice, `UiError` por `kind` en cada componente de error y `sessionErrorCopy` en el guard; en el tracker, `classifyApiError` + `API_ERROR_MESSAGES`/`describeApiError` y `sessionErrorCopy`.
+  - **Qué no se muestra nunca:** el código HTTP, variables de entorno, rutas del repositorio, mensajes de normalizadores ni `String(error)`. Solo el 422 muestra los `msg` de la API.
+  - **Reintento del guard:** `validation_started` → `retrying`, emitido solo en el reintento forzado. Así el 401 sigue sin despachar nada.
+  - **Tracker:**
+    - el timeout cubre la lectura del cuerpo;
+    - `ResponseShapeError` (en `lib/response-shape-error.ts`, sin efectos al importarse) separa los fallos de contrato;
+    - `classifySubmitError` bloquea el reenvío tras un 2xx ilegible o un timeout;
+    - cada apertura del modal monta un `CandidateForm` nuevo (`key`), porque el `<dialog>` no desmonta su contenido.
+  - **Tests estáticos:** `production-source.test.mjs` de cada app vigila estas reglas.
+- **Web (`uis/website`):** `404.html` con rutas absolutas, porque Netlify lo sirve en la ruta pedida aunque esté anidada.
 
 ## Skills y agentes en este repo
 
