@@ -2,11 +2,13 @@
 // procedente de la red (§3.1). Cada endpoint tiene su propio normalizador —
 // la API usa tres envoltorios distintos entre endpoints (§4.8.4), así que
 // está prohibido un normalizador genérico. Toda forma inesperada lanza un
-// Error descriptivo; nunca se devuelven datos parciales en silencio (§3.1).
+// ResponseShapeError descriptivo (nunca se muestra al usuario); nunca se
+// devuelven datos parciales en silencio (§3.1).
 
 import { USER_ROLES, type AccessToken, type CurrentUser, type Profile, type UserRole } from '@/types/auth';
 import type { Note, RecordListItem } from '@/types/record';
 import type { NotesResponse, RecordsPage } from '@/types/api';
+import { ResponseShapeError } from '@/lib/response-shape-error';
 
 // ---------------------------------------------------------------------------
 // Type guards
@@ -40,22 +42,22 @@ function describeType(value: unknown): string {
 
 function parseNote(value: unknown, context: string): Note {
   if (!isRecordObject(value)) {
-    throw new Error(`${context}: se esperaba un objeto, se recibió ${describeType(value)}`);
+    throw new ResponseShapeError(`${context}: se esperaba un objeto, se recibió ${describeType(value)}`);
   }
 
   const { id, record_id, content, created_at } = value;
 
   if (!isString(id)) {
-    throw new Error(`${context}.id: se esperaba string, se recibió ${describeType(id)}`);
+    throw new ResponseShapeError(`${context}.id: se esperaba string, se recibió ${describeType(id)}`);
   }
   if (!isString(record_id)) {
-    throw new Error(`${context}.record_id: se esperaba string, se recibió ${describeType(record_id)}`);
+    throw new ResponseShapeError(`${context}.record_id: se esperaba string, se recibió ${describeType(record_id)}`);
   }
   if (!isString(content)) {
-    throw new Error(`${context}.content: se esperaba string, se recibió ${describeType(content)}`);
+    throw new ResponseShapeError(`${context}.content: se esperaba string, se recibió ${describeType(content)}`);
   }
   if (!isString(created_at)) {
-    throw new Error(`${context}.created_at: se esperaba string, se recibió ${describeType(created_at)}`);
+    throw new ResponseShapeError(`${context}.created_at: se esperaba string, se recibió ${describeType(created_at)}`);
   }
 
   return { id, record_id, content, created_at };
@@ -63,7 +65,7 @@ function parseNote(value: unknown, context: string): Note {
 
 function parseNoteArray(value: unknown, context: string): Note[] {
   if (!Array.isArray(value)) {
-    throw new Error(`${context}: se esperaba un array, se recibió ${describeType(value)}`);
+    throw new ResponseShapeError(`${context}: se esperaba un array, se recibió ${describeType(value)}`);
   }
   return value.map((item, index) => parseNote(item, `${context}[${index}]`));
 }
@@ -106,19 +108,19 @@ export function normalizeNotesResponse(data: unknown): NotesResponse {
   const context = 'GET /records/{id}/notes';
 
   if (!isRecordObject(data)) {
-    throw new Error(`${context}: se esperaba un objeto, se recibió ${describeType(data)}`);
+    throw new ResponseShapeError(`${context}: se esperaba un objeto, se recibió ${describeType(data)}`);
   }
 
   const { data: items, meta } = data;
   const notes = parseNoteArray(items, `${context}.data`);
 
   if (!isRecordObject(meta)) {
-    throw new Error(`${context}.meta: se esperaba un objeto, se recibió ${describeType(meta)}`);
+    throw new ResponseShapeError(`${context}.meta: se esperaba un objeto, se recibió ${describeType(meta)}`);
   }
 
   const { total } = meta;
   if (!isFiniteNumber(total)) {
-    throw new Error(`${context}.meta.total: se esperaba number, se recibió ${describeType(total)}`);
+    throw new ResponseShapeError(`${context}.meta.total: se esperaba number, se recibió ${describeType(total)}`);
   }
 
   return { data: notes, meta: { total } };
@@ -130,7 +132,7 @@ export function normalizeNotesResponse(data: unknown): NotesResponse {
 
 function parseRecordListItem(value: unknown, context: string): RecordListItem {
   if (!isRecordObject(value)) {
-    throw new Error(`${context}: se esperaba un objeto, se recibió ${describeType(value)}`);
+    throw new ResponseShapeError(`${context}: se esperaba un objeto, se recibió ${describeType(value)}`);
   }
 
   const {
@@ -151,43 +153,43 @@ function parseRecordListItem(value: unknown, context: string): RecordListItem {
   } = value;
 
   if (!isString(id)) {
-    throw new Error(`${context}.id: se esperaba string, se recibió ${describeType(id)}`);
+    throw new ResponseShapeError(`${context}.id: se esperaba string, se recibió ${describeType(id)}`);
   }
   if (!isString(full_name)) {
-    throw new Error(`${context}.full_name: se esperaba string, se recibió ${describeType(full_name)}`);
+    throw new ResponseShapeError(`${context}.full_name: se esperaba string, se recibió ${describeType(full_name)}`);
   }
   if (!isString(email)) {
-    throw new Error(`${context}.email: se esperaba string, se recibió ${describeType(email)}`);
+    throw new ResponseShapeError(`${context}.email: se esperaba string, se recibió ${describeType(email)}`);
   }
   if (!isString(phone)) {
-    throw new Error(`${context}.phone: se esperaba string, se recibió ${describeType(phone)}`);
+    throw new ResponseShapeError(`${context}.phone: se esperaba string, se recibió ${describeType(phone)}`);
   }
   if (!isString(position)) {
-    throw new Error(`${context}.position: se esperaba string, se recibió ${describeType(position)}`);
+    throw new ResponseShapeError(`${context}.position: se esperaba string, se recibió ${describeType(position)}`);
   }
   if (!isNullableString(linkedin_url)) {
-    throw new Error(`${context}.linkedin_url: se esperaba string o null, se recibió ${describeType(linkedin_url)}`);
+    throw new ResponseShapeError(`${context}.linkedin_url: se esperaba string o null, se recibió ${describeType(linkedin_url)}`);
   }
   if (!isNullableString(cv_url)) {
-    throw new Error(`${context}.cv_url: se esperaba string o null, se recibió ${describeType(cv_url)}`);
+    throw new ResponseShapeError(`${context}.cv_url: se esperaba string o null, se recibió ${describeType(cv_url)}`);
   }
   if (!isString(status)) {
-    throw new Error(`${context}.status: se esperaba string, se recibió ${describeType(status)}`);
+    throw new ResponseShapeError(`${context}.status: se esperaba string, se recibió ${describeType(status)}`);
   }
   if (!isString(stage)) {
-    throw new Error(`${context}.stage: se esperaba string, se recibió ${describeType(stage)}`);
+    throw new ResponseShapeError(`${context}.stage: se esperaba string, se recibió ${describeType(stage)}`);
   }
   if (!isFiniteNumber(experience_years)) {
-    throw new Error(`${context}.experience_years: se esperaba number, se recibió ${describeType(experience_years)}`);
+    throw new ResponseShapeError(`${context}.experience_years: se esperaba number, se recibió ${describeType(experience_years)}`);
   }
   if (!isFiniteNumber(notes_count)) {
-    throw new Error(`${context}.notes_count: se esperaba number, se recibió ${describeType(notes_count)}`);
+    throw new ResponseShapeError(`${context}.notes_count: se esperaba number, se recibió ${describeType(notes_count)}`);
   }
   if (!isString(applied_at)) {
-    throw new Error(`${context}.applied_at: se esperaba string, se recibió ${describeType(applied_at)}`);
+    throw new ResponseShapeError(`${context}.applied_at: se esperaba string, se recibió ${describeType(applied_at)}`);
   }
   if (!isString(updated_at)) {
-    throw new Error(`${context}.updated_at: se esperaba string, se recibió ${describeType(updated_at)}`);
+    throw new ResponseShapeError(`${context}.updated_at: se esperaba string, se recibió ${describeType(updated_at)}`);
   }
 
   // `notes` es tolerante: ausente -> [] (§4.8.1, §4.8.2)
@@ -260,22 +262,22 @@ export function normalizeRecordsPage(data: unknown): RecordsPage {
   const context = 'GET /records';
 
   if (!isRecordObject(data)) {
-    throw new Error(`${context}: se esperaba un objeto, se recibió ${describeType(data)}`);
+    throw new ResponseShapeError(`${context}: se esperaba un objeto, se recibió ${describeType(data)}`);
   }
 
   const { total, page, limit, data: items } = data;
 
   if (!isFiniteNumber(total)) {
-    throw new Error(`${context}.total: se esperaba number, se recibió ${describeType(total)}`);
+    throw new ResponseShapeError(`${context}.total: se esperaba number, se recibió ${describeType(total)}`);
   }
   if (!isFiniteNumber(page)) {
-    throw new Error(`${context}.page: se esperaba number, se recibió ${describeType(page)}`);
+    throw new ResponseShapeError(`${context}.page: se esperaba number, se recibió ${describeType(page)}`);
   }
   if (!isFiniteNumber(limit)) {
-    throw new Error(`${context}.limit: se esperaba number, se recibió ${describeType(limit)}`);
+    throw new ResponseShapeError(`${context}.limit: se esperaba number, se recibió ${describeType(limit)}`);
   }
   if (!Array.isArray(items)) {
-    throw new Error(`${context}.data: se esperaba un array, se recibió ${describeType(items)}`);
+    throw new ResponseShapeError(`${context}.data: se esperaba un array, se recibió ${describeType(items)}`);
   }
 
   return {
@@ -299,7 +301,7 @@ function isUserRole(value: unknown): value is UserRole {
 function requireString(source: Record<string, unknown>, key: string, context: string): string {
   const value = source[key];
   if (!isString(value)) {
-    throw new Error(`${context}.${key}: se esperaba string, se recibió ${describeType(value)}`);
+    throw new ResponseShapeError(`${context}.${key}: se esperaba string, se recibió ${describeType(value)}`);
   }
   return value;
 }
@@ -307,14 +309,14 @@ function requireString(source: Record<string, unknown>, key: string, context: st
 function requireNullableString(source: Record<string, unknown>, key: string, context: string): string | null {
   const value = source[key];
   if (!isNullableString(value)) {
-    throw new Error(`${context}.${key}: se esperaba string o null, se recibió ${describeType(value)}`);
+    throw new ResponseShapeError(`${context}.${key}: se esperaba string o null, se recibió ${describeType(value)}`);
   }
   return value;
 }
 
 function parseProfile(value: unknown, context: string): Profile {
   if (!isRecordObject(value)) {
-    throw new Error(`${context}: se esperaba un objeto, se recibió ${describeType(value)}`);
+    throw new ResponseShapeError(`${context}: se esperaba un objeto, se recibió ${describeType(value)}`);
   }
   return {
     id: requireString(value, 'id', context),
@@ -329,15 +331,15 @@ function parseProfile(value: unknown, context: string): Profile {
 export function normalizeAccessToken(data: unknown): AccessToken {
   const context = 'POST /auth/login';
   if (!isRecordObject(data)) {
-    throw new Error(`${context}: se esperaba un objeto, se recibió ${describeType(data)}`);
+    throw new ResponseShapeError(`${context}: se esperaba un objeto, se recibió ${describeType(data)}`);
   }
   const accessToken = requireString(data, 'access_token', context);
   if (accessToken.trim() === '') {
-    throw new Error(`${context}.access_token: se esperaba un token no vacío`);
+    throw new ResponseShapeError(`${context}.access_token: se esperaba un token no vacío`);
   }
   const { expires_in } = data;
   if (!isFiniteNumber(expires_in)) {
-    throw new Error(`${context}.expires_in: se esperaba number, se recibió ${describeType(expires_in)}`);
+    throw new ResponseShapeError(`${context}.expires_in: se esperaba number, se recibió ${describeType(expires_in)}`);
   }
   return { access_token: accessToken, token_type: requireString(data, 'token_type', context), expires_in };
 }
@@ -351,14 +353,14 @@ export function normalizeProfile(data: unknown): Profile {
 export function normalizeCurrentUser(data: unknown): CurrentUser {
   const context = 'GET /auth/me';
   if (!isRecordObject(data)) {
-    throw new Error(`${context}: se esperaba un objeto, se recibió ${describeType(data)}`);
+    throw new ResponseShapeError(`${context}: se esperaba un objeto, se recibió ${describeType(data)}`);
   }
   const { role, is_active, profile } = data;
   if (!isUserRole(role)) {
-    throw new Error(`${context}.role: se esperaba admin | manager | user, se recibió ${describeType(role)}`);
+    throw new ResponseShapeError(`${context}.role: se esperaba admin | manager | user, se recibió ${describeType(role)}`);
   }
   if (typeof is_active !== 'boolean') {
-    throw new Error(`${context}.is_active: se esperaba boolean, se recibió ${describeType(is_active)}`);
+    throw new ResponseShapeError(`${context}.is_active: se esperaba boolean, se recibió ${describeType(is_active)}`);
   }
   return {
     id: requireString(data, 'id', context),

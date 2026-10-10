@@ -238,7 +238,10 @@ describe('flujo de login completo (regresión: login 200 sin token guardado)', (
     const error = await auth.login({ email: 'ana@nexova.test', password: PASSWORD }).catch((caught) => caught);
     assert.ok(error instanceof NetworkError);
     assert.equal(readAuthToken(), null);
-    assert.deepEqual(auth.describeAuthError(error, 'login'), { fields: {}, form: 'No se pudo conectar con el servidor' });
+    assert.deepEqual(auth.describeAuthError(error, 'login'), {
+      fields: {},
+      form: 'No se pudo conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo.',
+    });
     assert.equal(calls.some(({ url }) => url.endsWith('/auth/me')), false);
   });
 

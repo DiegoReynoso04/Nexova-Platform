@@ -58,7 +58,7 @@ npm run lint
 node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/support/resolve-alias.mjs --test --test-timeout=10000 "tests/*.test.mjs"
 ```
 
-Los tests (`tests/*.test.mjs`, AUTH-02) usan el runner nativo de **Node 24**, sin dependencias: token en `localStorage`, Bearer solo hacia `services/api` (nunca hacia la API de 4Geeks), 401, login/registro/perfil, normalizadores, sesión y protección de rutas. `tests/support/resolve-alias.mjs` resuelve el alias `@/`. Los flujos completos (login, registro, perfil, redirecciones, logout) se validan además en el navegador.
+Los tests (`tests/*.test.mjs`, AUTH-02) usan el runner nativo de **Node 24**, sin dependencias: token en `localStorage`, Bearer solo hacia `services/api` (nunca hacia la API de 4Geeks), 401, login/registro/perfil, normalizadores, sesión y protección de rutas. `tests/errors.test.mjs` cubre los textos fijos por tipo de error, el timeout que incluye la lectura del cuerpo, la clasificación del error al guardar una candidatura y el reintento del guard. `tests/production-source.test.mjs` revisa el código: existen los límites de error y la UI no muestra `error.message`, `digest` ni hace `console.*`. `tests/support/resolve-alias.mjs` resuelve el alias `@/`. Los flujos completos (login, registro, perfil, redirecciones, logout) se validan además en el navegador.
 
 `npm run lint` informa hoy de 4 errores `react-hooks/set-state-in-effect` en `hooks/use-notes.ts`, `use-record-detail.ts` y `use-records.ts`, anteriores a AUTH-02 (también en `main`).
 

@@ -4,7 +4,7 @@
 // página al ver status === 'not-found', nunca dentro de un callback async.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { NotFoundError } from '@/lib/api-client';
+import { NotFoundError, asError } from '@/lib/api-client';
 import { getRecordById } from '@/services/records.service';
 import type { RecordListItem } from '@/types/record';
 
@@ -49,7 +49,7 @@ export function useRecordDetail(id: string): UseRecordDetailResult {
         setState({
           status: 'error',
           record: null,
-          error: error instanceof Error ? error : new Error(String(error)),
+          error: asError(error),
         });
       });
   }, [id]);

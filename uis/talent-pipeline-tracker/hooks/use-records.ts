@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDebounce } from '@/hooks/use-debounce';
+import { asError } from '@/lib/api-client';
 import { getRecords } from '@/services/records.service';
 import type { KnownStage, KnownStatus, RecordListItem } from '@/types/record';
 
@@ -103,7 +104,7 @@ export function useRecords(limit: number = DEFAULT_LIMIT): UseRecordsResult {
         setState((prev) => ({
           ...prev,
           status: 'error',
-          error: error instanceof Error ? error : new Error(String(error)),
+          error: asError(error),
         }));
       });
   }, [statusFilter, stageFilter, debouncedSearch, page, limit]);

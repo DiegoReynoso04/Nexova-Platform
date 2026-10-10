@@ -4,9 +4,60 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-10 — Auditoría de gestión de errores: T1–T4 y T6 en `uis/talent-pipeline-tracker`
+
+**Estado: hecho y validado, sin commit todavía**, en `feature/error-handling-audit`, después de `2454dcd`. Es la cuarta fase pedida por el usuario.
+
+**T5 no se hace** (señal de cancelación externa): se acerca más a un refactor que a gestión de errores.
+
+**Qué se hizo:**
+- **T1, límites de error:** se crean `app/error.tsx`, `app/global-error.tsx` y `app/not-found.tsx`, y se conserva `app/candidates/[id]/not-found.tsx`.
+  - **Documentación:** la de Next 16.3.2 del tracker es idéntica a la del backoffice (mismo `error.md` y mismo `ErrorInfo` con `retry` y `reset`).
+  - **Comportamiento:** textos fijos, «Reintentar» con `retry()` y enlace a `/`. El error no se lee. `global-error` tiene su propio `<html>`/`<body>` y no usa sesión, guard ni avisos.
+- **Fail-fast de §3.2 (sin cambios):** con `NEXT_PUBLIC_API_URL` vacía, `npm run build` falla igual con y sin los límites («Error occurred prerendering page "/"… NEXT_PUBLIC_API_URL no está definida»).
+  - **En `next dev`, antes:** se veía la página por defecto de Next, en inglés («This page couldn’t load — Reload to try again, or go back»).
+  - **En `next dev`, ahora:** se ve `global-error.tsx` («Algo ha fallado / No se pudo cargar el tracker», con «Reintentar» y enlace a inicio).
+  - **Igual en los dos casos:** el overlay de desarrollo de Next muestra el mensaje con la variable que falta (solo en dev).
+- **T2, ningún texto técnico en la UI:**
+  - `describeApiError` da un texto fijo por tipo (`classifyApiError` + `API_ERROR_MESSAGES`: red, timeout, 401, 404, 4xx, 5xx, respuesta ilegible y desconocido). El 422 sigue con los `msg`.
+  - El `ApiError` genérico ya no lleva «La API respondió con el código N». Hay clases nuevas: `UnreadableResponseError` (con `status`), `UnknownClientError` y `asError`.
+  - Los normalizadores lanzan `ResponseShapeError` (`lib/response-shape-error.ts`, sin efectos al importarse) en vez de `Error`. El mensaje sigue siendo descriptivo, pero no se muestra.
+  - `candidate-list`, `candidate-detail` y `notes-list` usan `describeApiError` en vez de `error.message`. Los hooks usan `asError` en vez de `new Error(String(error))`.
+  - `profile-view` sigue mostrando `load.message`, que ya sale de `describeApiError`. `auth-guard` pasa a usar el tipo de error (T6). `candidate-status-controls` y `note-form` ya usaban `describeApiError`.
+- **T3, `request()`:** el temporizador cubre la petición y la lectura del cuerpo (`readJson`). El `finally` exterior lo limpia en todos los caminos.
+- **T4, `lib/submit-error.ts` (`classifySubmitError`, función pura):**
+  - `validation` (422 por campo);
+  - `saved_unreadable` (2xx ilegible o fuera de contrato): «Se guardó, pero no se pudo leer la respuesta; recarga el listado.»;
+  - `uncertain` (timeout);
+  - `not_saved` (red, 4xx o 5xx).
+
+  `candidate-form` bloquea el reenvío en `saved_unreadable` y `uncertain`. El `<dialog>` de `components/ui/modal.tsx` no desmonta su contenido al cerrarse, así que `candidate-list` y `candidate-detail` montan un formulario nuevo en cada apertura (`key` renovada en `openCreate` y `openEdit`). Así el bloqueo y los errores no pasan al siguiente intento. Efecto visible: «Nueva candidatura» se abre siempre vacía; antes conservaba lo escrito, también después de crear una.
+- **T6, guard:** estado `retrying` (se emite solo en el reintento forzado del mismo token) y `sessionErrorCopy(kind)` con un texto por tipo de error. «Reintentar» muestra «Reintentando…» con el spinner y queda deshabilitado.
+- **Optional chaining (sin cambios):** los campos anulables (`linkedin_url`, `cv_url`, `profile` y sus campos, `errors.form`) ya tienen fallback.
+- **Docs:** `CLAUDE.md` (nueva sección «Errores»), `SPECS.md` §5.4 (mensaje legible) y `README.md` (tests).
+
+**Validación ejecutada:**
+- **Tracker:**
+  - `tsc` limpio;
+  - `lint` con los mismos 4 errores `set-state-in-effect` anteriores (antes `use-notes:63`, `use-record-detail:58` y `use-records:75` y `:112`; ahora 64, 58, 76 y 113, por un `import` más) y ninguno nuevo;
+  - `build` OK;
+  - tests: de 35 a **55 OK** (+15 en `errors.test.mjs` y +5 en `production-source.test.mjs`). Se actualizó la aserción del texto de red en `auth.test.mjs`.
+- **Mutaciones:** cada arreglo deshecho hace fallar su test. Los casos probados: sin `app/error.tsx`; `global-error` con `useToast`; `error.message` en `candidate-list`; `new Error(String(error))`; `describeApiError` devolviendo `error.message`; el código en el mensaje HTTP; normalizadores con `Error`; temporizador limpiado antes del cuerpo; sin el caso «se guardó»; `candidate-form` con `.message`; reintento sin `retrying`; y `candidate-list`/`candidate-detail` sin la `key` del formulario.
+- **Navegador:**
+  - **Montaje:** `next start` en el 3011, con un build cuya autenticación apunta a una API temporal en el 8011, bases temporales fuera del repo y un usuario desechable. La API de 4Geeks solo se leyó (listado y un detalle). Sus fallos se simularon sobrescribiendo `fetch` en la página, y el único POST lo respondió el simulador sin llegar a 4Geeks.
+  - **(1) Rutas:** una ruta inexistente muestra el not-found raíz; un id inexistente, el de `candidates/[id]`.
+  - **(2) Error de render** (con una ruta temporal, ya borrada): se ve `error.tsx` dentro del layout y «Reintentar» recupera la vista.
+  - **(3) Listado, detalle y notas:** con un 500, con la red caída y con el cuerpo colgado (timeout real de 20 s) se ven el texto del servidor, el de conexión y el de «tardó demasiado», con «Reintentar» y sin ningún código.
+  - **(4) T4:** se ve el mensaje «Se guardó…» en el formulario y en el aviso, y el botón de enviar queda deshabilitado.
+  - **(5) `auth.json` corrupto:** el guard muestra «El servidor tuvo un problema al comprobar tu sesión…». Al reintentar se ve «Reintentando…» con el spinner y el botón deshabilitado. Al restaurar el archivo, la vista se recupera.
+  - **(6) Consola:** sin datos sensibles.
+- **Sin tocar:** no se usaron los puertos 3000, 3001 ni 8000, ni `services/api/data/`.
+
+---
+
 ## 2026-10-10 — Auditoría de gestión de errores: B1–B4 en `uis/backoffice`
 
-**Estado: hecho y validado, sin commit todavía**, en `feature/error-handling-audit`, después de `a6f3722`. Es la tercera fase pedida por el usuario: solo B1–B4.
+**Estado: hecho, validado y comiteado** (`2454dcd`, `fix(backoffice)`), en `feature/error-handling-audit`, después de `a6f3722`. Es la tercera fase pedida por el usuario: solo B1–B4.
 
 **B5 no se hace** (contacto de soporte en los errores): el contexto no define ningún contacto y no se inventa. Los errores ofrecen «Reintentar» y un enlace a inicio.
 
@@ -802,11 +853,11 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 ## Próximos pasos conocidos (no implementados aquí)
 
 - **Auditoría de gestión de errores (2026-10-09):**
-  - A1 y A2 comiteados en `24f0e0d` y S1–S4 en `a6f3722` (entradas del 2026-10-10). B1–B4 hechos, sin commit todavía. Pendiente la PR.
+  - A1 y A2 comiteados en `24f0e0d`, S1–S4 en `a6f3722` y B1–B4 en `2454dcd` (entradas del 2026-10-10). T1–T4 y T6 hechos, sin commit todavía. Pendiente la PR.
   - Pendientes, por capa:
     - scripts: ~~S1–S4~~ hechos el 2026-10-10 (entrada de ese día), salvo el `BrokenPipeError` de `analyze.py`, que queda documentado y sin hacer;
     - backoffice: ~~B1–B4~~ hechos el 2026-10-10; B5 no se hace (ver abajo);
-    - tracker: T1 (lo mismo que B1), T2 (código HTTP y mensajes de normalizadores en la UI), T3 (sin timeout al leer el cuerpo), T4 (un fallo tras guardar se muestra como fallo de conexión), T5 y T6;
+    - tracker: ~~T1–T4 y T6~~ hechos el 2026-10-10; T5 (señal de cancelación externa en `request()`) no se hace, porque se acerca más a un refactor que a gestión de errores;
     - website: W1 (sin `404.html`).
   - B5, el contacto de soporte en los errores, necesita un dato de negocio que hoy no tiene ninguna fuente.
 - **Gestor centralizado de incidencias:** hecho en F1–F6 en `feature/centralized-incident-manager` (commits `164a183`, `959a65b`, `ef040f5`, `d7ce215`, `7ce4101`, `ca0bf00` y el arreglo móvil `ee944ae`). Integrado en `main` con la PR #17 (merge `6dfa013`, 2026-10-08). Guía de revisión: `docs/centralized-incident-manager-review.md`. Pendientes: la revisión de P4-1…P4-13 (decisiones del usuario) por el tech lead o la CTO, la aceptación con el CSV real y la verificación visual en móvil y con lector de pantalla.
