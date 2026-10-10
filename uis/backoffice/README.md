@@ -89,6 +89,8 @@ La API solo acepta los orígenes de `CORS_ALLOWED_ORIGINS` (por defecto `http://
 
 ## Validación
 
+Los casos de error y su verificación manual (auditoría de gestión de errores) están en [`docs/error-handling-audit.md`](../../docs/error-handling-audit.md) §7.4.
+
 Desde `uis/backoffice`:
 
 ```bash

@@ -209,6 +209,8 @@ services/api/.venv/bin/python scripts/seed_incidents.py packages/incident-analyz
 
 ## Tests
 
+Los casos de error y su verificación manual (auditoría de gestión de errores) están en [`docs/error-handling-audit.md`](../../docs/error-handling-audit.md) §7.4.
+
 La suite necesita las dependencias del venv de `services/api` (con el Python global falla al importar `fastapi`). Desde la raíz del monorepo, **sin necesidad de activar el venv**, usando su intérprete directamente:
 
 ```bash

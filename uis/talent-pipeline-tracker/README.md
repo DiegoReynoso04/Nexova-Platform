@@ -52,6 +52,8 @@ npm run lint     # ESLint
 
 ## Validación
 
+Los casos de error y su verificación manual (auditoría de gestión de errores) están en [`docs/error-handling-audit.md`](../../docs/error-handling-audit.md) §7.4.
+
 ```bash
 npx tsc --noEmit
 npm run lint

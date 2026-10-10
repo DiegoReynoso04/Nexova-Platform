@@ -41,6 +41,8 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 - **Riesgo de duplicación de `IncidentRepository.seed`:** dos escrituras no atómicas. Queda registrado y sin corregir, porque es consistencia de datos y no gestión de errores (ver "Decisiones y problemas conocidos").
 - **Consola del navegador en los límites de error:** React registra en la consola, con su mensaje y su traza, los errores que capturan `error.tsx` y `global-error.tsx`. El código propio no los registra. La regla para que no expongan datos (ningún error lanzado en producción lleva datos de la API o del usuario en su mensaje) está en el `CLAUDE.md` del backoffice.
 
+**Informe y guía de revisión:** [`docs/error-handling-audit.md`](../docs/error-handling-audit.md). Incluye el informe completo de hallazgos (A1–W1), lo revisado como correcto por diseño, el antes y el ahora para el usuario, la trazabilidad de los 8 criterios del ticket y las guías de verificación manual. Se añadió después del cierre, con un commit `docs` propio.
+
 **Pendientes:** el push y la PR (los hace el usuario), y la revisión de las decisiones de la auditoría: el 503 nuevo en el contrato de la API, `retry()` de Next 16 y el bloqueo del reenvío en el tracker.
 
 ---
