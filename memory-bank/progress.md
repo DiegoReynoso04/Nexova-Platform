@@ -4,6 +4,46 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-11 — AUTH-088, F2: tests de token, configuración y login (y el bug que destaparon)
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`: el fix en `65cfb36` (`fix(api)`) y los tests en el commit siguiente (`test(api)`), después de F1 (`42c4529`).
+
+**Qué se hizo:**
+- **`services/api/tests/conftest.py`:** fixtures de estilo pytest:
+  - `clock` (fijo y avanzable), `settings` (bases en `tmp_path` y clave generada), `auth_repo`, `service` y `fake_sender`;
+  - `make_user`, que reutiliza un hash bcrypt calculado una vez por sesión, y `drop_profile`;
+  - la fixture `autouse` de sesión que compara la huella SHA-256 de `services/api/data/*.json` antes y después. Se aplica también a los tests `unittest`.
+- **`test_token.py`:** 41 tests (incluido el tope técnico de minutos, ver el bug abajo) sobre la lógica de `security`, `get_current_user`, `read_current_user` y `Settings`, sin HTTP:
+  - `exp == iat + N*60` para N = 1, 30 y 1440 (la regresión del ticket), y token justo antes y justo después de caducar (calculado desde la configuración, no desde `expires_in_seconds`);
+  - otra clave, HS512, `alg: none`, sin `sub`, `sub` vacío o numérico, sin `exp`, y tokens malformados;
+  - usuario borrado o inactivo, y sin token;
+  - `/auth/me` con y sin perfil;
+  - configuración: minutos ausentes, 0, −1, `abc`, `1.5`, `1e3` y `"   "`; clave de 31 y 32 caracteres y medida tras el `strip`.
+- **`test_login.py`:** 11 tests; la ruta `login` se llama directamente con `OAuth2PasswordRequestForm(username=…, password=…)` construido a mano (verificado):
+  - el token y `expires_in` correctos; el email normalizado;
+  - el mismo error para contraseña incorrecta y email desconocido;
+  - email mal formado → 401 y burn (espía con monkeypatch);
+  - más de 72 bytes nunca llegan a bcrypt (espía de `bcrypt.verify` con un control positivo);
+  - usuario inactivo y contraseña vacía.
+
+**Bug encontrado y corregido.** Es la entrada para la sección «Bugs encontrados» de `services/api/TESTING.md` (F5):
+- **Qué lo destapó:** un caso propuesto por la IA y aprobado por el usuario. La primera versión del test, `test_absurd_expiration_is_rejected_at_startup_not_at_every_login`, aceptaba las dos salidas válidas (rechazo al arrancar o token emitido) y falló.
+- **Síntoma:** con `ACCESS_TOKEN_EXPIRE_MINUTES = 10**10`, la API arrancaba con normalidad, pero cada login respondía 500 (`OverflowError: date value out of range` en `create_access_token`, `app/auth/security.py`). 10**9 todavía funcionaba.
+- **Causa:** `Settings.__post_init__` solo rechazaba 0 y negativos. `iat + timedelta(minutes)` se sale del rango de `datetime` (año 9999).
+- **Corrección (decisión del usuario, opción b):** `MAX_ACCESS_TOKEN_EXPIRE_MINUTES = 525_600` (1 año) en `app/core/config.py`, con `ConfigError` «must be between 1 and 525600», también por `from_env`. Es un **tope técnico, no una política de sesión**: ningún documento fija la duración máxima, que queda pendiente del CTO. Documentado en `SPECS.md` (§7) y en `.env.example`. Ningún test existente usaba más de 45 minutos.
+- **Commit:** `65cfb36` (`fix(api)`).
+- **Tests que lo fijan ahora (estrictos):**
+  - `test_expiration_at_the_technical_cap_is_accepted_and_signs_tokens` (525600 se acepta y firma);
+  - `test_expiration_beyond_the_technical_cap_is_rejected_at_startup` (525601 y 10**10 → `ConfigError` al construir `Settings` y por `from_env`).
+
+**Validación:**
+- Suite completa: de 312 a **364 OK**. Los nuevos solos: **52 OK** en unos 2 s.
+- Cobertura del módulo de auth con los tests nuevos solos: 48 % (F3 y F4 cubren el resto).
+- Mutaciones, todas detectadas y deshechas, con `app/` intacto según `git diff`: `*60 → *3600`, `*60 → *1`, quitar `require_exp`, quitar el burn de la ruta, quitar el burn de `authenticate`, aceptar HS512 y quitar el tope de minutos.
+- `services/api/data/*.json`: huella idéntica.
+
+---
+
 ## 2026-10-10 — AUTH-088, F1: pytest y pytest-cov en `services/api`
 
 **Estado: hecho y validado, sin comitear** (el usuario revisa cada fase antes del commit), en `feature/auth-088-test-suite`, que sale de `main` en `843ae26` (merge de la PR #18). Primera de las fases del plan de AUTH-088 (batería de pruebas unitarias de la API de autenticación), aprobado por el usuario; las siguientes (F2–F8) escriben los tests, `services/api/TESTING.md` y Jest en el backoffice.
