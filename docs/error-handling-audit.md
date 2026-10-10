@@ -12,7 +12,7 @@ Documento para revisar la auditoría de gestión de errores: qué se encontró, 
 
 ## 1. Contexto
 
-### El ticket (texto literal)
+### 1.1 El ticket (texto literal)
 
 > «Tu tech lead ha abierto un ticket de revisión de código con un mensaje claro: el sistema no tiene una estrategia coherente de gestión de errores. Las llamadas a la API pueden fallar en silencio, faltan estados de carga, los usuarios ven mensajes técnicos crudos (o simplemente nada), y los scripts de fondo se rompen sin dejar rastro útil. Antes de que el siguiente hito introduzca más complejidad, el equipo necesita corregir esto.»
 >
@@ -30,8 +30,10 @@ Documento para revisar la auditoría de gestión de errores: qué se encontró, 
 > «Esta es una tarea de ingeniería transversal — no una nueva funcionalidad. El entregable es una versión más limpia y robusta del repositorio que ya has construido. Al terminar este proyecto, cualquier usuario que encuentre un problema en tu plataforma sabrá qué ha pasado y qué puede hacer.»
 >
 > Nota de evaluación: «La evaluación se centra en la corrección y consistencia de los patrones de gestión de errores; no en si se añadieron nuevas funcionalidades.»
+>
+> Restricción: «IMPORTANTE: No introduzcas nuevas funcionalidades ni refactorices código que no esté relacionado con la gestión de errores. El alcance de este proyecto es estrictamente la resiliencia y la comunicación de errores del código existente.»
 
-### Alcance: cinco capas
+### 1.2 Alcance: cinco capas
 
 | Capa | Qué se revisó |
 |---|---|
@@ -40,6 +42,24 @@ Documento para revisar la auditoría de gestión de errores: qué se encontró, 
 | Backoffice | `uis/backoffice`: `/incidents`, `/suppliers`, `/incident-manager` y autenticación |
 | Tracker | `uis/talent-pipeline-tracker`: candidaturas, notas y autenticación |
 | Web | `uis/website` (HTML estático) |
+
+### 1.3 Cómo se cubre cada nota del tech lead
+
+| Nota de «Lo que necesitamos» | Qué se hizo | Referencias |
+|---|---|---|
+| Ningún error debe romper la aplicación ni dejar al usuario en un estado indefinido | Ninguno de estos fallos deja ya al usuario sin salida: un fallo de render (límites de error B1 y T1), una ruta inexistente (`not-found` y el `404.html` de W1), una base de datos dañada (503 de A2 en lugar de una caída del login), un cuerpo de respuesta que no llega (T3) ni un script que falla (S1–S4) | Hallazgos A2, S1–S4, B1, T1, T3 y W1; §5.4 |
+| Toda operación asíncrona en el frontend debe tener tres estados visibles: cargando, éxito y error | Se recorrieron todos los hooks y componentes asíncronos de las dos apps. Se añadió el estado de carga del reintento del guard (B3, T6), y el timeout del tracker cubre ahora la lectura del cuerpo, así que toda petición termina en éxito o error (T3) | §5.1 y §5.4 |
+| Los mensajes de error que ve el usuario deben ser legibles — nunca un stack trace, un código de estado o un error de parseo de JSON en crudo | Textos fijos por tipo de error en el backoffice (B2) y en el tracker (T2). Ya no salen «(422)», «La API respondió con el código 500», los mensajes de los normalizadores ni `String(error)`. Los límites de error no leen el error, y los scripts no muestran tracebacks | Hallazgos B2, T2, T4 y S1–S4; §5.2 y §5.7 |
+| Todo estado de error debe ofrecer una salida clara: un botón de reintentar, un enlace a la página principal o instrucciones para contactar soporte | Se cumple con «Reintentar» y con el enlace a inicio en los límites de error, el guard, los listados y el `404.html`; la nota pide una de las tres salidas. No se añadió contacto con soporte: el contexto de Nexova no define ninguno y no se inventan datos (B5) | Hallazgos B1, B3, T1, T6 y W1; §5.2; B5 en §6 |
+| En el backend y los scripts, las excepciones deben capturarse en el ámbito correcto — no con un único try/catch que envuelva toda la función | Capturas acotadas a la operación concreta. En la API, las operaciones de archivo de TinyDB (`GuardedJSONStorage`, A2) y el envío del email (A1). En los scripts, la llamada al repositorio y la lectura de la configuración, por separado (S1–S4). En los clientes HTTP, la lectura del cuerpo (B4, T3) | Hallazgos A1, A2, S1–S4, B4 y T3; §5.3 y §5.8 |
+| Nunca debe aparecer información sensible en la salida de errores enviada al cliente | El 503 no lleva la ruta ni el contenido del archivo y se lanza sin la excepción original; el registro solo dice el almacén y la clase (A2). Los fallos del email se registran sin destinatario ni enlace (A1). La UI no muestra mensajes de normalizadores ni del servidor (T2), y los límites de error no leen el error | Hallazgos A1, A2, B1, T1 y T2; §5.7 |
+
+**Respeto de la restricción de alcance.** No se añadió ninguna funcionalidad. Dos cambios tocan el comportamiento más allá del texto de un error, y los dos se hacen por la gestión de errores:
+
+1. **El 503 `storage_unavailable` es nuevo en el contrato de la API.** Distingue un fallo de almacenamiento de un fallo del código y da un error estructurado con el código HTTP correcto, en lugar de un 500 opaco. Está documentado en `services/api/SPECS.md` §4–§5.
+2. **«Nueva candidatura» se abre siempre vacía.** Es necesario para que el bloqueo del reenvío tras un guardado ilegible o un timeout, que evita duplicados (T4), no se quede activo entre aperturas del modal: su `<dialog>` no desmonta el formulario al cerrarse. Efecto secundario: el formulario ya no conserva lo escrito.
+
+Las reestructuraciones de código se limitan a la captura y la comunicación de errores: `app/core/storage.py`, `request()` del tracker, los normalizadores (que ahora lanzan `ResponseShapeError` en lugar de `Error`) y `lib/submit-error.ts`. No cambian la lógica de negocio, los endpoints existentes, los datos ni las dependencias.
 
 ## 2. Metodología
 
