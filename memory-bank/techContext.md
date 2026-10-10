@@ -39,7 +39,7 @@ Ambas apps Next.js (`talent-pipeline-tracker`, `backoffice`) tienen su propio `p
 
 ## Estado real en `main` (verificado, no asumido)
 
-Verificado el 2026-10-07 (`git fetch` + `git log origin/main`): `origin/main` está en **`677e735`**, el merge de la PR #16 (AUTH-03). `origin/main` tiene mergeados:
+Verificado el 2026-10-10 (`git fetch` + `git log origin/main`): `origin/main` está en **`6dfa013`**, el merge de la PR #17 (gestor centralizado de incidencias). `origin/main` tiene mergeados:
 
 - Hito 2 (PR #1, `feature/domain-models`) e Hito 3 (PRs #2 y #3, `feature/talent-pipeline-tracker`).
 - Memory bank, `AGENTS.md`, `.agents/` y scaffold de `uis/backoffice` (PR #4) y `docs/ARCHITECTURE_PROPOSAL.md` (PR #5), ambos desde `feature/agent-memory-bank`.
@@ -47,8 +47,10 @@ Verificado el 2026-10-07 (`git fetch` + `git log origin/main`): `origin/main` es
 - Actualización 2026-09-30 (`git fetch`): también la sincronización del memory-bank (PR #8, `chore/memory-bank-sync`) y el directorio de proveedores (PR #9, `api-con-almacenamiento-ligero`; merge `f4a6137`) y AUTH-01 (PR #10, `feature/auth-api`; merge `09b86f1`, 2026-09-30).
 - Actualización 2026-10-05 (`git fetch`): las PRs #11 y #12 (solo documentación; merge `7815e26`) y AUTH-02 (PR #13, `feature/auth-frontend`; commit `e2d4cbd`, merge `a4b6369`, 2026-10-05). El merge no aprueba las propuestas P-1…P-7 de `docs/auth-frontend.md`, que siguen pendientes de revisión. Después, la PR #14 (`chore/memory-bank-auth-frontend-merged`; merge `98c8ad2`), solo documentación.
 - Actualización 2026-10-07 (`git fetch`): la PR #15 (`docs/auth02-export-validation`; merge `87a7047`), solo documentación, y AUTH-03 (PR #16, `feature/password-reset`; commits `cb9d0d5` y `2a1926a`, merge `677e735`, 2026-10-07). El merge no aprueba las propuestas P3-1…P3-6 de `docs/auth-password-reset.md` ni decide sobre M-1, M-2 y M-3.
-- **No está en `main` (2026-10-07):** el gestor centralizado de incidencias (`packages/shared`, `services/api` → `app/modules/incident_manager/`, `scripts/seed_incidents.py`, `uis/backoffice` → `/incident-manager`) vive en la rama `feature/centralized-incident-manager` (F1–F6), pendiente de PR.
+- Actualización 2026-10-10 (`git fetch`): `origin/main` está en **`6dfa013`**, el merge de la PR #17 (2026-10-08). Esa PR integra el gestor centralizado de incidencias: `packages/shared`, `services/api` → `app/modules/incident_manager/`, `scripts/seed_incidents.py` y `uis/backoffice` → `/incident-manager`, desde `feature/centralized-incident-manager` (F1–F6 y el arreglo móvil `ee944ae`). *(Corrige la nota anterior, que lo daba como "no está en `main`, pendiente de PR".)* El merge no aprueba las decisiones P4-1…P4-13, que siguen pendientes de revisión.
 - **Repositorio renombrado (2026-09-30):** `DiegoReynoso04/Milestone-0-Elige-tu-empresa` → `DiegoReynoso04/nexova-platform` (GitHub lo muestra como `Nexova-Platform`; el nombre no distingue mayúsculas y las URLs antiguas redirigen). El remoto `origin` local ya apunta a `https://github.com/DiegoReynoso04/nexova-platform.git`. La carpeta local puede seguir llamándose `Milestone-0-Elige-tu-empresa`: no afecta a nada.
+
+- **No está en `main` (2026-10-10):** la auditoría de gestión de errores vive en la rama `feature/error-handling-audit` (6 commits sobre `6dfa013`), pendiente de push y PR.
 
 Un agente que trabaje sobre `main` (tras `git fetch`) ve el árbol completo: `src/`, `uis/website/`, `uis/talent-pipeline-tracker/`, `uis/backoffice/`, `packages/incident-analyzer/`, `scripts/analyze.py`, `services/api/`.
 
@@ -113,6 +115,14 @@ Un agente que trabaje sobre `main` (tras `git fetch`) ve el árbol completo: `sr
 - **Límite** `MAX_UPLOAD_BYTES` = 1 MiB por defecto (decisión técnica, no del cliente), aplicado al **body HTTP completo** (CSV + cabeceras y delimitadores multipart), **no al CSV**: body de exactamente 1 MiB → aceptado, 1 MiB + 1 → 413; un CSV de exactamente 1 MiB se rechaza. `Content-Length` → 413 inmediato; sin él, se cuentan bytes en streaming. El error lanzado al leer el body hereda de `fastapi.HTTPException` porque FastAPI convierte cualquier otra excepción de parseo en 400. Con ≤ 1 MiB Starlette nunca vuelca el upload (con PII) a disco (`SpooledTemporaryFile` de 1 MiB) — lo verifica un test que espía `SpooledTemporaryFile.rollover`.
 - **Caché**: `Cache-Control: no-store` en las respuestas 200 de análisis y exportación.
 - **Errores** `{detail, code}`, conservando las cabeceras de la excepción (el 405 incluye `Allow`); el 422 elimina `input`/`ctx`/`url`; el 500 lo produce un middleware propio (no `exception_handler(Exception)`, que Starlette relanza y el servidor registraría con el mensaje) y solo registra el nombre de la clase.
+- **503 `storage_unavailable` (2026-10-10, A2 de la auditoría de gestión de errores):**
+  - **Dónde vive:** `app/core/storage.py` → `GuardedJSONStorage`, que se pasa como `storage=` a TinyDB en los tres repositorios, con `store=Store.SUPPLIERS / AUTH / INCIDENTS`.
+  - **Qué captura:** solo las operaciones de archivo de `JSONStorage` 4.9, que son la apertura (`touch` + `open`), `read` (`json.load`), `write` (escritura, `fsync`, `truncate`) y `close`. Cualquier fallo de ellas → `StorageUnavailableError` (503, `detail` fijo).
+  - **Qué no captura:** el `yield` de los context managers de los repositorios. Los `ValueError` del cuerpo (`ValidationError` de Pydantic, `InvalidStatusTransitionError`) siguen siendo 422, 400 o 500. Lo vigila `tests/test_storage.py`.
+  - **Sin la excepción original:** el error se lanza fuera del `except`, sin `__cause__` ni `__context__`, porque `JSONDecodeError.doc` contiene el archivo.
+  - **Registro:** `log_storage_failure(store, exc)` en `core/errors.py` anota solo el almacén y la clase.
+  - **Regla para un almacén TinyDB nuevo:** usar `GuardedJSONStorage` con un valor nuevo de `Store`, y nunca construir `TinyDB(path)` con el storage por defecto.
+- **Email (A1, 2026-10-10):** `ResendEmailSender.send` también convierte `http.client.HTTPException` (`IncompleteRead`, `BadStatusLine`, `LineTooLong`, que no son `OSError`) en `EmailDeliveryError`.
 - **CORS** `CORS_ALLOWED_ORIGINS` (por defecto `http://localhost:3000`), solo `GET`/`POST`, sin credenciales, `*` rechazado al arrancar; expone `X-Analysis-Id` y `Content-Disposition`.
 - **Configuración** con un `dataclass` de la librería estándar (sin pydantic-settings ni python-dotenv): la API no carga `.env`.
 - ~~**Sin autenticación**: solo uso local.~~ **Superado por AUTH-01 (2026-09-30):** ambas rutas exigen JWT; ver la decisión "Autenticación AUTH-01" abajo.
@@ -187,6 +197,31 @@ Un agente que trabaje sobre `main` (tras `git fetch`) ve el árbol completo: `sr
 - **Un solo camino para cambiar la propia contraseña (H-1, 2026-10-06):** `PUT /users/{id}` responde 403 a quien no es admin si envía `password` (en `app/routes/users.py`, `update_user`, junto a la regla de `role`). Así solo queda `POST /auth/change-password`, que exige la actual. El admin conserva la capacidad de AUTH-01; su riesgo residual (sin contraseña actual, sin invalidar enlaces y sin auditoría) está en `SPECS.md` §27 y en D-AUTH-13/D-PWD-12.
 - **Auditoría:** tabla `password_audit` (evento, `user_id`, IP de `request.client.host`, motivo, fecha). Las IP son datos personales; sin endpoint ni retención.
 - **Frontend:** `OPEN_PATHS` nuevo en `lib/auth-routes.ts` de cada app (`/reset-password` con o sin sesión); `/forgot-password` entra en `PUBLIC_PATHS`. `/reset-password` y `/login` leen el query string con `useSearchParams` dentro de `<Suspense>` (obligatorio para el build en Next 16). El tracker distingue los 400 por ruta (su `ApiError` no lleva `code`). Aviso del test estático del backoffice: la regla anti-`as` (`\bas\s+…`) da falso positivo con palabras que terminan en "ñas" seguidas de espacio (la `ñ` no es carácter de palabra para `\b`).
+
+### Gestión de errores (auditoría del 2026-10-10, rama `feature/error-handling-audit`)
+
+Detalle en `progress.md` (entradas del 2026-10-10). Decisiones técnicas permanentes:
+
+- **API (`services/api`):** se mantiene el formato `{detail, code}`.
+  - **503 `storage_unavailable`:** cuando un archivo TinyDB no se puede abrir, leer o escribir, o está corrupto. Lo produce `GuardedJSONStorage` (ver la decisión de la API HTTP, arriba).
+  - **Email:** `http.client.HTTPException` se trata como `EmailDeliveryError`.
+  - **Regla:** todo almacén TinyDB nuevo usa `GuardedJSONStorage` con su `Store`.
+- **Scripts y CLIs:** se captura solo la excepción concreta alrededor de la operación (`StorageUnavailableError`, `ConfigError`, `OSError`, `EOFError`/`KeyboardInterrupt`), nunca un `except` genérico. El mensaje va a stderr con el nombre del archivo, sin la ruta completa ni `str(exc)`.
+  - **Códigos de salida:** `seed_incidents.py` 0/1/2 (2 = entorno, incluida la base); `uv run seed` y `create-admin` 1; `analyze.py` 0/1/2.
+  - **Mensajes de `OSError`:** `describe_os_error` usa el nombre de la clase si `strerror` es `None`. Cada script tiene su copia, porque los scripts no se importan entre sí.
+  - **Línea de registro:** en los scripts, `log_storage_failure` sale por el handler de último recurso de `logging`. Es intencionado: aporta la clase del error.
+- **Frontends Next 16 (backoffice y tracker):**
+  - **Límites de error:** `app/error.tsx` (dentro del layout), `app/global-error.tsx` (con su propio `<html>`/`<body>`, sin sesión ni guard) y `app/not-found.tsx`. Firma de props de Next 16.3: `{ error: Error & { digest?: string }; retry: () => void }`. Se usa `retry()` y no `reset()`, como recomienda la documentación. El error no se lee.
+  - **Textos fijos por tipo de error:** en el backoffice, `UiError` por `kind` en cada componente de error y `sessionErrorCopy` en el guard; en el tracker, `classifyApiError` + `API_ERROR_MESSAGES`/`describeApiError` y `sessionErrorCopy`.
+  - **Qué no se muestra nunca:** el código HTTP, variables de entorno, rutas del repositorio, mensajes de normalizadores ni `String(error)`. Solo el 422 muestra los `msg` de la API.
+  - **Reintento del guard:** `validation_started` → `retrying`, emitido solo en el reintento forzado. Así el 401 sigue sin despachar nada.
+  - **Tracker:**
+    - el timeout cubre la lectura del cuerpo;
+    - `ResponseShapeError` (en `lib/response-shape-error.ts`, sin efectos al importarse) separa los fallos de contrato;
+    - `classifySubmitError` bloquea el reenvío tras un 2xx ilegible o un timeout;
+    - cada apertura del modal monta un `CandidateForm` nuevo (`key`), porque el `<dialog>` no desmonta su contenido.
+  - **Tests estáticos:** `production-source.test.mjs` de cada app vigila estas reglas.
+- **Web (`uis/website`):** `404.html` con rutas absolutas, porque Netlify lo sirve en la ruta pedida aunque esté anidada.
 
 ## Skills y agentes en este repo
 

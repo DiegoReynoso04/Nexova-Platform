@@ -47,6 +47,7 @@ export function routeAccess(pathname: string, session: SessionStatus['status']):
     case 'anonymous':
       return 'redirect_login';
     case 'error':
+    case 'retrying':
       return 'error';
     case 'initializing':
     case 'checking':

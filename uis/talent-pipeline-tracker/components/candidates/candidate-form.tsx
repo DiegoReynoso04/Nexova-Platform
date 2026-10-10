@@ -3,7 +3,8 @@
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ApiError, ValidationApiError } from '@/lib/api-client';
+import { asError } from '@/lib/api-client';
+import { classifySubmitError } from '@/lib/submit-error';
 import { createRecord, updateRecord } from '@/services/records.service';
 import { useToast } from '@/components/ui/toast-notification';
 import type { RecordCreate, RecordOut } from '@/types/record';
@@ -109,6 +110,9 @@ export function CandidateForm({ mode, onSuccess, onCancel }: CandidateFormProps)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Tras un 2xx ilegible o un timeout la candidatura puede estar ya guardada:
+  // se bloquea el reenvío para no duplicarla (lib/submit-error.ts).
+  const [resubmitBlocked, setResubmitBlocked] = useState(false);
   const { notifySuccess, notifyError } = useToast();
 
   function updateField(field: keyof FormValues, value: string) {
@@ -117,7 +121,7 @@ export function CandidateForm({ mode, onSuccess, onCancel }: CandidateFormProps)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmitting || resubmitBlocked) return;
 
     const errors = validate(values);
     setFieldErrors(errors);
@@ -136,11 +140,12 @@ export function CandidateForm({ mode, onSuccess, onCancel }: CandidateFormProps)
           : `Candidatura de ${record.full_name} actualizada correctamente.`
       );
       onSuccess(record);
-    } catch (error) {
-      if (error instanceof ValidationApiError) {
+    } catch (caught) {
+      const outcome = classifySubmitError(asError(caught));
+      if (outcome.kind === 'validation') {
         const nextFieldErrors: FieldErrors = {};
         const unmatched: string[] = [];
-        for (const item of error.detail) {
+        for (const item of outcome.detail) {
           const field = fieldNameFromLoc(item.loc);
           if (field) {
             nextFieldErrors[field] = item.msg;
@@ -151,12 +156,10 @@ export function CandidateForm({ mode, onSuccess, onCancel }: CandidateFormProps)
         setFieldErrors(nextFieldErrors);
         setFormError(unmatched.length > 0 ? unmatched.join(' ') : null);
         notifyError('No se pudo guardar: revisa los campos marcados.');
-      } else if (error instanceof ApiError) {
-        setFormError(error.message);
-        notifyError(error.message);
       } else {
-        setFormError('No se pudo conectar con el servidor. Inténtalo de nuevo.');
-        notifyError('No se pudo conectar con el servidor. Inténtalo de nuevo.');
+        if (outcome.kind !== 'not_saved') setResubmitBlocked(true);
+        setFormError(outcome.message);
+        notifyError(outcome.message);
       }
     } finally {
       setIsSubmitting(false);
@@ -232,7 +235,7 @@ export function CandidateForm({ mode, onSuccess, onCancel }: CandidateFormProps)
         <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>
           Cancelar
         </Button>
-        <Button type="submit" isLoading={isSubmitting} disabled={isSubmitting}>
+        <Button type="submit" isLoading={isSubmitting} disabled={isSubmitting || resubmitBlocked}>
           {mode.kind === 'create' ? 'Crear candidatura' : 'Guardar cambios'}
         </Button>
       </div>

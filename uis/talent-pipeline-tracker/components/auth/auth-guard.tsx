@@ -5,6 +5,7 @@ import { useEffect, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { sessionErrorCopy } from '@/hooks/use-auth-session';
 import { HOME_PATH, LOGIN_PATH, routeAccess } from '@/lib/auth-routes';
 
 import { useSession } from './session-provider';
@@ -27,17 +28,21 @@ export function AuthGuard({ children }: { children: ReactNode }) {
 
   if (access === 'render') return <>{children}</>;
 
-  if (access === 'error' && session.status === 'error') {
+  if (access === 'error' && (session.status === 'error' || session.status === 'retrying')) {
+    // Durante el reintento se mantiene el aviso y «Reintentar» muestra la carga.
+    const { title, body } = sessionErrorCopy(session.kind);
+    const retrying = session.status === 'retrying';
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8">
         <div
           role="alert"
           className="flex flex-col items-start gap-3 rounded-control border border-danger-ink/20 bg-danger-surface p-6 text-danger-ink"
         >
-          <p className="text-sm">No se pudo comprobar la sesión. {session.message}</p>
+          <p className="text-sm font-semibold">{title}</p>
+          <p className="text-sm">{body}</p>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={session.retry}>
-              Reintentar
+            <Button variant="secondary" onClick={session.retry} isLoading={retrying}>
+              {retrying ? 'Reintentando…' : 'Reintentar'}
             </Button>
             <Button variant="secondary" onClick={session.logout}>
               Cerrar sesión

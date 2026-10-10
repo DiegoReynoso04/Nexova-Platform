@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { useRecordDetail } from '@/hooks/use-record-detail';
+import { describeApiError } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Modal } from '@/components/ui/modal';
@@ -27,6 +28,16 @@ const LINK_CLASSES =
 export function CandidateDetail({ id }: CandidateDetailProps) {
   const { status, record, error, refetch } = useRecordDetail(id);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  // El <dialog> de components/ui/modal.tsx no desmonta su contenido al cerrarse:
+  // cada apertura monta un formulario nuevo (key) para que no arrastre el
+  // estado del intento anterior (errores ni el bloqueo de reenvío tras un
+  // guardado ilegible, lib/submit-error.ts).
+  const [editFormKey, setEditFormKey] = useState(0);
+
+  function openEdit() {
+    setEditFormKey((key) => key + 1);
+    setIsEditOpen(true);
+  }
 
   // notFound() se invoca aquí, de forma síncrona durante el render: el hook
   // deliberadamente no lo hace (ver comentario en use-record-detail.ts).
@@ -53,7 +64,7 @@ export function CandidateDetail({ id }: CandidateDetailProps) {
       >
         <p className="text-sm">
           No se pudo cargar la candidatura.
-          {error ? ` ${error.message}` : ''}
+          {error ? ` ${describeApiError(error)}` : ''}
         </p>
         <Button variant="secondary" onClick={refetch}>
           Reintentar
@@ -83,7 +94,7 @@ export function CandidateDetail({ id }: CandidateDetailProps) {
     <article className="flex flex-col gap-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-ink">{record.full_name}</h1>
-        <Button variant="secondary" onClick={() => setIsEditOpen(true)}>
+        <Button variant="secondary" onClick={openEdit}>
           Editar
         </Button>
       </header>
@@ -116,6 +127,7 @@ export function CandidateDetail({ id }: CandidateDetailProps) {
 
       <Modal open={isEditOpen} title="Editar candidatura" onClose={() => setIsEditOpen(false)}>
         <CandidateForm
+          key={editFormKey}
           mode={{ kind: 'edit', id: record.id, initialValues: record }}
           onSuccess={handleEditSuccess}
           onCancel={() => setIsEditOpen(false)}

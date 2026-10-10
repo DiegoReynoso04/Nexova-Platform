@@ -1,6 +1,7 @@
 'use client';
 
 import { useNotes } from '@/hooks/use-notes';
+import { describeApiError } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/components/ui/toast-notification';
@@ -72,7 +73,7 @@ export function NotesList({ recordId }: NotesListProps) {
         >
           <p className="text-sm">
             No se pudieron cargar las notas.
-            {error ? ` ${error.message}` : ''}
+            {error ? ` ${describeApiError(error)}` : ''}
           </p>
           <Button variant="secondary" onClick={refetch}>
             Reintentar

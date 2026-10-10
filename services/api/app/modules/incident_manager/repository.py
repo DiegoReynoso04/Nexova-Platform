@@ -43,6 +43,8 @@ from nexova_shared.incidents import (
 from tinydb import TinyDB
 from tinydb.table import Document, Table
 
+from app.core.storage import GuardedJSONStorage, Store
+
 from .models import Incident, IncidentSummary
 
 INCIDENTS_TABLE = "incidents"
@@ -78,9 +80,14 @@ class IncidentRepository:
         self._clock = clock
         self._lock = threading.Lock()
 
+    # Un archivo ilegible o corrupto responde 503 (GuardedJSONStorage). La
+    # captura está en el storage, no aquí: un `InvalidStatusTransitionError`
+    # (ValueError) lanzado dentro de `with self._db()` sigue siendo un 400.
     @contextmanager
     def _db(self) -> Iterator[TinyDB]:
-        with self._lock, TinyDB(self.path, create_dirs=True, encoding="utf-8", indent=2) as db:
+        with self._lock, TinyDB(
+            self.path, storage=GuardedJSONStorage, store=Store.INCIDENTS, create_dirs=True, encoding="utf-8", indent=2
+        ) as db:
             yield db
 
     def _documents(self) -> list[Document]:
@@ -88,7 +95,7 @@ class IncidentRepository:
         with self._lock:
             if not self.path.exists():
                 return []
-            with TinyDB(self.path, encoding="utf-8") as db:
+            with TinyDB(self.path, storage=GuardedJSONStorage, store=Store.INCIDENTS, encoding="utf-8") as db:
                 return db.table(INCIDENTS_TABLE).all()
 
     def find(

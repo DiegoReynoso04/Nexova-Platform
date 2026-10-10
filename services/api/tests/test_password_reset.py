@@ -5,6 +5,7 @@ y simulando `urlopen`; el resto usa un sender falso en `app.state.email_sender`.
 """
 
 import dataclasses
+import http.client
 import io
 import json
 import unittest
@@ -36,6 +37,15 @@ CHANGE_URL = "/auth/change-password"
 RESET_PAGE = "http://localhost:3000/reset-password"
 ALICE = "alice@example.invalid"
 NOBODY = "nobody@example.invalid"
+
+
+def truncated_responses() -> list[http.client.HTTPException]:
+    """Respuestas del proveedor cortadas o mal formadas (no son OSError)."""
+    return [
+        http.client.IncompleteRead(b"partial"),
+        http.client.BadStatusLine("garbled status line"),
+        http.client.LineTooLong("header line"),
+    ]
 
 
 class FakeEmailSender:
@@ -162,6 +172,21 @@ class ForgotPasswordTests(PasswordTestCase):
         self.assertIn("EmailDeliveryError", logs.text())
         self.assertNotIn(ALICE, logs.text())
         self.assertNotIn(RESET_PAGE, logs.text())  # ni el enlace con el token
+
+    def test_truncated_provider_response_is_logged_as_a_delivery_failure(self) -> None:
+        # Sender real con `urlopen` simulado: el fallo debe registrarlo
+        # log_email_delivery_failure, no el middleware del 500.
+        self.create_user(ALICE)
+        self.app.state.email_sender = ResendEmailSender("re_fake_test_key", "Nexova <noreply@example.invalid>")
+        for error in truncated_responses():
+            with self.subTest(error=type(error).__name__):
+                with mock.patch("urllib.request.urlopen", side_effect=error), capture_logs() as logs:
+                    response = self.forgot(ALICE)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("password reset email could not be delivered: EmailDeliveryError", logs.text())
+                self.assertNotIn("unhandled error", logs.text())
+                self.assertNotIn(ALICE, logs.text())
+                self.assertNotIn(RESET_PAGE, logs.text())
 
     def test_without_email_configuration_nothing_is_sent(self) -> None:
         self.create_user(ALICE)
@@ -364,6 +389,16 @@ class ResendSenderTests(unittest.TestCase):
                 with self.assertRaises(EmailDeliveryError) as raised:
                     self.sender.send(self.message)
                 self.assertIsNone(raised.exception.__cause__)
+                self.assertNotIn(ALICE, str(raised.exception))
+
+    def test_truncated_or_malformed_provider_responses_become_email_delivery_error(self) -> None:
+        # http.client.HTTPException no hereda de OSError (L-4 de la auditoría).
+        for error in truncated_responses():
+            with self.subTest(error=type(error).__name__), mock.patch("urllib.request.urlopen", side_effect=error):
+                with self.assertRaises(EmailDeliveryError) as raised:
+                    self.sender.send(self.message)
+                self.assertIsNone(raised.exception.__cause__)
+                self.assertTrue(raised.exception.__suppress_context__)
                 self.assertNotIn(ALICE, str(raised.exception))
 
     def test_secrets_are_not_in_reprs(self) -> None:

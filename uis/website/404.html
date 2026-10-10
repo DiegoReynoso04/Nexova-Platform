@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Página no encontrada | Nexova</title>
+  <meta name="description" content="La página que buscas no existe en la web de Nexova." />
+  <!-- Página de error: no debe indexarse. -->
+  <meta name="robots" content="noindex" />
+
+  <!-- Tailwind CSS v4 (Play CDN, sin build step), igual que index.html -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<!--
+  Netlify (netlify.toml publica uis/website) sirve este archivo con estado 404
+  para cualquier ruta inexistente, también anidada (p. ej. /a/b/c). Por eso
+  todas las rutas son absolutas (/…): con rutas relativas, el logo, los
+  enlaces y src/js/nav.js se resolverían contra la ruta pedida y fallarían.
+  Misma cabecera, navegación y pie que index.html; sin JS nuevo.
+-->
+<body class="bg-white text-slate-900 antialiased">
+
+  <!-- Skip link: accesibilidad AAA / navegación por teclado -->
+  <a href="#main-content"
+     class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-indigo-700 focus:px-4 focus:py-2 focus:text-white focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-white">
+    Saltar al contenido principal
+  </a>
+
+  <!-- ===================== HEADER ===================== -->
+  <header class="sticky top-0 z-40 border-b border-slate-200 bg-white">
+    <div class="mx-auto max-w-7xl px-4 py-4 md:px-6 lg:px-8">
+      <div class="flex items-center justify-between">
+        <a href="/"
+           class="inline-block rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">
+          <img src="/src/img/logo.svg" alt="Nexova" class="h-10 w-auto" />
+        </a>
+
+        <!-- Navegación de escritorio: oculta por debajo del breakpoint md -->
+        <nav aria-label="Navegación principal" class="hidden md:block">
+          <ul class="flex gap-x-6 text-sm font-medium text-slate-700">
+            <li>
+              <a href="/#inicio"
+                 class="rounded underline-offset-4 hover:text-indigo-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">
+                Inicio
+              </a>
+            </li>
+            <li>
+              <a href="/#servicios"
+                 class="rounded underline-offset-4 hover:text-indigo-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">
+                Servicios
+              </a>
+            </li>
+            <li>
+              <a href="/application.html"
+                 class="rounded underline-offset-4 hover:text-indigo-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">
+                Talento
+              </a>
+            </li>
+            <li>
+              <a href="/#contacto"
+                 class="rounded underline-offset-4 hover:text-indigo-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">
+                Contacto
+              </a>
+            </li>
+          </ul>
+        </nav>
+
+        <!-- Botón burger: visible solo por debajo del breakpoint md -->
+        <button type="button" id="menu-toggle" aria-expanded="false" aria-controls="mobile-menu"
+                aria-label="Abrir menú de navegación"
+                class="inline-flex items-center justify-center rounded-md p-2 text-slate-700 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 md:hidden">
+          <svg id="icon-menu-open" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+          <svg id="icon-menu-close" class="hidden h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+            <line x1="6" y1="18" x2="18" y2="6"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Panel desplegable móvil: oculto por defecto y siempre oculto desde md -->
+      <nav id="mobile-menu" aria-label="Navegación móvil" class="hidden md:hidden mt-4 border-t border-slate-200 pt-4">
+        <ul class="flex flex-col gap-4 text-sm font-medium text-slate-700">
+          <li>
+            <a href="/#inicio"
+               class="block rounded underline-offset-4 hover:text-indigo-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">
+              Inicio
+            </a>
+          </li>
+          <li>
+            <a href="/#servicios"
+               class="block rounded underline-offset-4 hover:text-indigo-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">
+              Servicios
+            </a>
+          </li>
+          <li>
+            <a href="/application.html"
+               class="block rounded underline-offset-4 hover:text-indigo-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">
+              Talento
+            </a>
+          </li>
+          <li>
+            <a href="/#contacto"
+               class="block rounded underline-offset-4 hover:text-indigo-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">
+              Contacto
+            </a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <section aria-labelledby="not-found-heading" class="mx-auto max-w-3xl px-4 py-20 md:px-6 md:py-28 lg:px-8">
+      <p class="text-sm font-semibold uppercase tracking-wide text-indigo-700">Error 404</p>
+      <h1 id="not-found-heading" class="mt-3 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
+        No encontramos esta página
+      </h1>
+      <p class="mt-4 text-base text-slate-700 md:text-lg">
+        Puede que el enlace sea incorrecto o que la página se haya movido. Vuelve al inicio o, si buscas
+        trabajo, deja tus datos en nuestro formulario de candidatura.
+      </p>
+      <div class="mt-8 flex flex-col gap-4 sm:flex-row">
+        <a href="/"
+           class="inline-flex items-center justify-center rounded-md bg-indigo-700 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">
+          Volver al inicio
+        </a>
+        <a href="/application.html"
+           class="inline-flex items-center justify-center rounded-md border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">
+          Ir al formulario de candidatura
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer class="bg-slate-900 text-slate-100">
+    <div class="mx-auto max-w-7xl px-4 py-10 md:px-6 lg:px-8">
+      <div class="flex flex-col items-center gap-4 md:flex-row md:justify-between">
+        <p class="text-sm">© 2025 Nexova. Todos los derechos reservados.</p>
+        <nav aria-label="Redes sociales de Nexova">
+          <ul class="flex gap-6 text-sm">
+            <li>
+              <a href="https://linkedin.com/company/nexova" target="_blank" rel="noopener noreferrer"
+                 class="rounded underline underline-offset-4 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                LinkedIn
+                <span class="sr-only"> (se abre en una pestaña nueva)</span>
+              </a>
+            </li>
+            <li>
+              <a href="https://instagram.com/nexova" target="_blank" rel="noopener noreferrer"
+                 class="rounded underline underline-offset-4 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                Instagram
+                <span class="sr-only"> (se abre en una pestaña nueva)</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/src/js/nav.js" defer></script>
+</body>
+</html>

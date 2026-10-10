@@ -24,6 +24,7 @@ from typing import Any
 from tinydb import Query, TinyDB
 from tinydb.table import Document, Table
 
+from app.core.storage import GuardedJSONStorage, Store
 from app.models import Country, Supplier, SupplierCategory, SupplierCreate, SupplierStatus
 
 SUPPLIERS_TABLE = "suppliers"
@@ -48,7 +49,10 @@ class SupplierRepository:
 
     @contextmanager
     def _table(self) -> Iterator[Table]:
-        with self._lock, TinyDB(self.path, create_dirs=True, encoding="utf-8", indent=2) as db:
+        # Un archivo ilegible o corrupto responde 503 (GuardedJSONStorage).
+        with self._lock, TinyDB(
+            self.path, storage=GuardedJSONStorage, store=Store.SUPPLIERS, create_dirs=True, encoding="utf-8", indent=2
+        ) as db:
             yield db.table(SUPPLIERS_TABLE)
 
     def _record(self, supplier: SupplierCreate) -> dict[str, Any]:

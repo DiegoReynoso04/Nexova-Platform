@@ -4,9 +4,234 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-10 — Auditoría de gestión de errores: cierre (W1, verificación final de la rama)
+
+**Estado: hecho, validado y comiteado** en `feature/error-handling-audit`, que sale de `main` en `6dfa013` (merge de la PR #17). **Pendiente: push y PR**, que hace el usuario.
+
+**Origen:** auditoría de solo lectura del 2026-10-09 sobre todo el código de producción. Encontró 2 hallazgos ALTO, 6 MEDIO y 10 BAJO, ninguno crítico; el informe se entregó en la conversación y no está versionado. El usuario pidió corregirlos por fases.
+
+**Commits de la rama:**
+
+| Commit | Fase | Qué |
+|---|---|---|
+| `24f0e0d` | `fix(api)` | A1: `http.client.HTTPException` → `EmailDeliveryError`. A2: almacenamiento TinyDB ilegible o corrupto → 503 `storage_unavailable` (`GuardedJSONStorage`) |
+| `a6f3722` | `fix(scripts)` | S1–S4: el seed del gestor, `uv run seed`, `create-admin` y `analyze.py` terminan con mensaje en stderr y código de salida, sin traceback; `describe_os_error` |
+| `2454dcd` | `fix(backoffice)` | B1–B4: `app/error.tsx`, `global-error.tsx` y `not-found.tsx`; textos sin detalles técnicos; reintento del guard con carga; `blob()` con el mismo tratamiento que `json()` |
+| `dc91918` | `fix(tracker)` | T1–T4 y T6: límites de error; textos fijos por tipo (`describeApiError`); timeout que cubre el cuerpo; `classifySubmitError` y bloqueo del reenvío; reintento del guard con carga |
+| `899ce1e` | `fix(website)` | W1: `uis/website/404.html` con navegación, enlace a inicio y al formulario, y rutas absolutas |
+| este | `docs(memory-bank)` | Cierre y sincronización |
+
+**Verificación final de `main..HEAD`:**
+- **Validaciones de AGENTS.md §4, de `main` a `HEAD`:**
+  - `services/api`: 289 → 312;
+  - `packages/incident-analyzer`: 118 → 121 (7 omitidos);
+  - `packages/shared`: 81 → 81;
+  - `src/`: 97 → 97;
+  - backoffice: tests 332 → 344; `tsc` y `lint` limpios; `build` OK (12 rutas en los dos);
+  - tracker: tests 35 → 55; `tsc` limpio; `lint` con los mismos 4 errores anteriores; `build` OK (9 rutas).
+- **Cómo se midió `main`:** en un worktree temporal de `6dfa013`. El `build` de las apps no pudo ejecutarse allí, porque Turbopack rechaza el enlace de `node_modules` que apunta fuera del proyecto. El de referencia es el del propio repo al empezar las fases 3 y 4, con el código de cada app idéntico a `main` (`git diff --quiet` lo confirma). En un checkout recién hecho, `tsc` de las apps necesita antes los tipos que Next genera en `.next/types`.
+- **Diff limpio:** `git diff main..HEAD --stat` es idéntico con y sin `--ignore-cr-at-eol`. No hay `.vscode/`, `.env`, `*.tsbuildinfo`, `.next/` ni bases de datos, ni cambios en `package.json`, `pyproject.toml` o lockfiles.
+- **Búsquedas en las líneas añadidas de producción:** sin `console.*`, `except Exception`, `except: pass` ni `error.message` en JSX. «código» y «traceback» solo aparecen en comentarios y docstrings.
+- **Búsquedas en todo el código de las dos apps:** `NEXT_PUBLIC_` solo aparece en la lectura de `process.env`, en comentarios JSDoc, en el mensaje interno de `ApiConfigError` del backoffice (nunca se muestra: la UI lo traduce) y en el fail-fast del tracker (SPECS §3.2, solo en build y dev).
+
+**Lo que NO se hizo y por qué:**
+- **B5, contacto de soporte en los errores:** el contexto no define ningún contacto y no se inventa. Los errores ofrecen «Reintentar» y un enlace a inicio.
+- **T5, señal de cancelación externa en `request()` del tracker:** se acerca más a un refactor que a gestión de errores.
+- **`BrokenPipeError` de `analyze.py`:** en Windows, escribir en una tubería cerrada da `OSError` con `EINVAL` y no `BrokenPipeError`, así que no hay un test fiable y pequeño.
+- **Riesgo de duplicación de `IncidentRepository.seed`:** dos escrituras no atómicas. Queda registrado y sin corregir, porque es consistencia de datos y no gestión de errores (ver "Decisiones y problemas conocidos").
+- **Consola del navegador en los límites de error:** React registra en la consola, con su mensaje y su traza, los errores que capturan `error.tsx` y `global-error.tsx`. El código propio no los registra. La regla para que no expongan datos (ningún error lanzado en producción lleva datos de la API o del usuario en su mensaje) está en el `CLAUDE.md` del backoffice.
+
+**Smoke test manual de los caminos normales:** lo verificó **el usuario a mano el 2026-10-10**, con bases temporales y siguiendo la guía (`docs/error-handling-audit.md` §7.5). Todo funcionó:
+- registro, login, perfil y logout;
+- `/incidents` con el fixture de aceptación (100/96/4) y exportación de `results.csv`;
+- `/suppliers`: alta con error de campo sin «(422)», alta correcta, cambio de tarifa y suspensión;
+- `/incident-manager`: validación en cliente, resalte de `branch`, alta y `open → in_progress` con el resumen actualizado;
+- not-found del backoffice y del tracker, y `404.html` de la web en escritorio y a 375 px;
+- tracker: listado, filtros, detalle, y una nota añadida y borrada;
+- con la API parada, mensaje sin detalles técnicos y recuperación con «Reintentar».
+
+**No se probaron a mano** la creación ni la edición de candidaturas: escriben en la API de 4Geeks y el tracker no permite borrarlas. Lo cubren los tests automáticos (`errors.test.mjs` y `production-source.test.mjs` del tracker).
+
+**Informe y guía de revisión:** [`docs/error-handling-audit.md`](../docs/error-handling-audit.md). Incluye el informe completo de hallazgos (A1–W1), lo revisado como correcto por diseño, el antes y el ahora para el usuario, la trazabilidad de los 8 criterios del ticket y las guías de verificación manual. Se añadió después del cierre, con un commit `docs` propio.
+
+**Pendientes:** el push y la PR (los hace el usuario), y la revisión de las decisiones de la auditoría: el 503 nuevo en el contrato de la API, `retry()` de Next 16 y el bloqueo del reenvío en el tracker.
+
+---
+
+## 2026-10-10 — Auditoría de gestión de errores: T1–T4 y T6 en `uis/talent-pipeline-tracker`
+
+**Estado: hecho, validado y comiteado** (`dc91918`, `fix(tracker)`), en `feature/error-handling-audit`, después de `2454dcd`. Es la cuarta fase pedida por el usuario.
+
+**T5 no se hace** (señal de cancelación externa): se acerca más a un refactor que a gestión de errores.
+
+**Qué se hizo:**
+- **T1, límites de error:** se crean `app/error.tsx`, `app/global-error.tsx` y `app/not-found.tsx`, y se conserva `app/candidates/[id]/not-found.tsx`.
+  - **Documentación:** la de Next 16.3.2 del tracker es idéntica a la del backoffice (mismo `error.md` y mismo `ErrorInfo` con `retry` y `reset`).
+  - **Comportamiento:** textos fijos, «Reintentar» con `retry()` y enlace a `/`. El error no se lee. `global-error` tiene su propio `<html>`/`<body>` y no usa sesión, guard ni avisos.
+- **Fail-fast de §3.2 (sin cambios):** con `NEXT_PUBLIC_API_URL` vacía, `npm run build` falla igual con y sin los límites («Error occurred prerendering page "/"… NEXT_PUBLIC_API_URL no está definida»).
+  - **En `next dev`, antes:** se veía la página por defecto de Next, en inglés («This page couldn’t load — Reload to try again, or go back»).
+  - **En `next dev`, ahora:** se ve `global-error.tsx` («Algo ha fallado / No se pudo cargar el tracker», con «Reintentar» y enlace a inicio).
+  - **Igual en los dos casos:** el overlay de desarrollo de Next muestra el mensaje con la variable que falta (solo en dev).
+- **T2, ningún texto técnico en la UI:**
+  - `describeApiError` da un texto fijo por tipo (`classifyApiError` + `API_ERROR_MESSAGES`: red, timeout, 401, 404, 4xx, 5xx, respuesta ilegible y desconocido). El 422 sigue con los `msg`.
+  - El `ApiError` genérico ya no lleva «La API respondió con el código N». Hay clases nuevas: `UnreadableResponseError` (con `status`), `UnknownClientError` y `asError`.
+  - Los normalizadores lanzan `ResponseShapeError` (`lib/response-shape-error.ts`, sin efectos al importarse) en vez de `Error`. El mensaje sigue siendo descriptivo, pero no se muestra.
+  - `candidate-list`, `candidate-detail` y `notes-list` usan `describeApiError` en vez de `error.message`. Los hooks usan `asError` en vez de `new Error(String(error))`.
+  - `profile-view` sigue mostrando `load.message`, que ya sale de `describeApiError`. `auth-guard` pasa a usar el tipo de error (T6). `candidate-status-controls` y `note-form` ya usaban `describeApiError`.
+- **T3, `request()`:** el temporizador cubre la petición y la lectura del cuerpo (`readJson`). El `finally` exterior lo limpia en todos los caminos.
+- **T4, `lib/submit-error.ts` (`classifySubmitError`, función pura):**
+  - `validation` (422 por campo);
+  - `saved_unreadable` (2xx ilegible o fuera de contrato): «Se guardó, pero no se pudo leer la respuesta; recarga el listado.»;
+  - `uncertain` (timeout);
+  - `not_saved` (red, 4xx o 5xx).
+
+  `candidate-form` bloquea el reenvío en `saved_unreadable` y `uncertain`. El `<dialog>` de `components/ui/modal.tsx` no desmonta su contenido al cerrarse, así que `candidate-list` y `candidate-detail` montan un formulario nuevo en cada apertura (`key` renovada en `openCreate` y `openEdit`). Así el bloqueo y los errores no pasan al siguiente intento. Efecto visible: «Nueva candidatura» se abre siempre vacía; antes conservaba lo escrito, también después de crear una.
+- **T6, guard:** estado `retrying` (se emite solo en el reintento forzado del mismo token) y `sessionErrorCopy(kind)` con un texto por tipo de error. «Reintentar» muestra «Reintentando…» con el spinner y queda deshabilitado.
+- **Optional chaining (sin cambios):** los campos anulables (`linkedin_url`, `cv_url`, `profile` y sus campos, `errors.form`) ya tienen fallback.
+- **Docs:** `CLAUDE.md` (nueva sección «Errores»), `SPECS.md` §5.4 (mensaje legible) y `README.md` (tests).
+
+**Validación ejecutada:**
+- **Tracker:**
+  - `tsc` limpio;
+  - `lint` con los mismos 4 errores `set-state-in-effect` anteriores (antes `use-notes:63`, `use-record-detail:58` y `use-records:75` y `:112`; ahora 64, 58, 76 y 113, por un `import` más) y ninguno nuevo;
+  - `build` OK;
+  - tests: de 35 a **55 OK** (+15 en `errors.test.mjs` y +5 en `production-source.test.mjs`). Se actualizó la aserción del texto de red en `auth.test.mjs`.
+- **Mutaciones:** cada arreglo deshecho hace fallar su test. Los casos probados: sin `app/error.tsx`; `global-error` con `useToast`; `error.message` en `candidate-list`; `new Error(String(error))`; `describeApiError` devolviendo `error.message`; el código en el mensaje HTTP; normalizadores con `Error`; temporizador limpiado antes del cuerpo; sin el caso «se guardó»; `candidate-form` con `.message`; reintento sin `retrying`; y `candidate-list`/`candidate-detail` sin la `key` del formulario.
+- **Navegador:**
+  - **Montaje:** `next start` en el 3011, con un build cuya autenticación apunta a una API temporal en el 8011, bases temporales fuera del repo y un usuario desechable. La API de 4Geeks solo se leyó (listado y un detalle). Sus fallos se simularon sobrescribiendo `fetch` en la página, y el único POST lo respondió el simulador sin llegar a 4Geeks.
+  - **(1) Rutas:** una ruta inexistente muestra el not-found raíz; un id inexistente, el de `candidates/[id]`.
+  - **(2) Error de render** (con una ruta temporal, ya borrada): se ve `error.tsx` dentro del layout y «Reintentar» recupera la vista.
+  - **(3) Listado, detalle y notas:** con un 500, con la red caída y con el cuerpo colgado (timeout real de 20 s) se ven el texto del servidor, el de conexión y el de «tardó demasiado», con «Reintentar» y sin ningún código.
+  - **(4) T4:** se ve el mensaje «Se guardó…» en el formulario y en el aviso, y el botón de enviar queda deshabilitado.
+  - **(5) `auth.json` corrupto:** el guard muestra «El servidor tuvo un problema al comprobar tu sesión…». Al reintentar se ve «Reintentando…» con el spinner y el botón deshabilitado. Al restaurar el archivo, la vista se recupera.
+  - **(6) Consola:** sin datos sensibles.
+- **Sin tocar:** no se usaron los puertos 3000, 3001 ni 8000, ni `services/api/data/`.
+
+---
+
+## 2026-10-10 — Auditoría de gestión de errores: B1–B4 en `uis/backoffice`
+
+**Estado: hecho, validado y comiteado** (`2454dcd`, `fix(backoffice)`), en `feature/error-handling-audit`, después de `a6f3722`. Es la tercera fase pedida por el usuario: solo B1–B4.
+
+**B5 no se hace** (contacto de soporte en los errores): el contexto no define ningún contacto y no se inventa. Los errores ofrecen «Reintentar» y un enlace a inicio.
+
+**Qué se hizo:**
+- **B1, límites de error (Next 16.3.2):** se crean `app/error.tsx`, `app/global-error.tsx` y `app/not-found.tsx`.
+  - **Firma de props:** según `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/error.md` y `dist/client/components/error-boundary.d.ts`, es `{ error: Error & { digest?: string }; retry: () => void }`, y también existe `reset`.
+  - **Comportamiento:** textos fijos en español, «Reintentar» con `retry()` y enlace a `/`. El error no se lee: ni `console.*`, ni `message`, `digest` o `stack`.
+  - **`global-error.tsx`:** tiene su propio `<html>`/`<body>`, importa `globals.css` y no usa ni la sesión ni el guard.
+- **B2, textos de error:** se quitan `«(422)»`, `«services/api»` y `«NEXT_PUBLIC_API_URL»` de `supplier-error`, `incident-error`, `auth-error` y `analysis-error`, y también del estado vacío de `supplier-directory-view`, que mostraba `«uv run seed» en services/api`. Las menciones a «la API» pasan a «el servidor». Se mantienen el tipo de error y su acción.
+- **B3, reintento del guard:** nueva acción `validation_started` y nuevo estado `retrying` en `hooks/use-auth-session.ts`.
+  - **Cuándo se emite:** solo en el reintento forzado. La primera validación de un token ya se ve como `checking`, y un 401 sigue sin despachar nada.
+  - **Ruta:** `routeAccess` trata `retrying` como `error`, así que el aviso se mantiene y el botón muestra «Reintentando…» con spinner y `aria-busy`.
+  - **Textos:** `sessionErrorCopy` da uno por tipo de error (red, timeout, servidor, configuración, respuesta inesperada y un genérico).
+- **B4, `lib/api-client.ts`:** `blob()` trata los errores como `json()`. Los aborts se relanzan y `send` los convierte en abort o timeout; cualquier otro fallo de lectura pasa a ser `ApiNetworkError`.
+- **Optional chaining (sin cambios):** todos los campos anulables de los tipos que producen los normalizadores ya tienen fallback al mostrarse. Son `percentage`, `average_score`, `contract_renewal_date`, `contact_email`, `notes`, `profile` y sus campos, y `field`.
+- **Docs:** `uis/backoffice/CLAUDE.md` (reglas de límites de error, textos sin detalles técnicos y reintento del guard) y `README.md` (revisión estática).
+
+**Validación ejecutada:**
+- **Backoffice:**
+  - `tsc` y `lint` limpios;
+  - `build` OK (12 rutas, las mismas que en `main`: `app/not-found.tsx` sustituye a la página `/_not-found` por defecto). *Corregido en el cierre: decía «13 rutas»;*
+  - tests: de 332 a **344 OK** (+2 `production-source`, +2 `api-client`, +5 `use-auth` y los tests por archivo de los 3 archivos nuevos).
+- **Mutaciones:** cada arreglo deshecho hace fallar su test. Los casos probados: sin `app/error.tsx`; `global-error` usando la sesión; `supplier-error` original; `use-auth-session` y `auth-routes` originales; reintento sin `validation_started`; y `api-client` original.
+- **Navegador:**
+  - **Montaje:** `next start` en el 3010, con un build que apunta a una API temporal en el 8011, bases temporales fuera del repo y CORS para el 3010. Un usuario de prueba desechable.
+  - **(1) Ruta inexistente:** se ve «Página no encontrada» con el enlace a `/`.
+  - **(2) Error de render:** se provocó con una ruta temporal, ya borrada. Se ve «Algo ha fallado / No se pudo mostrar esta página» dentro del layout, y «Reintentar» recupera la vista.
+  - **(3) API parada:** `/suppliers`, `/incident-manager` (resumen y listado) e `/incidents` muestran «No se pudo conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo. Si el problema continúa, avisa al equipo técnico.».
+  - **(4) `auth.json` corrupto:** el guard muestra «No se pudo comprobar la sesión. El servidor tuvo un problema al comprobar tu sesión. Inténtalo de nuevo en unos minutos.», con «Reintentar» y «Cerrar sesión». La API registró `storage auth is unavailable: JSONDecodeError`.
+  - **(5) Reintento:** con `fetch` retrasado, «Reintentar» pasa a «Reintentando…», deshabilitado, con `aria-busy` y spinner, y el aviso se mantiene. Al restaurar `auth.json`, el reintento recupera la vista.
+  - **Consola:** solo errores de red del navegador (códigos 401, 404 y 503 y conexiones rechazadas, sin cuerpos ni tokens) y el error provocado a propósito, que React registra con su mensaje y su traza.
+  - **Después:** sin ruta temporal, build final con la configuración normal y puertos 3010 y 8011 libres.
+- **Sin tocar:** no se usaron los puertos 3000 ni 8000, ni `services/api/data/`.
+
+---
+
+## 2026-10-10 — Auditoría de gestión de errores: S1–S4 (scripts y CLIs sin traceback)
+
+**Estado: hecho, validado y comiteado** (`a6f3722`, `fix(scripts)`), en `feature/error-handling-audit`, después de `24f0e0d` (A1 y A2). Es la segunda fase pedida por el usuario: solo S1–S4.
+
+**Qué se hizo:**
+- **S1, `scripts/seed_incidents.py`:**
+  - Solo se protege la llamada `IncidentRepository(db_path).seed(...)`, y solo contra `StorageUnavailableError`, que es la forma en que llega un fallo de TinyDB desde A2.
+  - Mensaje en stderr con el nombre del archivo, nunca la ruta completa ni `str(exc)`.
+  - Código `2` ("entorno"). El docstring, el README de `services/api` y la guía de revisión del gestor ya lo dicen.
+- **S2, `services/api/app/seed.py` (`uv run seed`):** `main()` captura `ConfigError` de `Settings.from_env()` y `StorageUnavailableError` del repositorio, cada uno en su `try`. Ambos dan mensaje en stderr y `sys.exit(1)`. Los mensajes de `ConfigError` nombran la variable, nunca su valor.
+- **S3, `services/api/app/auth/create_admin.py`:** `run()` devuelve 1, sin traceback y sin crear nada, en tres casos tratados por separado:
+  - `ConfigError`;
+  - `EOFError` o `KeyboardInterrupt` de `input()` y `getpass` («Operación cancelada. No se ha creado ningún usuario.»);
+  - `StorageUnavailableError`.
+
+  La contraseña no aparece en ninguna salida.
+- **S4, `scripts/analyze.py`:**
+  - Ctrl+C en la pregunta de exportar equivale a «no exportar» (código `0`).
+  - `describe_os_error` sustituye `error.strerror` (que puede ser `None`) por el nombre de la clase.
+  - `scripts/seed_incidents.py` usa también su propia copia de `describe_os_error` al leer el CSV, para que los scripts no se importen entre sí.
+  - **No hecho:** el `BrokenPipeError` al redirigir la salida a `head`. En Windows, escribir en una tubería cerrada da `OSError` con `EINVAL` y no `BrokenPipeError`, así que no hay un test fiable y pequeño. Queda documentado.
+- **Registro en stderr:** en los scripts, el logger `nexova.api` no tiene handler, así que `log_storage_failure` sale por el handler de último recurso de `logging` (`storage <almacén> is unavailable: <Clase>`), justo antes del mensaje del script.
+  - **Se acepta:** no es un duplicado. Aporta la clase del error (`JSONDecodeError` frente a `PermissionError`), que el script no conoce porque `StorageUnavailableError` no arrastra la excepción original.
+  - **Sin datos sensibles:** no lleva ruta ni contenido.
+- **Tests:**
+  - `test_incident_manager_seed.py` +3 (`--db` como directorio, base corrupta y `OSError` sin `strerror` al leer el CSV);
+  - `test_suppliers_seed.py` +2 (configuración de email incompleta y base corrupta);
+  - `test_create_admin.py` +4 (EOF, Ctrl+C, base corrupta y `ConfigError`); la base común se extrajo a `CreateAdminTestCase`;
+  - `packages/incident-analyzer/tests/test_cli_errors.py` nuevo, con 3 tests;
+  - los tests de `KeyboardInterrupt` convierten una regresión en un `fail` normal, para no abortar la suite.
+
+**Validación ejecutada:**
+- **Suites:** `services/api` pasa de 303 a **312 OK**; `packages/incident-analyzer` de 118 a **121 OK** (7 omitidos).
+- **Mutaciones:** devolviendo cada archivo a `24f0e0d`, fallan los 12 tests nuevos (3 + 2 + 4 + 3).
+- **Seed del gestor:** dos ejecuciones sobre una base temporal con el fixture de aceptación dan 96 insertadas y luego 0.
+- **`uv run seed`:** dos ejecuciones con `SUPPLIERS_DB_PATH` temporal dan 15 y luego 0. uv reconstruyó el paquete editable de la API; el núcleo y `nexova_shared` siguieron instalados.
+- **Bases de prueba:** siempre fuera del repo, sin tocar `services/api/data/`.
+
+**Observación, sin corregir:** riesgo de duplicación en `IncidentRepository.seed`, registrado en "Decisiones y problemas conocidos". Por eso el mensaje de S1 no promete «no se ha insertado nada».
+
+---
+
+## 2026-10-10 — Auditoría de gestión de errores: A1 (respuestas cortadas de Resend) y A2 (TinyDB no disponible → 503) en `services/api`
+
+**Estado: hecho, validado y comiteado** (`24f0e0d`, `fix(api)`), en la rama `feature/error-handling-audit`, creada desde `main` en `6dfa013` (merge de la PR #17). Origen: auditoría de solo lectura del 2026-10-09 sobre todo el código de producción (backend, scripts, backoffice, tracker y web). Encontró 2 hallazgos ALTO, 6 MEDIO y 10 BAJO, ninguno crítico. El informe se entregó en la conversación y no está versionado. El usuario pidió implementar solo A1 y A2. El resto sigue pendiente (ver "Próximos pasos").
+
+**Qué se hizo:**
+- **A1 (era L-4 de AUTH-03):** `app/auth/email.py` añade `http.client.HTTPException` a los errores que `ResendEmailSender.send` convierte en `EmailDeliveryError` (con `from None`). `IncompleteRead`, `BadStatusLine` y `LineTooLong` no son `OSError`. Hasta ahora escapaban de la tarea en segundo plano y las registraba el middleware del 500 ("unhandled error"), no `log_email_delivery_failure`.
+- **A2:** nuevo `app/core/storage.py` con `GuardedJSONStorage`, el storage de TinyDB que usan los tres repositorios (`database.py`, `auth/repository.py`, `modules/incident_manager/repository.py`).
+  - **Qué captura:** solo los fallos del archivo. Es decir, `OSError` en la apertura, `read`, `write` y `close`; `JSONDecodeError` y `UnicodeDecodeError` en `read`; y JSON que no tiene la forma `{tabla: {id: documento}}`.
+  - **Qué responde:** 503 `storage_unavailable` con el `detail` fijo `storage is temporarily unavailable`.
+  - **Qué registra:** la nueva `log_storage_failure` de `core/errors.py` solo anota el almacén (`suppliers`, `auth`, `incidents`) y la clase de la excepción.
+  - **Ámbito de la captura:** no envuelve el `yield` de los context managers. Si lo hiciera, el `ValidationError` de Pydantic y `InvalidStatusTransitionError` (ambos `ValueError` lanzados dentro del `with`) acabarían en un 503 falso.
+  - **Sin la excepción original:** el error se lanza fuera del `except`, así que no arrastra ni `__cause__` ni `__context__`. Importa porque `JSONDecodeError.doc` guarda el archivo entero.
+- **Docs:**
+  - `services/api/SPECS.md`: 503 en §4, §5, §12, §18, §31 y §33.
+  - `services/api/README.md`: endpoints, códigos de proveedores, tabla de tests y estructura.
+- **Memory-bank:** se corrige que el gestor centralizado de incidencias figuraba "pendiente de PR". Se integró en `main` con la PR #17 (merge `6dfa013`, 2026-10-08).
+
+**Validación ejecutada:**
+- **Suite de `services/api`:** 289 → **303 OK**. Son +2 en `test_password_reset.py` (con 3 subtests cada uno) y +12 en el nuevo `test_storage.py`.
+- **Mutaciones:**
+  - con el `email.py` anterior fallan los 6 subtests de A1;
+  - sin la traducción del storage fallan los 6 tests de corrupción;
+  - con la captura "ingenua" alrededor del `yield` fallan los 2 tests de regresión del ámbito.
+- **Paquetes Python sin ejecutar:** no se tocaron `packages/` ni `scripts/`, así que no se ejecutaron sus suites.
+- **Prueba manual:**
+  - **Montaje:** uvicorn en el puerto 8011 con tres bases temporales en el scratchpad, fuera del repo, y una clave JWT generada al momento. No se tocaron `services/api/data/` ni la API del usuario.
+  - **Bases sanas:** 200; el 422 de proveedores y el 400 del gestor se mantienen.
+  - **Bases corruptas:** `suppliers.json` corrupto, `incidents.json` no UTF-8 y `auth.json` corrupto responden 503 en `/suppliers`, `/api/incidents/summary`, `/auth/login`, `/auth/me` y en una ruta protegida.
+  - **Recuperación:** al restaurar `auth.json`, el login vuelve a responder (401 con un email inexistente).
+  - **Log:** solo `storage <almacén> is unavailable: <Clase>`, sin rutas ni emails.
+
+**Efectos colaterales conocidos:**
+- `scripts/seed_incidents.py`, `uv run seed` y `create-admin` también usan estos repositorios. Con una base corrupta ahora reciben `StorageUnavailableError` (antes, `JSONDecodeError`) y seguían terminando con traceback (S1–S3). *(Resuelto el 2026-10-10 en la entrada de arriba.)*
+- **Frontends sin cambios:**
+  - **Backoffice:** el 503 es «Error del servidor». En el guard de sesión es «No se pudo comprobar la sesión», con «Reintentar».
+  - **Tracker:** las rutas de auth muestran «La API respondió con el código 503» (hallazgo T2).
+
+---
+
 ## 2026-10-07 — Gestor centralizado de incidencias: scroll horizontal en móvil (`/incident-manager`)
 
-**Estado: hecho, validado y comiteado** (commit aparte, después de F6 `ca0bf00`), en `feature/centralized-incident-manager`. Sin push. El proyecto sigue pendiente de PR.
+**Estado: hecho, validado y comiteado** (commit aparte, después de F6 `ca0bf00`), en `feature/centralized-incident-manager`. *(Corregido el 2026-10-10: integrado en `main` con la PR #17, merge `6dfa013`, 2026-10-08.)*
 
 **Fallo, encontrado y diagnosticado por el usuario en el navegador:**
 - A 375 px, `/incident-manager` tenía scroll horizontal en toda la página (scrollWidth 673 frente a clientWidth 375).
@@ -40,9 +265,9 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
-## 2026-10-07 — Gestor centralizado de incidencias, F6: documentación de cierre (proyecto hecho, pendiente de PR)
+## 2026-10-07 — Gestor centralizado de incidencias, F6: documentación de cierre (proyecto hecho; integrado en `main` con la PR #17)
 
-**Estado: hecho y comiteado** (commit de F6, solo documentación) en `feature/centralized-incident-manager`, después de F5 (`7ce4101`). **El proyecto completo (F1–F6) está hecho y pendiente de PR**: sin push y sin PR abierta.
+**Estado: hecho y comiteado** (commit de F6 `ca0bf00`, solo documentación) en `feature/centralized-incident-manager`, después de F5 (`7ce4101`). **El proyecto completo (F1–F6) está hecho.** *(Corregido el 2026-10-10: entonces estaba sin push ni PR. Se integró en `main` con la PR #17, merge `6dfa013`, 2026-10-08.)*
 
 **Decisiones:** P4-1…P4-13 (ver la entrada de F1 y `services/api/SPECS.md` §29) son **decisiones del usuario** tomadas al aprobar el plan, incluido el cambio de P4-5 en F2 (SHA-256 en `seed_keys`). **No las han revisado ni aprobado el tech lead ni la CTO.**
 
@@ -68,7 +293,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 - No se hizo el recorrido manual en `/docs`.
 - No hay soporte bilingüe (no existía en hitos anteriores).
 - Revisión de P4-1…P4-13 por el tech lead o la CTO.
-- Push y PR.
+- ~~Push y PR~~: hecho, PR #17, merge `6dfa013` (2026-10-08).
 
 ---
 
@@ -661,11 +886,18 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
     - L-1: bcrypt antes de validar el token;
     - L-2: `PASSWORD_RESET_URL` admite `http://`;
     - L-3: el token aparece en la URL de la primera carga;
-    - L-4: `http.client.HTTPException` no se captura en el sender;
+    - ~~L-4: `http.client.HTTPException` no se captura en el sender~~ — corregido el 2026-10-10 (A1 de la auditoría de gestión de errores, rama `feature/error-handling-audit`);
     - L-5: retención de las IP de la auditoría;
     - L-6: aviso de éxito oculto si hay otra sesión abierta.
 - **Deuda pendiente — `LastResultStore` global al proceso, no por usuario (registrada el 2026-10-05, sin corregir):** `services/api` guarda en memoria un único "último análisis" de incidentes para todo el proceso (`services/api/SPECS.md` §6, D-API-5). Desde AUTH-01/AUTH-02 hay varios usuarios autenticados, así que un usuario puede exportar el último resultado generado por otro. Hoy el resultado solo contiene métricas agregadas (sin filas ni emails) y el frontend descarta una exportación cuyo `X-Analysis-Id` no coincide con el análisis que muestra, pero la API no lo impide. **No se corrige ahora:** es una decisión de arquitectura pendiente del tech lead, a revisar antes de llevar el módulo de incidentes a un uso multiusuario real o a la Fase 4.
 
+- **Almacenamiento TinyDB no disponible o corrupto → 503 `storage_unavailable` (2026-10-10, A2):** antes era un 500 genérico. El caso más grave: un `auth.json` corrupto tumbaba el login y todas las rutas protegidas. Sigue sin haber escritura atómica: TinyDB reescribe el archivo entero y un corte a mitad lo deja corrupto. Ahora eso da 503 y un registro claro, pero recuperarse exige restaurar una copia o borrar el archivo (README de `services/api`). El seed del gestor, `uv run seed` y `create-admin` lo tratan desde el 2026-10-10 (S1–S3): mensaje en stderr y código de salida, sin traceback.
+- **Errores capturados por los límites de error de Next (2026-10-10, por diseño):** React registra en la consola del navegador, con su mensaje y su traza, los errores que capturan `app/error.tsx` y `app/global-error.tsx` (backoffice y tracker). El código propio no los registra ni los muestra. Por eso ningún error lanzado en el código de producción puede llevar datos de la API o del usuario en su mensaje.
+- **Riesgo de duplicación en `IncidentRepository.seed` (detectado el 2026-10-10, sin corregir):**
+  - **Causa:** `services/api/app/modules/incident_manager/repository.py` (`seed`) hace dos escrituras no atómicas en `incidents.json`: primero `incidents_table.insert_multiple` y después `keys_table.insert_multiple` (`seed_keys`).
+  - **Consecuencia:** si la segunda falla (disco lleno, permisos, el proceso muere a mitad), quedan incidencias sin su clave de origen. La siguiente ejecución del seed las vuelve a insertar, rompiendo la idempotencia. Si el fallo es de E/S, desde A2 el seed lo comunica (código 2), pero no deshace la primera escritura.
+  - **Alcance:** es un problema de consistencia de datos, no de gestión de errores, así que quedó fuera de la auditoría.
+  - **Arreglo posible, sin decidir:** una única escritura con las dos tablas, o reconciliar las incidencias huérfanas antes de insertar.
 - **Gestor centralizado de incidencias — límites conocidos (2026-10-07, sin corregir):**
   - aceptación solo con el fixture sintético (el CSV real no está en el repo);
   - con un filtro activo, una incidencia que cambia de estado sigue en el listado hasta la siguiente carga;
@@ -675,7 +907,15 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 
 ## Próximos pasos conocidos (no implementados aquí)
 
-- **Gestor centralizado de incidencias:** hecho en F1–F6 en `feature/centralized-incident-manager` (commits `164a183`, `959a65b`, `ef040f5`, `d7ce215`, `7ce4101` y el de F6), **pendiente de PR**. Guía de revisión: `docs/centralized-incident-manager-review.md`. Pendientes: la PR, la revisión de P4-1…P4-13 (decisiones del usuario) por el tech lead o la CTO, la aceptación con el CSV real y la verificación visual/móvil.
+- **Auditoría de gestión de errores (2026-10-09):**
+  - Hecha y comiteada en `feature/error-handling-audit`: `24f0e0d`, `a6f3722`, `2454dcd`, `dc91918`, `899ce1e` y el cierre del memory-bank (entradas del 2026-10-10).
+  - Pendiente: push y PR, que hace el usuario.
+  - No se hace, con su motivo en la entrada de cierre:
+    - B5: no hay contacto de soporte definido;
+    - T5: se acerca más a un refactor;
+    - el `BrokenPipeError` de `analyze.py`: sin test fiable en Windows;
+    - el riesgo de duplicación del seed: es consistencia de datos.
+- **Gestor centralizado de incidencias:** hecho en F1–F6 en `feature/centralized-incident-manager` (commits `164a183`, `959a65b`, `ef040f5`, `d7ce215`, `7ce4101`, `ca0bf00` y el arreglo móvil `ee944ae`). Integrado en `main` con la PR #17 (merge `6dfa013`, 2026-10-08). Guía de revisión: `docs/centralized-incident-manager-review.md`. Pendientes: la revisión de P4-1…P4-13 (decisiones del usuario) por el tech lead o la CTO, la aceptación con el CSV real y la verificación visual en móvil y con lector de pantalla.
 - **Backend general de Nexova:** `docs/ARCHITECTURE_PROPOSAL.md` está pendiente de revisión por el CTO. Si se aprueba, sus dominios (candidatos, vacantes, pipeline, matching) tendrán que decidir cómo convivir con el `services/api/` ya existente del procesador de incidentes (mismo servicio o no, prefijo `/api/v1` o no). Nada de eso se ha iniciado.
 - **Procesador de incidentes:** Fases 1, 2 y 3 (`/incidents` en `uis/backoffice`) hechas e integradas en `main` (PR #6). Existe un fixture sintético de aceptación que reproduce las cifras del contexto (entrada 2026-09-27, PR #7). Pendientes: el test de aceptación con el CSV real (las cifras 100/96/4 no están verificadas con datos reales) y la Fase 4 (integración). Antes de la Fase 4 o de un uso multiusuario real, revisar la deuda de `LastResultStore` (ver "Decisiones y problemas conocidos").
 - `uis/backoffice` es un punto de entrada — tiene `/incidents` y `/suppliers`; el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.

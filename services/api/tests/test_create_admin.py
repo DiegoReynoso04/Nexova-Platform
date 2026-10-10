@@ -8,6 +8,7 @@ import unittest
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from passlib.hash import bcrypt
 
@@ -25,7 +26,7 @@ def answers(*values: str) -> Any:
     return lambda prompt: next(iterator)
 
 
-class CreateAdminTests(unittest.TestCase):
+class CreateAdminTestCase(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -43,6 +44,8 @@ class CreateAdminTests(unittest.TestCase):
         result: dict[str, Any] = json.loads(self.db_path.read_text(encoding="utf-8"))
         return result
 
+
+class CreateAdminTests(CreateAdminTestCase):
     def test_creates_admin_with_profile_and_bcrypt_hash(self) -> None:
         password = new_password()
         code, output = self.run_command(["--email", ADMIN, "--name", "Admin"], password, password)
@@ -78,6 +81,64 @@ class CreateAdminTests(unittest.TestCase):
                 self.assertEqual(code, 1)
                 self.assertNotIn(password, output)
         self.assertFalse(self.db_path.exists())
+
+
+class CreateAdminErrorTests(CreateAdminTestCase):
+    """S3 de la auditoría: código 1, sin traceback, sin crear nada y sin mostrar la contraseña."""
+
+    def assertNothingCreated(self, code: int, output: str, password: str | None = None) -> None:
+        self.assertEqual(code, 1, output)
+        self.assertNotIn("Traceback", output)
+        self.assertNotIn("Administrador creado", output)
+        if password is not None:
+            self.assertNotIn(password, output)
+
+    def test_eof_in_email_input_cancels(self) -> None:
+        password = new_password()
+        with mock.patch("builtins.input", side_effect=EOFError):
+            code, output = self.run_command([], password, password)
+        self.assertNothingCreated(code, output, password)
+        self.assertIn("Operación cancelada. No se ha creado ningún usuario.", output)
+        self.assertFalse(self.db_path.exists())
+
+    def test_ctrl_c_in_getpass_cancels(self) -> None:
+        password = new_password()
+
+        def interrupted_confirmation(prompt: str) -> str:
+            if prompt.startswith("Repite"):
+                raise KeyboardInterrupt
+            return password
+
+        output = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                code = run(["--email", ADMIN], self.settings, read_password=interrupted_confirmation)
+        except KeyboardInterrupt:
+            # Sin esto, una regresión abortaría toda la suite en vez de fallar este test.
+            self.fail("KeyboardInterrupt escaped from create-admin")
+        self.assertNothingCreated(code, output.getvalue(), password)
+        self.assertIn("Operación cancelada", output.getvalue())
+        self.assertFalse(self.db_path.exists())
+
+    def test_corrupt_database(self) -> None:
+        corrupt = '{"users": {"1": {"email": "leak@example.invalid"'
+        self.db_path.write_text(corrupt, encoding="utf-8")
+        password = new_password()
+        code, output = self.run_command(["--email", ADMIN], password, password)
+        self.assertNothingCreated(code, output, password)
+        self.assertIn("Error: no se pudo abrir o escribir la base de usuarios (auth.json)", output)
+        self.assertIn("storage auth is unavailable: JSONDecodeError", output)
+        for secret in (str(self.db_path.parent), "leak@example.invalid"):
+            self.assertNotIn(secret, output)
+        self.assertEqual(self.db_path.read_text(encoding="utf-8"), corrupt)
+
+    def test_configuration_error(self) -> None:
+        output = io.StringIO()
+        with mock.patch.dict("os.environ", {"MAX_UPLOAD_BYTES": "not-a-number"}):
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                code = run(["--email", ADMIN], None, read_password=answers())
+        self.assertNothingCreated(code, output.getvalue())
+        self.assertIn("Error de configuración: MAX_UPLOAD_BYTES must be a positive integer", output.getvalue())
 
 
 if __name__ == "__main__":

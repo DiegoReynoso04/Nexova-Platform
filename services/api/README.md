@@ -51,6 +51,8 @@ Columna *Auth*: 🔓 pública · 🔒 JWT válido · 👤 propio usuario o admin
 
 Sin token válido → **401**; token válido sobre un recurso ajeno o una acción de admin → **403** (`SPECS.md` §21). Ninguna respuesta incluye `password` ni `hashed_password`.
 
+Si un archivo TinyDB (`suppliers.json`, `auth.json` o `incidents.json`) no se puede abrir, leer o escribir, o está corrupto, la ruta responde **503** `{"detail": "storage is temporarily unavailable", "code": "storage_unavailable"}`, sin la ruta del archivo. El registro dice solo el almacén y la clase del error: `storage auth is unavailable: JSONDecodeError`. Con `auth.json` dañado fallan el login y todas las rutas protegidas. Para recuperarlo, restaura el archivo desde una copia o bórralo: se perderán sus datos y, con `auth.json`, habrá que recrear el administrador con `create-admin`. Detalle: `SPECS.md` §4 y §5.
+
 Documentación interactiva de FastAPI en `http://localhost:8000/docs` con el servidor arrancado.
 
 ## Requisitos
@@ -116,7 +118,7 @@ Registro oficial de proveedores de Nexova (Patricia Solís, HR Manager). Context
 - **`updated_at`:** lo genera el sistema (UTC) al crear y en cada cambio de tarifa; el cambio de estado no lo modifica.
 - **Estados:** `active` / `suspended`. Suspender es la forma prevista de dar de baja un proveedor (se conserva el historial); `DELETE` existe en la API pero el backoffice no lo usa (`SPECS.md` §10).
 - **Arquitectura:** `routes/suppliers.py` (endpoints) → modelos Pydantic de `models.py` (validan la entrada; 422 si no cumple) → `SupplierRepository` de `database.py` (única capa que toca TinyDB). El seeder (`seed.py`) usa el mismo repositorio y la misma validación.
-- **Códigos HTTP:** `201` alta · `200` consultas y `PATCH` · `204` borrado · `404` `supplier_not_found` (id inexistente) · `422` `validation_error` (cuerpo, filtro o id inválidos; lista `{loc, msg, type}`). Filtros de `GET /suppliers`: `country` (`Spain`/`USA`) y `category` (una de las 9 del contexto), combinables. Contrato completo: `SPECS.md` §11–§12.
+- **Códigos HTTP:** `201` alta · `200` consultas y `PATCH` · `204` borrado · `404` `supplier_not_found` (id inexistente) · `422` `validation_error` (cuerpo, filtro o id inválidos; lista `{loc, msg, type}`) · `503` `storage_unavailable` (`suppliers.json` ilegible o corrupto). Filtros de `GET /suppliers`: `country` (`Spain`/`USA`) y `category` (una de las 9 del contexto), combinables. Contrato completo: `SPECS.md` §11–§12.
 
 **Puesta en marcha del directorio** (desde cero):
 
@@ -127,7 +129,7 @@ Registro oficial de proveedores de Nexova (Patricia Solís, HR Manager). Context
 
 ### Seeder
 
-Carga los 15 proveedores del contexto. Idempotente: solo inserta los que no existen (por `name`) y confirma en consola cuántos insertó.
+Carga los 15 proveedores del contexto. Idempotente: solo inserta los que no existen (por `name`) y confirma en consola cuántos insertó. Con una variable de entorno inválida (por ejemplo, la configuración de email incompleta) o una base `SUPPLIERS_DB_PATH` ilegible o corrupta, escribe el motivo en stderr y termina con código `1`, sin traceback.
 
 ```bash
 cd services/api
@@ -161,7 +163,7 @@ Contexto: [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md). Co
 
 ### Primer administrador
 
-`POST /users` siempre crea usuarios `user`. El primer admin se crea con un comando explícito (la contraseña se pide oculta, dos veces; no se imprime ni se pasa por argumento):
+`POST /users` siempre crea usuarios `user`. El primer admin se crea con un comando explícito (la contraseña se pide oculta, dos veces; no se imprime ni se pasa por argumento). Termina con código `1`, sin traceback ni crear nada, si el email ya existe, la entrada no es válida, se cancela (Ctrl+C o fin de entrada), falla la configuración o `auth.json` no se puede abrir o está corrupto:
 
 ```bash
 cd services/api
@@ -201,11 +203,13 @@ services/api/.venv/bin/python scripts/seed_incidents.py packages/incident-analyz
 
 - Sin ruta del CSV se lee `data/raw/incidents/incidents-nexova.csv` (el dataset real, ignorado por git). Sin `--db` se usa `INCIDENTS_DB_PATH` o, si no está definida, `services/api/data/incidents.json`.
 - Informe final en consola: filas leídas, insertadas, ya existentes, inválidas (número de fila + código de regla), no mapeables (número de fila + motivo), duplicadas en el archivo y total en la base. **Nunca** muestra contenido de las filas (ni emails, ni descripciones, ni `ticket_id`).
-- Códigos de salida: `0` correcto · `1` CSV inexistente, no UTF-8 o con una cabecera sin las columnas del analizador · `2` argumentos, configuración o entorno incorrectos (por ejemplo, ejecutarlo con un Python sin el venv).
+- Códigos de salida: `0` correcto · `1` CSV inexistente, no UTF-8 o con una cabecera sin las columnas del analizador · `2` argumentos, configuración o entorno incorrectos (por ejemplo, ejecutarlo con un Python sin el venv, o una base `--db`/`INCIDENTS_DB_PATH` que no se puede abrir o escribir, o que está corrupta). Ningún error termina con traceback; ante una base dañada, stderr muestra la línea del registro (`storage incidents is unavailable: <Clase>`) y el mensaje del script con solo el nombre del archivo.
 - Con el fixture de aceptación: 96 insertadas y 4 inválidas (filas 18, 45, 71 y 93); en la segunda ejecución, 0 insertadas y 96 ya existentes.
 - Igual que el seeder de proveedores: ejecutarlo con la API parada o sin escrituras en curso.
 
 ## Tests
+
+Los casos de error y su verificación manual (auditoría de gestión de errores) están en [`docs/error-handling-audit.md`](../../docs/error-handling-audit.md) §7.4.
 
 La suite necesita las dependencias del venv de `services/api` (con el Python global falla al importar `fastapi`). Desde la raíz del monorepo, **sin necesidad de activar el venv**, usando su intérprete directamente:
 
@@ -236,13 +240,15 @@ La suite del núcleo (Fase 1) no necesita el venv: `python -m unittest discover 
 | `test_privacy.py` | Ningún email ni dato de registro en respuestas, errores, export ni logs; 500 opaco con excepción que contiene un email |
 | `test_architecture.py` | La API no duplica reglas, categorías, estados, regex, lógica de score ni redondeo; solo usa la API pública del núcleo; el núcleo no importa FastAPI |
 | `test_suppliers_api.py` | Proveedores: modelo = CONTEXT, 422 antes de tocar TinyDB (país, estado, tarifa ≤ 0, moneda, categorías, fecha, campos del sistema), 201/404/204, filtros país/categoría combinados, `updated_at` en cambio de tarifa y no en cambio de estado, CORS PATCH/DELETE |
-| `test_suppliers_seed.py` | Seeder = `SUPPLIERS_SEED` del CONTEXT, idempotente, no sobrescribe, salida en consola; persistencia tras reiniciar la app |
+| `test_suppliers_seed.py` | Seeder = `SUPPLIERS_SEED` del CONTEXT, idempotente, no sobrescribe, salida en consola; persistencia tras reiniciar la app; `main()` con configuración inválida o base corrupta → código 1 sin traceback |
 | `test_auth.py` | AUTH-01: registro (hash bcrypt, sin texto plano, `Profile` automático, `role=user` fijado por el backend y `role` en el body → 422, 409), login (401 genérico, solo formulario), JWT (`sub`/`exp`, expirado, mal formado, otra clave, `alg: none`), `/users` (401/403/admin, propio vs ajeno, cambio de rol, borrado en cascada), `/profiles/me`, `/auth/me` sin credenciales |
 | `test_auth_protection.py` | Las 8 rutas existentes: 401 sin token o con token inválido/expirado y funcionamiento con token válido; rutas públicas; esquema OAuth2 en OpenAPI; CORS `Authorization`; `JWT_SECRET_KEY`/`ACCESS_TOKEN_EXPIRE_MINUTES` obligatorias |
 | `test_incident_manager_repository.py` | Gestor de incidencias: base inexistente o vacía (lista vacía, resumen a cero, sin crear el archivo), id UUID y fechas UTC, filtros combinados, resumen con todas las claves, transiciones válidas/inválidas/finales, seed idempotente, totales del CONTEXT y `seed_keys` sin `ticket_id` en claro |
 | `test_incident_manager_api.py` | Gestor de incidencias por HTTP: caso feliz y cada 400 de cada ruta (ausente, vacío, valor no permitido, título > 120, campo desconocido, id/fechas del cliente, `status` ≠ `open` al crear, filtro inválido, body no JSON/no objeto, PATCH sin `status`), las 16 transiciones, base vacía, totales tras el seed, 401 en las 5 rutas, 404 (inexistente / no UUID), 500 opaco, OpenAPI y no regresión (405 de `/analyze`, 404 de rutas desconocidas, 422 de proveedores y auth) |
-| `test_incident_manager_seed.py` | `scripts/seed_incidents.py`: informe exacto con el fixture de aceptación (96 insertadas, filas inválidas 18/45/71/93), segunda ejecución sin duplicados, resumen tras el seed, no mapeables y duplicadas por número de fila, ningún contenido de fila en consola ni emails/`ticket_id` en la base, códigos de salida (CSV inexistente, cabecera de otro esquema, vacío, no UTF-8) e `INCIDENTS_DB_PATH` |
-| `test_create_admin.py` | `create-admin`: admin + `Profile` + hash bcrypt, email existente, contraseñas distintas, entrada inválida; nunca imprime la contraseña |
+| `test_incident_manager_seed.py` | `scripts/seed_incidents.py`: informe exacto con el fixture de aceptación (96 insertadas, filas inválidas 18/45/71/93), segunda ejecución sin duplicados, resumen tras el seed, no mapeables y duplicadas por número de fila, ningún contenido de fila en consola ni emails/`ticket_id` en la base, códigos de salida (CSV inexistente, cabecera de otro esquema, vacío, no UTF-8; `--db` como directorio o corrupta → `2` sin traceback) e `INCIDENTS_DB_PATH` |
+| `test_create_admin.py` | `create-admin`: admin + `Profile` + hash bcrypt, email existente, contraseñas distintas, entrada inválida, fin de entrada en `input`, Ctrl+C en `getpass`, `auth.json` corrupto y `ConfigError` (código 1, sin crear nada); nunca imprime la contraseña |
+| `test_password_reset.py` | AUTH-03 (forgot/reset/change-password, auditoría, sender de Resend). Incluye las respuestas cortadas del proveedor (`IncompleteRead`, `BadStatusLine`, `LineTooLong`): son `EmailDeliveryError` y se registran como fallo de entrega, no como 500 |
+| `test_storage.py` | 503 `storage_unavailable` en los tres almacenes: JSON inválido, no UTF-8, otra forma, ruta que no se puede abrir y fallo de escritura. Incluye el login con `auth.json` corrupto. Comprueba que ni el cuerpo ni el log llevan la ruta ni el contenido y que el error no arrastra la excepción original. Regresión del ámbito: el 422 de proveedores, el 400 del gestor (también la transición lanzada dentro de la operación), el 409 y un `ValidationError` de Pydantic dentro de la operación (500, no 503) |
 
 Los tests reutilizan el fixture sintético del núcleo (`example.invalid`). Como las rutas de incidentes y proveedores exigen JWT, `tests/support.py` crea para cada cliente una base de usuarios temporal y un token válido (la clave JWT de test se genera al importar; no hay ninguna fija). Los tests de AUTH-01 hashean con bcrypt real, por eso la suite tarda alrededor de un minuto. El núcleo tiene su propia suite (ver su README).
 
@@ -255,8 +261,9 @@ app/
 ├── main.py                  # create_app(): middlewares, handlers, routers (+ protección JWT), /health
 ├── core/
 │   ├── config.py            # Settings desde variables de entorno (stdlib); exige la config JWT al arrancar
-│   ├── errors.py            # formato {detail, code}, 401/403/409, 422 saneado, middleware de 500 opaco
-│   └── limits.py            # límite del body (Content-Length + conteo en streaming)
+│   ├── errors.py            # formato {detail, code}, 401/403/409, 422 saneado, 503 de almacenamiento, middleware de 500 opaco
+│   ├── limits.py            # límite del body (Content-Length + conteo en streaming)
+│   └── storage.py           # GuardedJSONStorage: fallos del archivo TinyDB → 503 storage_unavailable
 ├── auth/                    # AUTH-01
 │   ├── models.py            # User/Profile (Pydantic), UserRole, validación de email y contraseña
 │   ├── repository.py        # AuthRepository: única capa que toca TinyDB de usuarios y perfiles

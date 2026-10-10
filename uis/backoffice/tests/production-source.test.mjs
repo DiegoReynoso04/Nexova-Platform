@@ -132,6 +132,47 @@ describe('código de producción', () => {
     }
   });
 
+  // B1 de la auditoría de gestión de errores: límites de error de Next 16.
+  const ERROR_BOUNDARIES = ['app/error.tsx', 'app/global-error.tsx'];
+  const BOUNDARY_FILES = [...ERROR_BOUNDARIES, 'app/not-found.tsx'];
+
+  test('existen los límites de error y la página no encontrada, sin consola ni datos del error', () => {
+    for (const file of BOUNDARY_FILES) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+      const code = codeWithoutComments(file);
+      assert.doesNotMatch(code, /\bconsole\./, `${file} usa console`);
+      assert.doesNotMatch(code, /\berror\s*[.[]/, `${file} lee el error (message, digest, stack…)`);
+      assert.doesNotMatch(code, /\.(message|digest|stack)\b/, `${file} muestra message, digest o stack`);
+      assert.match(code, /href=\{HOME_PATH\}/, `${file} sin enlace a la página principal`);
+    }
+    for (const file of ERROR_BOUNDARIES) {
+      const code = codeWithoutComments(file);
+      assert.match(code, /^'use client';/, `${file} debe ser Client Component`);
+      assert.match(code, /onClick=\{\(\) => retry\(\)\}/, `${file} sin «Reintentar» con retry()`);
+      assert.match(code, /Reintentar/, file);
+    }
+    const globalError = codeWithoutComments('app/global-error.tsx');
+    assert.match(globalError, /<html\b/);
+    assert.match(globalError, /<body\b/);
+    // No lo envuelven el layout raíz ni la sesión: no puede depender de ellos.
+    assert.doesNotMatch(globalError, /session-provider|auth-guard|useSession|account-nav/);
+  });
+
+  // B2: el usuario no ve detalles técnicos (variables de entorno, rutas del
+  // repositorio ni códigos HTTP entre paréntesis) en ningún texto de la UI.
+  test('ningún texto de components/ ni app/ muestra detalles técnicos', () => {
+    for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('components/') || path.startsWith('app/'))) {
+      const code = codeWithoutComments(file);
+      for (const [name, pattern] of [
+        ['NEXT_PUBLIC_', /NEXT_PUBLIC_/],
+        ['services/api', /services\/api/],
+        ['código HTTP entre paréntesis', /\([1-5]\d\d\)/],
+      ]) {
+        assert.equal(pattern.test(code), false, `${file} muestra ${name}`);
+      }
+    }
+  });
+
   test('incluye las vistas de contraseña (AUTH-03)', () => {
     for (const file of [
       'app/forgot-password/page.tsx',

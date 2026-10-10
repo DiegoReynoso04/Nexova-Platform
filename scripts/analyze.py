@@ -61,11 +61,18 @@ def supports_unicode(stream: TextIO) -> bool:
     return True
 
 
+def describe_os_error(error: OSError) -> str:
+    """`strerror` puede ser `None` (OSError sin errno): entonces, el nombre de la clase."""
+    return error.strerror or type(error).__name__
+
+
 def ask_export() -> bool:
     while True:
         try:
             answer = input(EXPORT_PROMPT).strip().lower()
-        except EOFError:
+        except (EOFError, KeyboardInterrupt):
+            # Fin de entrada o Ctrl+C en la pregunta: el reporte ya se mostró;
+            # se trata como "no exportar" y el análisis termina con éxito.
             print()
             return False
         if answer in ("y", "yes"):
@@ -83,7 +90,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 1
     except OSError as error:
-        print(f"error: cannot read {args.csv_file}: {error.strerror}", file=sys.stderr)
+        print(f"error: cannot read {args.csv_file}: {describe_os_error(error)}", file=sys.stderr)
         return 1
 
     print(render_report(result, Path(args.csv_file).name, ascii_only=not supports_unicode(sys.stdout)))
@@ -93,7 +100,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             write_results_csv(result, args.output)
         except OSError as error:
-            print(f"error: cannot write {args.output}: {error.strerror}", file=sys.stderr)
+            print(f"error: cannot write {args.output}: {describe_os_error(error)}", file=sys.stderr)
             return 1
         print(f"Results exported to {args.output}")
     return 0

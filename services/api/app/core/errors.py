@@ -148,6 +148,18 @@ class UnsupportedFileTypeError(ApiError):
         super().__init__(415, "unsupported_file_type", "only .csv files are accepted")
 
 
+class StorageUnavailableError(ApiError):
+    """Un archivo TinyDB no se puede abrir, leer o escribir, o no es una base válida.
+
+    503 y no 500: el fallo es del almacenamiento, no del código. El mensaje es
+    fijo: nunca la ruta del archivo ni el mensaje de la excepción original
+    (un `JSONDecodeError` guarda el contenido entero del archivo en `.doc`).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(503, "storage_unavailable", "storage is temporarily unavailable")
+
+
 def error_response(
     status_code: int, code: str, detail: object, headers: Mapping[str, str] | None = None
 ) -> JSONResponse:
@@ -220,3 +232,13 @@ def log_email_delivery_failure(exc: Exception) -> None:
     del destinatario ni el enlace con el token.
     """
     logger.error("password reset email could not be delivered: %s", type(exc).__name__)
+
+
+def log_storage_failure(store: str, exc: BaseException) -> None:
+    """Fallo de un archivo TinyDB (`app/core/storage.py`).
+
+    Solo el nombre del almacén (`suppliers`, `auth`, `incidents`) y el de la
+    clase de la excepción: ni la ruta del archivo ni el mensaje, que en un
+    `JSONDecodeError` puede citar el contenido y en un `OSError`, la ruta.
+    """
+    logger.error("storage %s is unavailable: %s", store, type(exc).__name__)

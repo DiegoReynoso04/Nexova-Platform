@@ -89,6 +89,8 @@ La API solo acepta los orígenes de `CORS_ALLOWED_ORIGINS` (por defecto `http://
 
 ## Validación
 
+Los casos de error y su verificación manual (auditoría de gestión de errores) están en [`docs/error-handling-audit.md`](../../docs/error-handling-audit.md) §7.4.
+
 Desde `uis/backoffice`:
 
 ```bash
@@ -98,7 +100,7 @@ npm run build
 node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/support/resolve-alias.mjs --test --test-timeout=10000 "tests/*.test.mjs"
 ```
 
-Los tests (`tests/*.test.mjs`) usan el runner nativo de Node 24, sin dependencias: normalizadores, cliente HTTP, servicios de incidentes, proveedores, gestor de incidencias y autenticación, estado/sesión de los hooks (cancelación, carreras, exportación, recarga tras cambios, sesión, login/registro y perfil), token en `localStorage`, cabecera Bearer y 401, protección de rutas, vocabulario y renovaciones de proveedores contra el CONTEXT, vocabulario, etiquetas de sede y transiciones del gestor contra su CONTEXT, envío/listado/reversión optimista/resumen del gestor, y una revisión estática del código de producción (sin `any`, `unknown` solo en `services/normalizers.ts`, `fetch`, `JSON.stringify` y `Authorization` solo en `lib/api-client.ts`, `localStorage` solo en `lib/auth-token.ts`, sin lectura del archivo y sin borrado de proveedores). `tests/support/resolve-alias.mjs` resuelve el alias `@/` para Node sin tocar `tsconfig.json`. El aviso `MODULE_TYPELESS_PACKAGE_JSON` se silencia porque `package.json` no declara `"type"`.
+Los tests (`tests/*.test.mjs`) usan el runner nativo de Node 24, sin dependencias: normalizadores, cliente HTTP, servicios de incidentes, proveedores, gestor de incidencias y autenticación, estado/sesión de los hooks (cancelación, carreras, exportación, recarga tras cambios, sesión, login/registro y perfil), token en `localStorage`, cabecera Bearer y 401, protección de rutas, vocabulario y renovaciones de proveedores contra el CONTEXT, vocabulario, etiquetas de sede y transiciones del gestor contra su CONTEXT, envío/listado/reversión optimista/resumen del gestor, y una revisión estática del código de producción. Esa revisión comprueba: sin `any`; `unknown` solo en `services/normalizers.ts`; `fetch`, `JSON.stringify` y `Authorization` solo en `lib/api-client.ts`; `localStorage` solo en `lib/auth-token.ts`; sin lectura del archivo; sin borrado de proveedores; existen `app/error.tsx`, `app/global-error.tsx` y `app/not-found.tsx`, que no leen el error y enlazan a inicio; y ningún texto de la UI muestra detalles técnicos. `tests/support/resolve-alias.mjs` resuelve el alias `@/` para Node sin tocar `tsconfig.json`. El aviso `MODULE_TYPELESS_PACKAGE_JSON` se silencia porque `package.json` no declara `"type"`.
 
 La unión con React (montaje/desmontaje), la descarga real y los flujos de autenticación (login, registro, perfil, redirecciones, logout) se validan manualmente en el navegador.
 

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRecords } from '@/hooks/use-records';
+import { describeApiError } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Modal } from '@/components/ui/modal';
@@ -39,6 +40,16 @@ export function CandidateList() {
   } = useRecords();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  // El <dialog> de components/ui/modal.tsx no desmonta su contenido al cerrarse:
+  // cada apertura monta un formulario nuevo (key) para que no arrastre el
+  // estado del intento anterior (errores ni el bloqueo de reenvío tras un
+  // guardado ilegible, lib/submit-error.ts).
+  const [createFormKey, setCreateFormKey] = useState(0);
+
+  function openCreate() {
+    setCreateFormKey((key) => key + 1);
+    setIsCreateOpen(true);
+  }
 
   function handleCreateSuccess() {
     setIsCreateOpen(false);
@@ -54,7 +65,7 @@ export function CandidateList() {
           </h1>
           <p className="text-sm text-ink-muted">Asistente de Dirección · Sede de Valencia</p>
         </div>
-        <Button onClick={() => setIsCreateOpen(true)}>Nueva candidatura</Button>
+        <Button onClick={openCreate}>Nueva candidatura</Button>
       </header>
 
       <CandidateFilters
@@ -82,7 +93,7 @@ export function CandidateList() {
         >
           <p className="text-sm">
             No se pudieron cargar las candidaturas.
-            {error ? ` ${error.message}` : ''}
+            {error ? ` ${describeApiError(error)}` : ''}
           </p>
           <Button variant="secondary" onClick={refetch}>
             Reintentar
@@ -120,6 +131,7 @@ export function CandidateList() {
 
       <Modal open={isCreateOpen} title="Nueva candidatura" onClose={() => setIsCreateOpen(false)}>
         <CandidateForm
+          key={createFormKey}
           mode={{ kind: 'create' }}
           onSuccess={handleCreateSuccess}
           onCancel={() => setIsCreateOpen(false)}

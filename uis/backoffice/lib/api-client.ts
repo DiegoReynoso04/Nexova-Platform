@@ -58,6 +58,7 @@ export interface ApiResponse {
   header(name: string): string | null;
   /** Lee el cuerpo como JSON y lo pasa a `parse`. Lanza `ApiUnexpectedResponseError` si no es JSON. */
   json<T>(parse: (body: JsonValue) => T): Promise<T>;
+  /** Lee el cuerpo como Blob. Lanza `ApiNetworkError` si la lectura falla (salvo abort). */
   blob(): Promise<Blob>;
 }
 
@@ -174,7 +175,16 @@ function wrapResponse(raw: Response): ApiResponse {
       }
       return parse(body);
     },
-    blob: () => raw.blob(),
+    async blob() {
+      try {
+        return await raw.blob();
+      } catch (error) {
+        // Igual que en json(): un abort lo traduce `send` (timeout o cancelación);
+        // cualquier otro fallo al leer el cuerpo es de red. Sin `cause`.
+        if (error instanceof Error && isAbortLike(error)) throw error;
+        throw new ApiNetworkError();
+      }
+    },
   };
 }
 

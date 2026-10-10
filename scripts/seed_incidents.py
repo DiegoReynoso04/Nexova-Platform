@@ -16,7 +16,8 @@ Sin ruta se lee data/raw/incidents/incidents-nexova.csv (ignorado por git).
 Sin --db se usa INCIDENTS_DB_PATH o services/api/data/incidents.json.
 
 Códigos de salida: 0 correcto; 1 CSV inexistente, ilegible o con una cabecera
-sin las columnas del analizador; 2 argumentos, configuración o entorno incorrectos.
+sin las columnas del analizador; 2 argumentos, configuración o entorno incorrectos
+(incluida una base TinyDB que no se puede abrir o escribir, o que está corrupta).
 """
 
 import argparse
@@ -28,6 +29,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CSV = REPO_ROOT / "data" / "raw" / "incidents" / "incidents-nexova.csv"
 VENV_HINT = "run it with the services/api virtualenv (see services/api/README.md)"
+DB_HINT = "check --db / INCIDENTS_DB_PATH, the file permissions and that it is a valid TinyDB file"
 
 # Funciona sin instalar los paquetes del monorepo: si no están en el entorno, se
 # usan las copias del repositorio. tinydb y pydantic sí deben estar instalados
@@ -41,6 +43,7 @@ try:
     from nexova_shared.incidents import SeedBatch, prepare_seed_batch
 
     from app.core.config import ConfigError, Settings
+    from app.core.errors import StorageUnavailableError
     from app.modules.incident_manager.repository import IncidentRepository, SeedResult
 except ModuleNotFoundError as missing:
     print(f"error: missing module {missing.name!r}; {VENV_HINT}", file=sys.stderr)
@@ -71,6 +74,14 @@ def read_batch(csv_file: Path) -> SeedBatch:
             pass
     # Fuera del `except`: el error original guarda los bytes leídos.
     raise IncidentFileError("the file is not valid UTF-8")
+
+
+def describe_os_error(error: OSError) -> str:
+    """`strerror` puede ser `None` (OSError sin errno): entonces, el nombre de la clase.
+
+    Copia local de la de scripts/analyze.py: los scripts no se importan entre sí.
+    """
+    return error.strerror or type(error).__name__
 
 
 def render_report(batch: SeedBatch, result: SeedResult, csv_name: str, db_path: Path) -> str:
@@ -114,10 +125,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 1
     except OSError as error:
-        print(f"error: cannot read {args.csv_file}: {error.strerror}", file=sys.stderr)
+        print(f"error: cannot read {args.csv_file}: {describe_os_error(error)}", file=sys.stderr)
         return 1
 
-    result = IncidentRepository(db_path).seed(batch.incidents)
+    try:
+        result = IncidentRepository(db_path).seed(batch.incidents)
+    except StorageUnavailableError:
+        # El repositorio ya registró el almacén y la clase del error
+        # (log_storage_failure). Aquí solo el nombre del archivo, nunca la ruta
+        # completa ni el mensaje original.
+        print(f"error: cannot open or write the incidents database ({db_path.name}); {DB_HINT}", file=sys.stderr)
+        return 2
     print(render_report(batch, result, args.csv_file.name, db_path))
     return 0
 

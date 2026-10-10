@@ -13,6 +13,10 @@
 import { clearAuthToken, readAuthToken } from '@/lib/auth-token';
 import type { ValidationError } from '@/types/api';
 
+import { ResponseShapeError } from '@/lib/response-shape-error';
+
+export { ResponseShapeError };
+
 const RAW_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 if (!RAW_API_BASE_URL) {
@@ -85,6 +89,29 @@ export class UnauthorizedError extends ApiError {
   }
 }
 
+// 2xx o error HTTP cuyo cuerpo no es JSON legible. `status` permite saber si
+// la operación llegó a aplicarse (2xx) aunque no se pueda leer la respuesta.
+export class UnreadableResponseError extends ApiError {
+  constructor(status: number) {
+    super('La API devolvió una respuesta ilegible', status);
+    this.name = 'UnreadableResponseError';
+  }
+}
+
+// Valor lanzado que no es un Error (p. ej. `throw 'x'`). Sustituye a
+// `new Error(String(valor))`: el valor no se convierte en texto ni se muestra.
+export class UnknownClientError extends Error {
+  constructor() {
+    super('Error desconocido');
+    this.name = 'UnknownClientError';
+  }
+}
+
+/** El valor capturado como Error, conservando su clase para clasificarlo. */
+export function asError(caught: unknown): Error {
+  return caught instanceof Error ? caught : new UnknownClientError();
+}
+
 // Solo por el timeout propio de request() (ver más abajo): nunca por el
 // nombre del error, que también es "AbortError" en un abort ajeno.
 export class TimeoutError extends NetworkError {
@@ -154,8 +181,6 @@ function parseValidationDetail(body: unknown): ValidationError[] | null {
   ];
 }
 
-const UNREADABLE_RESPONSE_MESSAGE = 'La API devolvió una respuesta ilegible';
-
 // `none`: API de 4Geeks (sin token). `bearer`: ruta protegida de services/api.
 // `public`: login y registro en services/api (sin token; su 401 significa
 // "credenciales incorrectas" y lo interpreta el servicio).
@@ -187,77 +212,84 @@ async function request(
   outgoing: OutgoingRequest,
   auth: AuthMode = 'none'
 ): Promise<unknown> {
-  let response: Response;
   const init = buildInit(outgoing, auth);
 
+  // El timeout cubre la petición y la lectura del cuerpo (response.json()):
+  // un cuerpo que no termina de llegar también acaba en TimeoutError. El
+  // finally de fuera limpia el temporizador en todos los caminos.
   const controller = new AbortController();
   let timedOut = false;
   const timeoutId = setTimeout(() => {
     timedOut = true;
     controller.abort();
   }, REQUEST_TIMEOUT_MS);
+  const hasTimedOut = () => timedOut;
 
   try {
-    // Nunca se establece `credentials`: CORS de la API es Allow-Origin: * +
-    // Allow-Credentials: true, combinación inválida (§5.1).
-    response = await fetch(`${baseUrl}${path}`, { ...init, signal: controller.signal });
-  } catch (cause) {
-    // La bandera decide, no el nombre del error: un abort por nuestro
-    // timeout y uno por desmontaje de la página (o cualquier otro motivo
-    // ajeno) son ambos AbortError.
-    if (timedOut) {
-      throw new TimeoutError();
+    let response: Response;
+    try {
+      // Nunca se establece `credentials`: CORS de la API es Allow-Origin: * +
+      // Allow-Credentials: true, combinación inválida (§5.1).
+      response = await fetch(`${baseUrl}${path}`, { ...init, signal: controller.signal });
+    } catch (cause) {
+      // La bandera decide, no el nombre del error: un abort por nuestro
+      // timeout y uno por desmontaje de la página (o cualquier otro motivo
+      // ajeno) son ambos AbortError.
+      if (timedOut) {
+        throw new TimeoutError();
+      }
+      if (isAbortError(cause)) {
+        // No es nuestro timeout: se relanza tal cual. No es un fallo que
+        // deba mostrarse al usuario (p. ej. la navegación cerrando la
+        // página a mitad de la petición).
+        throw cause;
+      }
+      throw new NetworkError(cause);
     }
-    if (isAbortError(cause)) {
-      // No es nuestro timeout: se relanza tal cual. No es un fallo que
-      // deba mostrarse al usuario (p. ej. la navegación cerrando la
-      // página a mitad de la petición).
-      throw cause;
+
+    // §5.4 — comprobar 204 ANTES de intentar parsear el cuerpo
+    if (response.status === 204) {
+      return undefined;
     }
-    throw new NetworkError(cause);
+
+    if (!response.ok) {
+      if (response.status === 401 && auth === 'bearer') {
+        clearAuthToken();
+        throw new UnauthorizedError();
+      }
+
+      // §5.4 — la detección de 404 se basa en el status, nunca en el cuerpo
+      if (response.status === 404) {
+        throw new NotFoundError();
+      }
+
+      if (response.status === 422) {
+        const detail = parseValidationDetail(await readJson(response, hasTimedOut));
+        if (detail === null) {
+          throw new UnreadableResponseError(response.status);
+        }
+        throw new ValidationApiError(detail);
+      }
+
+      // El mensaje no lleva el código: describeApiError clasifica por `status`.
+      throw new ApiError('La API rechazó la petición', response.status);
+    }
+
+    return await readJson(response, hasTimedOut);
   } finally {
     clearTimeout(timeoutId);
   }
+}
 
-  // §5.4 — comprobar 204 ANTES de intentar parsear el cuerpo
-  if (response.status === 204) {
-    return undefined;
-  }
-
-  if (!response.ok) {
-    if (response.status === 401 && auth === 'bearer') {
-      clearAuthToken();
-      throw new UnauthorizedError();
-    }
-
-    // §5.4 — la detección de 404 se basa en el status, nunca en el cuerpo
-    if (response.status === 404) {
-      throw new NotFoundError();
-    }
-
-    if (response.status === 422) {
-      let body: unknown;
-      try {
-        body = await response.json();
-      } catch {
-        throw new ApiError(UNREADABLE_RESPONSE_MESSAGE, response.status);
-      }
-
-      const detail = parseValidationDetail(body);
-      if (detail === null) {
-        throw new ApiError(UNREADABLE_RESPONSE_MESSAGE, response.status);
-      }
-
-      throw new ValidationApiError(detail);
-    }
-
-    throw new ApiError(`La API respondió con el código ${response.status}`, response.status);
-  }
-
+// Lee el cuerpo como JSON. Si el temporizador corta la lectura → TimeoutError;
+// si el cuerpo no es JSON (o la conexión se corta) → UnreadableResponseError,
+// sin el SyntaxError original (puede citar fragmentos del cuerpo).
+async function readJson(response: Response, hasTimedOut: () => boolean): Promise<unknown> {
   try {
     return await response.json();
   } catch {
-    throw new ApiError(UNREADABLE_RESPONSE_MESSAGE, response.status);
+    if (hasTimedOut()) throw new TimeoutError();
+    throw new UnreadableResponseError(response.status);
   }
 }
 
@@ -304,15 +336,51 @@ export const authApiClient = {
     request(AUTH_API_BASE_URL, path, { method: 'POST', body: form }, 'public'),
 };
 
-// Mensaje legible único a partir de cualquier error de este cliente
-// (§5.4: "otros 4xx/5xx: mensaje legible").
+// Clasificación de cualquier error capturado (§5.4: "otros 4xx/5xx: mensaje
+// legible"; red y timeout se distinguen de los errores HTTP).
+export type ApiErrorKind =
+  | 'validation'
+  | 'network'
+  | 'timeout'
+  | 'unauthorized'
+  | 'not_found'
+  | 'client'
+  | 'server'
+  | 'unreadable'
+  | 'unknown';
+
+export function classifyApiError(error: unknown): ApiErrorKind {
+  if (error instanceof ValidationApiError) return 'validation';
+  if (error instanceof TimeoutError) return 'timeout';
+  if (error instanceof NetworkError) return 'network';
+  if (error instanceof UnauthorizedError) return 'unauthorized';
+  if (error instanceof NotFoundError) return 'not_found';
+  if (error instanceof UnreadableResponseError || error instanceof ResponseShapeError) return 'unreadable';
+  if (error instanceof ApiError) return error.status >= 500 ? 'server' : 'client';
+  return 'unknown';
+}
+
+// Textos fijos por tipo: nunca el código HTTP, el mensaje de un normalizador
+// ni String(error). Solo el 422 muestra los `msg` de la API (§5.4).
+export const API_ERROR_MESSAGES: Readonly<Record<Exclude<ApiErrorKind, 'validation'>, string>> = {
+  network: 'No se pudo conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo.',
+  timeout: 'El servidor tardó demasiado en responder. Inténtalo de nuevo.',
+  unauthorized: 'La sesión ha caducado. Vuelve a iniciar sesión.',
+  not_found: 'No se encontró lo que buscabas. Puede que ya no exista.',
+  client: 'El servidor rechazó la petición. Revisa los datos e inténtalo de nuevo.',
+  server: 'El servidor tuvo un problema. Inténtalo de nuevo en unos minutos.',
+  unreadable: 'El servidor respondió de forma inesperada. Inténtalo de nuevo; si se repite, avisa al equipo técnico.',
+  unknown: 'No se pudo completar la operación. Inténtalo de nuevo.',
+};
+
+const VALIDATION_FALLBACK_MESSAGE = 'Revisa los datos e inténtalo de nuevo.';
+
+// Mensaje legible único a partir de cualquier error capturado.
 export function describeApiError(error: unknown): string {
   if (error instanceof ValidationApiError) {
     const detailMessage = error.detail.map((item) => item.msg).join(' ');
-    return detailMessage || error.message;
+    return detailMessage || VALIDATION_FALLBACK_MESSAGE;
   }
-  if (error instanceof ApiError || error instanceof NetworkError) {
-    return error.message;
-  }
-  return 'No se pudo completar la operación. Inténtalo de nuevo.';
+  const kind = classifyApiError(error);
+  return kind === 'validation' ? VALIDATION_FALLBACK_MESSAGE : API_ERROR_MESSAGES[kind];
 }

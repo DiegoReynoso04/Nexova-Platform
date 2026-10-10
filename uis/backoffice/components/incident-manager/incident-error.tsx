@@ -13,7 +13,7 @@ export function copyFor(error: IncidentUiError): ErrorCopy {
   switch (error.kind) {
     case 'validation':
       return error.source === 'api'
-        ? { title: 'La API rechazó los datos', body: 'Corrige los campos indicados y vuelve a intentarlo.' }
+        ? { title: 'El servidor rechazó los datos', body: 'Corrige los campos indicados y vuelve a intentarlo.' }
         : { title: 'Revisa los datos', body: 'Corrige los campos indicados antes de enviar.' };
     case 'invalid_transition':
       return {
@@ -25,23 +25,23 @@ export function copyFor(error: IncidentUiError): ErrorCopy {
     case 'request_invalid':
       return { title: 'La solicitud no es válida', body: 'Revisa los datos e inténtalo de nuevo.' };
     case 'server_error':
-      return { title: 'Error del servidor', body: 'La API no pudo completar la operación. Inténtalo de nuevo más tarde.' };
+      return { title: 'Error del servidor', body: 'El servidor no pudo completar la operación. Inténtalo de nuevo en unos minutos.' };
     case 'network':
       return {
-        title: 'No se pudo conectar con la API',
-        body: 'Comprueba que la API (services/api) está en marcha y es accesible desde este navegador.',
+        title: 'No se pudo conectar con el servidor',
+        body: 'Comprueba tu conexión e inténtalo de nuevo. Si el problema continúa, avisa al equipo técnico.',
       };
     case 'timeout':
-      return { title: 'La operación tardó demasiado', body: 'La API no respondió a tiempo. Inténtalo de nuevo.' };
+      return { title: 'La operación tardó demasiado', body: 'El servidor no respondió a tiempo. Inténtalo de nuevo.' };
     case 'unexpected_response':
       return {
-        title: 'Respuesta inesperada de la API',
+        title: 'Respuesta inesperada del servidor',
         body: 'La respuesta no tiene el formato esperado, así que no se muestra ningún dato.',
       };
     case 'config':
       return {
-        title: 'Falta la configuración del backoffice',
-        body: 'La dirección de la API (NEXT_PUBLIC_API_URL) no está configurada.',
+        title: 'La aplicación no está bien configurada',
+        body: 'Avisa al equipo técnico para que la revise.',
       };
     case 'session_expired':
       return { title: 'La sesión ha caducado', body: 'Vuelve a iniciar sesión para continuar.' };

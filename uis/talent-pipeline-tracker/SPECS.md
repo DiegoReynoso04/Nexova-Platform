@@ -557,6 +557,11 @@ Reglas para `lib/api-client.ts`:
 * **Otros códigos 4xx/5xx:** error genérico con mensaje legible y opción de reintento.
 * **Errores de red / `fetch` rechazado:** se distinguen de los errores HTTP y ofrecen reintento explícito.
 * El cliente **no** silencia errores ni devuelve valores por defecto ante un fallo.
+* **Mensaje legible** (auditoría de gestión de errores, 2026-10-10):
+  * `describeApiError` elige un texto fijo por tipo de error: red, timeout, 401, 404, otros 4xx, 5xx, respuesta ilegible o fuera de contrato, y desconocido.
+  * Nunca incluye el código HTTP ni el mensaje descriptivo de un normalizador (§3.1): ese mensaje sigue existiendo para depurar, pero no se muestra.
+  * El timeout cubre también la lectura del cuerpo.
+  * Tras un `POST`/`PUT` que responde 2xx con un cuerpo ilegible, la UI informa de que se guardó y pide recargar, en lugar de invitar a reenviar.
 
 ---
 

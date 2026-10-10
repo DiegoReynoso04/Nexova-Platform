@@ -4,6 +4,7 @@
 // (queda obsoleto tras crear/eliminar una nota).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { asError } from '@/lib/api-client';
 import { addNote as addNoteRequest, deleteNote as deleteNoteRequest, getNotes } from '@/services/notes.service';
 import type { Note } from '@/types/record';
 
@@ -54,7 +55,7 @@ export function useNotes(recordId: string): UseNotesResult {
         setState((prev) => ({
           ...prev,
           status: 'error',
-          error: error instanceof Error ? error : new Error(String(error)),
+          error: asError(error),
         }));
       });
   }, [recordId]);
@@ -78,7 +79,7 @@ export function useNotes(recordId: string): UseNotesResult {
         setState((prev) => ({ ...prev, notes: [...prev.notes, created] }));
         return true;
       } catch (error) {
-        setAddNoteError(error instanceof Error ? error : new Error(String(error)));
+        setAddNoteError(asError(error));
         return false;
       } finally {
         setIsAddingNote(false);
@@ -102,7 +103,7 @@ export function useNotes(recordId: string): UseNotesResult {
         setState((prev) => ({ ...prev, notes: prev.notes.filter((note) => note.id !== noteId) }));
         return true;
       } catch (error) {
-        setDeleteNoteError(error instanceof Error ? error : new Error(String(error)));
+        setDeleteNoteError(asError(error));
         return false;
       } finally {
         setDeletingNoteId(null);

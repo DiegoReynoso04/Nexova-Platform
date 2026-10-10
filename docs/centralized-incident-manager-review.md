@@ -59,7 +59,7 @@ Duplicadas en el archivo (no insertadas): 0
 Total de incidencias en la base: 96
 ```
 
-Segunda ejecución del mismo comando: `Insertadas: 0`, `Ya existentes (omitidas): 96`, `Total de incidencias en la base: 96` (idempotente). Códigos de salida: `0` correcto; `1` si el CSV no existe o su cabecera no es la del analizador.
+Segunda ejecución del mismo comando: `Insertadas: 0`, `Ya existentes (omitidas): 96`, `Total de incidencias en la base: 96` (idempotente). Códigos de salida: `0` correcto; `1` si el CSV no existe o su cabecera no es la del analizador; `2` si la base (`--db`/`INCIDENTS_DB_PATH`) no se puede abrir o escribir, o está corrupta (sin traceback).
 
 > El fixture es **sintético** (100 filas, no son datos de Nexova) y reproduce las cifras del dataset real. El CSV real (`incidents-nexova.csv`) no está en el repositorio: si se tiene, se pasa su ruta en lugar del fixture.
 
