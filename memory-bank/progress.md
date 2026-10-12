@@ -4,6 +4,53 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-12 — AUTH-088, F4: tests de recuperación y cambio de contraseña
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`, después de F3 (`d7565a6`). No ha destapado ningún bug.
+
+**Qué se hizo** (sin TestClient: rutas, servicio y repositorio llamados directamente):
+- **`conftest.py`:**
+  - `fake_request()`: un `Request` mínimo con IP de TEST-NET-3, para la auditoría;
+  - `read_table`: lee una tabla de la base temporal;
+  - `bcrypt_verify_calls`: el espía de bcrypt, movido aquí desde `test_login.py` porque ahora lo usan dos archivos.
+- **`test_forgot_password.py`:** 8 tests (FP1–FP4). La ruta se llama con un `BackgroundTasks` real y se inspeccionan las tareas encoladas:
+  - email registrado: en la base solo el SHA-256 (el token en claro no aparece en el archivo), `expires_at` según el reloj, auditoría `reset_requested` con IP, y la tarea encolada envía el enlace con ese token;
+  - email desconocido o usuario inactivo: la misma respuesta, sin fila de token, sin tarea y con la auditoría `unknown_email` sin `user_id`;
+  - email normalizado; un único pendiente tras dos peticiones (el primero da `UNKNOWN`); purga de los caducados de otros usuarios;
+  - el sender que falla y `DisabledEmailSender`: no lanzan, y el log de `nexova.api` es exactamente «… could not be delivered: <Clase>», sin traza, sin email y sin token (con `tests/support.capture_logs`).
+- **`test_reset_password.py`:** 14 tests (RP1–RP4 y la concurrencia):
+  - la contraseña nueva vale y la antigua no; `used_at` y la auditoría `reset_completed`;
+  - 1 s antes de `expires_at` es válido; justo en `expires_at`, `EXPIRED`;
+  - tras un reset correcto, los demás pendientes dejan de valer. El segundo pendiente se fabrica a mano, porque hoy `replace_reset_token` deja uno solo: es defensa en profundidad;
+  - usado, caducado, anulado por un enlace nuevo o por change-password, usuario borrado o inactivo, y desconocido → el mismo `InvalidResetTokenError`, sin cambiar el usuario, y la auditoría `reset_rejected` con el motivo real. El `user_id` es `None` cuando la fila del token ya no existe;
+  - token `""` o de 513 caracteres → validación (512 se acepta).
+- **Concurrencia (caso de la IA):** dos `consume_reset_token` con el mismo token, `threading.Barrier(2)` y `sys.setswitchinterval(1e-6)`, sin sleeps, 25 rondas: siempre `[used, valid]`. Los errores de los hilos se anotan en el resultado para que el assert diga qué pasó. Determinista: 20 de 20 ejecuciones en verde.
+  - **Bloqueos:** `join(timeout=10)` y `assert not thread.is_alive()` («posible bloqueo en consume_reset_token»), con los hilos `daemon`. Comprobado con un deadlock provocado (adquirir dos veces el lock no reentrante): sin `daemon`, el test fallaba pero pytest no terminaba nunca; con `daemon`, falla a los 10 s y el proceso termina.
+  - **Medido con un script desechable** (subclase sin lock, 200 rondas): con lock, 200/200 correctas. Sin lock y con `switchinterval` 1e-6, ninguna ronda correcta: 31 con dos `VALID`, 167 con el archivo TinyDB corrupto (503) y 2 mixtas. Con el intervalo por defecto, 197 corruptas y 2 con doble `VALID`.
+  - Conclusión: el lock evita también que la base se corrompa, no solo el doble uso.
+- **`test_change_password.py`:** 6 tests (CP1–CP3):
+  - cambia la contraseña, la auditoría `password_changed` lleva la IP y se purgan los enlaces de reset;
+  - la nueva igual a la actual se acepta (D-PWD-10);
+  - una actual de más de 72 bytes, o con NUL (cierra el caso del fix `988ff96`), es incorrecta sin llegar a bcrypt;
+  - una actual incorrecta da 400 (no 401), sin cambios y con la auditoría `password_change_rejected`;
+  - usuario borrado tras autenticarse → `UserNotFoundError`, sin recrearlo ni auditar el cambio.
+
+**Validación:**
+- Suite completa: de 427 a **455 OK**. Los tres archivos nuevos solos: 28 OK.
+- `uv run pytest --durations=10` antes de F4: ~1:15 en total. Los 10 tests más lentos son de la suite antigua (TestClient y bcrypt), ninguno de F2/F3; los 5:54 de una ejecución de F3 fueron carga de la máquina.
+- Cobertura de auth: **86 %** solo con F2+F3+F4 y **99 %** con la suite completa. Sin cubrir con los nuevos: el cableado de FastAPI en `dependencies.py`, el sender de Resend y `create-admin`, que cubre la suite antigua.
+- Mutaciones, todas detectadas y deshechas, con `app/` intacto según `git diff`:
+  - `<=` → `<` en la caducidad de `consume_reset_token` → falla el test de `expires_at` exacto;
+  - no invalidar los pendientes al pedir un enlace nuevo → fallan el del pendiente único y el de «anulado por un enlace nuevo»;
+  - no purgar los resets en change-password → fallan el CP1 y el de «anulado por change-password»;
+  - no marcar `used_at` → fallan 4 tests: RP1, la purga, «ya usado» y la concurrencia;
+  - quitar el lock de `consume` → falla la concurrencia 10 de 10 veces (8 por archivo corrupto, 1 mixta y 1 por dos `VALID`);
+  - que forgot-password encole también para desconocidos → fallan los 2 casos de FP2;
+  - extra: el reset no purga los otros pendientes → falla el test de la purga.
+- `services/api/data/*.json`: huella idéntica.
+
+---
+
 ## 2026-10-12 — AUTH-088, F3: tests de registro, usuarios y perfiles (y el bug del byte NUL)
 
 **Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`: el fix en `988ff96` (`fix(api)`) y los tests en el commit siguiente (`test(api)`).

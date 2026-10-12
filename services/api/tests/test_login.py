@@ -9,8 +9,6 @@ de respuesta cuando el email no existe o es inválido, para no revelar qué
 emails están registrados (SPECS §19). Los tests lo espían con monkeypatch.
 """
 
-from collections.abc import Callable
-
 import pytest
 from fastapi.security import OAuth2PasswordRequestForm
 
@@ -40,20 +38,6 @@ def burn_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
     monkeypatch.setattr(auth_routes, "burn_password_check", spy)
     monkeypatch.setattr(service_module, "burn_password_check", spy)
-    return calls
-
-
-@pytest.fixture
-def bcrypt_verify_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Espía de la comparación bcrypt real: anota cada contraseña comparada y delega en la original."""
-    calls: list[str] = []
-    original: Callable[[str, str], bool] = security.bcrypt.verify
-
-    def spy(password: str, hashed: str) -> bool:
-        calls.append(password)
-        return original(password, hashed)
-
-    monkeypatch.setattr(security.bcrypt, "verify", spy)
     return calls
 
 

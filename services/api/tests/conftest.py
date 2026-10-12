@@ -19,11 +19,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import Request
 from tinydb import Query, TinyDB
 
 from app.auth.email import EmailMessage
 from app.auth.models import ProfileFields, UserInDB, UserRole
 from app.auth.repository import PROFILES_TABLE, AuthRepository
+import app.auth.security as security
 from app.auth.security import hash_password
 from app.auth.service import UserService
 from app.core.config import Settings
@@ -145,6 +147,42 @@ def make_user(auth_repo: AuthRepository, known_password: tuple[str, str]) -> Mak
         return user, plain
 
     return _make
+
+
+@pytest.fixture
+def bcrypt_verify_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Espía de la comparación bcrypt real: anota cada contraseña comparada y delega en la original."""
+    calls: list[str] = []
+    original: Callable[[str, str], bool] = security.bcrypt.verify
+
+    def spy(password: str, hashed: str) -> bool:
+        calls.append(password)
+        return original(password, hashed)
+
+    monkeypatch.setattr(security.bcrypt, "verify", spy)
+    return calls
+
+
+CLIENT_IP = "203.0.113.7"  # TEST-NET-3 (RFC 5737): nunca es una IP real
+
+
+def fake_request(ip: str = CLIENT_IP) -> Request:
+    """`Request` mínimo para las rutas que leen la IP del cliente (auditoría de AUTH-03)."""
+    return Request({"type": "http", "client": (ip, 50000)})
+
+
+ReadTable = Callable[[str], list[dict[str, Any]]]
+
+
+@pytest.fixture
+def read_table(auth_repo: AuthRepository) -> ReadTable:
+    """Filas de una tabla de la base temporal, para comprobar lo que se guardó de verdad."""
+
+    def _read(table: str) -> list[dict[str, Any]]:
+        with TinyDB(auth_repo.path, storage=GuardedJSONStorage, store=Store.AUTH, encoding="utf-8") as db:
+            return [dict(row) for row in db.table(table).all()]
+
+    return _read
 
 
 @pytest.fixture
