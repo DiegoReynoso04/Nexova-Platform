@@ -1,5 +1,6 @@
-// Jest para la lógica TypeScript de autenticación (AUTH-088). Convive con los
-// tests de `node --test` de tests/*.test.mjs: Jest solo recoge __tests__/**/*.test.ts.
+// Jest para la lógica TypeScript de autenticación (AUTH-088) y las utilidades del
+// frontend (FE-019). Convive con los tests de `node --test` de tests/*.test.mjs:
+// Jest solo recoge __tests__/**/*.test.ts.
 // Plan, comandos y cobertura: services/api/TESTING.md.
 
 /** @type {import('jest').Config} */
@@ -19,6 +20,10 @@ const config = {
     'services/auth.service.ts',
     'services/normalizers.ts',
     'hooks/use-auth-session.ts',
+    // Utilidades del frontend (__tests__/utils/).
+    'lib/supplier-renewal.ts',
+    'services/suppliers.service.ts',
+    'services/incident-manager.service.ts',
   ],
 };
 
