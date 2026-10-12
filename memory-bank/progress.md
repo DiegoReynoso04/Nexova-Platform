@@ -4,6 +4,61 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-12 — AUTH-088, F3: tests de registro, usuarios y perfiles (y el bug del byte NUL)
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`: el fix en `988ff96` (`fix(api)`) y los tests en el commit siguiente (`test(api)`).
+
+**Qué se hizo** (todo sin TestClient: rutas, servicio, repositorio y modelos llamados directamente, con las fixtures de `conftest.py`):
+- **`test_register.py`:** 27 tests (R1–R9 y el NUL):
+  - el usuario se crea con `role=user`, activo, con hash verificable y con perfil, y la respuesta va sin hash;
+  - el email se guarda normalizado; el duplicado exacto, en mayúsculas o con espacios da 409 y no crea un segundo perfil;
+  - contraseña de 7/8 caracteres y de 72/73 bytes; multibyte (ñ×36 OK, ñ×37 error, 😀×18 OK, 😀×19 error, ñ×7 error);
+  - email o contraseña vacíos; campos prohibidos (`role`, incluso `user`; `hashed_password`, `id`, `is_active`, `user_id`) → `extra_forbidden`;
+  - email de 254/255 caracteres; perfil recortado y de 200/201 caracteres;
+  - el NUL en cada modelo de contraseña nueva (`UserCreate`, `UserUpdate`, `ResetPasswordRequest`, `ChangePasswordRequest`) → error de validación y bcrypt no se llama (espía de `hash` y `verify`).
+- **`test_users.py`:** 25 tests (U1–U11):
+  - el admin lista sin hashes; `require_admin` con `user` y `manager` → 403;
+  - GET: uno mismo y el admin OK; el admin sobre un inexistente → 404; un no-admin sobre otro → 403, exista o no;
+  - PUT: email propio normalizado; cuerpo vacío, `password: null` y `role: null` sin cambios y sin 403; el email propio en mayúsculas no da 409; el email de otro (también en mayúsculas) → 409 sin cambios;
+  - H-1: `password` de `user`/`manager` → 403 y no se aplica nada (tampoco el email de la misma petición); `role` de un no-admin → 403; con `role` y `password` a la vez gana la regla del rol;
+  - el admin fija la contraseña y el rol de otro; el admin sobre un inexistente (vacío o con email) → 404 y no lo crea;
+  - DELETE propio: borra el perfil y el token antiguo da 401; un no-admin sobre otro → 403; el admin sobre un inexistente y el doble borrado → 404.
+- **`test_profiles.py`:** 10 tests (P1–P4): GET y PUT parcial; `null` borra, el cuerpo vacío no cambia nada, `strip` y 200/201; campos extra (`user_id`, `id`, `email`) → `extra_forbidden`; un usuario sin perfil → `ProfileNotFoundError` en GET y PUT, y el PUT no lo crea.
+- **`test_login.py`** (en el commit del fix): un NUL con email existente o desconocido → el mismo `InvalidCredentialsError`, sin llegar a bcrypt (espía con control positivo).
+
+**Bug encontrado y corregido** (la entrada para «Bugs encontrados» de `services/api/TESTING.md`, F5):
+- **Qué lo destapó:** el caso propuesto por la IA y aprobado por el usuario «byte NUL en la contraseña: ¿error de validación o excepción de bcrypt que sería un 500?». Se comprobó llamando a la lógica y con un diagnóstico HTTP desechable sobre una TinyDB temporal, fuera del repo.
+- **Síntoma:** `500 internal_error` en `POST /users`, en `POST /auth/login` (con el email existente o desconocido), en `POST /auth/reset-password`, en `POST /auth/change-password` (la contraseña nueva y la actual) y en el `PUT /users/{id}` del admin con `password` (este último, por el mismo `hash_password`; no se probó por HTTP).
+- **Causa:** bcrypt no admite el byte NUL y passlib lanza `PasswordValueError` al hashear o comparar. Ni `_check_password` (`app/auth/models.py`) ni `verify_password` (`app/auth/security.py`) lo tenían en cuenta; `burn_password_check` pasa por `verify_password` y también lanzaba la excepción.
+- **Corrección (opción a del usuario):** se trata igual que el límite de 72 bytes.
+  - `_check_password` rechaza el NUL: 422 en las cuatro entradas de contraseña nueva.
+  - `verify_password` devuelve `False` sin llamar a bcrypt, porque ninguna contraseña registrada puede contenerlo.
+  - `burn_password_check` no lleva una comprobación propia: hereda la de `verify_password`, igual que con los 72 bytes. Así, el login con un NUL da el mismo 401 exista o no el email, y por los dos caminos sin bcrypt. Una contraseña actual con NUL da el 400 `incorrect_password`.
+  - Una frase en `SPECS.md` D-AUTH-7.
+  - Verificado al leer el código: las cuatro contraseñas nuevas usan `Password` (`_check_password`). `ChangePasswordRequest.current_password` no lo usa, y es correcto que no: se compara, no se hashea; lo cubre `verify_password`.
+- **Commit:** `988ff96` (`fix(api)`).
+- **Tests que lo fijan:**
+  - `test_login.py::test_password_with_nul_byte_fails_like_bad_credentials_without_reaching_bcrypt`;
+  - `test_register.py::test_new_password_with_nul_byte_is_rejected_before_reaching_bcrypt` (4 casos);
+  - el de la contraseña actual queda para `test_change_password.py` (F4).
+
+**Validación:**
+- Suite completa (`uv run pytest`): de 365 (364 de F2 + el test de login del fix) a **427 OK**. Los tres archivos nuevos solos: 62 OK en unos 4 s. El comando `unittest` de `AGENTS.md`: 312 OK (no descubre los tests de estilo pytest).
+- Cobertura del módulo de auth (`app/auth/*` y `app/routes/{auth,users,profiles}.py`): **71 %** solo con los tests de F2+F3; **98 %** con la suite completa.
+- Mutaciones, todas detectadas y deshechas, con `app/` intacto según `git diff`:
+  - quitar H-1 en `update_user` → fallan los 2 casos (user/manager) del test de H-1;
+  - invertir el orden role/password → falla `test_role_rule_is_checked_before_the_password_rule`;
+  - quitar `normalize_email` → fallan 8 tests de registro y usuarios;
+  - 72 bytes → 72 caracteres → fallan ñ×37 y 😀×19;
+  - no borrar el perfil en `delete_user` → falla el test del borrado propio;
+  - quitar el NUL de `_check_password` → fallan los 4 casos de los modelos;
+  - quitar el NUL de `verify_password`, o un burn que llame a bcrypt directamente → falla el test de login con NUL.
+- `services/api/data/*.json`: huella idéntica.
+
+**Pendiente:** `services/api/README.md` (línea de contraseñas) y la fila «Validación de entrada» de `docs/auth-password-reset.md` §11 todavía no mencionan el NUL; se revisan en F5 junto con `TESTING.md`.
+
+---
+
 ## 2026-10-11 — AUTH-088, F2: tests de token, configuración y login (y el bug que destaparon)
 
 **Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`: el fix en `65cfb36` (`fix(api)`) y los tests en el commit siguiente (`test(api)`), después de F1 (`42c4529`).
