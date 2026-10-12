@@ -4,6 +4,58 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-12 — AUTH-088, F6: Jest para la lógica TypeScript de autenticación (`uis/backoffice`)
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`, después de F5 (`f482e02`). No ha destapado ningún bug.
+
+**Dependencias** (autorizadas por el ticket; solo `devDependencies`):
+- **Versiones:** `jest ^30.5.2`, `ts-jest ^29.4.14` y `@types/jest ^30.0.0`.
+- **Compatibilidad comprobada con `npm view`:** ts-jest 29.4.14 declara `jest ^29 || ^30` y `typescript >=4.3 <7`; el TypeScript instalado es la 5.9.3. @types/jest 30 corresponde a Jest 30.
+- **`package-lock.json`:** solo altas (243 paquetes). Ninguna versión existente cambia ni se elimina; solo cambian las `devDependencies` de la entrada raíz. Con el algoritmo `histogram`, el diff son 3578 inserciones y 0 borrados; el diff por defecto de git aparenta 2306 borrados por cómo alinea.
+- **`@parcel/watcher` 2.6.0:** transitiva de `jest-haste-map`. npm no ejecutó su install script (política `allowScripts`) y no se ha aprobado; Jest funciona sin él.
+
+**Qué se hizo:**
+- **`jest.config.mjs`:** entorno `node`; `roots` y `testMatch` limitados a `__tests__/**/*.test.ts`, así que `tests/*.test.mjs` sigue con `node:test`; `@/` → `<rootDir>/`; ts-jest en CommonJS; `.next/` ignorado; `collectCoverageFrom` con los cinco archivos de auth.
+- **`package.json`:** script `"test:jest": "jest --coverage"`.
+- **`coverage/`:** `/coverage` ya estaba en el `.gitignore` del backoffice (plantilla de Next). Se añade `coverage/**` a los ignorados de `eslint.config.mjs`, porque si no ESLint analiza el informe que genera Jest (daba un aviso).
+- **`__tests__/support/`:**
+  - `fake-browser.ts`: Storage en memoria y `window` con `addEventListener` y `removeEventListener`;
+  - `fake-api-client.ts`: cumple la interfaz `ApiClient`.
+  - `__tests__/` queda preparado para las utilidades de FE-019.
+- **`__tests__/auth/`:** 112 tests en 5 archivos:
+  - `auth-token`: con `jest.isolateModules` y `jest.requireActual` por el estado del módulo;
+  - `auth-routes`;
+  - `auth.service`: los `validate*`, los `build*`, `buildLoginForm` y `createAuthService` con el cliente falso;
+  - `normalizers` (parte de auth);
+  - `use-auth-session`: reducer, estado derivado, textos y, además de lo pedido, `createAuthSessionController`.
+- **Añadidos durante la fase** (para cubrir lógica de auth que la cobertura dejó ver): `getCurrentUser` (401 → `session_expired`), `updateProfile`, `requestPasswordReset`, el 422 del registro por campo y `registered_login_failed`.
+
+**Verificado:**
+- `npx jest --coverage` y `npm run test:jest`: 112 OK y código de salida 0.
+- Cobertura de líneas (Jest):
+  - `auth-routes` y `auth-token`: 100 %;
+  - `auth.service`: 93,4 %;
+  - `use-auth-session`: 80,3 % (sin el hook de React);
+  - `normalizers`: 58,5 % (lo no cubierto no es de auth);
+  - total de los cinco archivos: 80,2 %.
+- `npx tsc --noEmit`, `npm run lint` y `npm run build`: limpios.
+- `node:test` con el comando de `AGENTS.md`: 344 de 344 OK.
+- **Mutaciones**, todas detectadas y deshechas, con `git diff -- uis/backoffice/lib uis/backoffice/services uis/backoffice/hooks` vacío:
+  - `readAuthToken` sin `trim` → falla `a token made only of spaces…`;
+  - `/reset-password` tratada como solo pública → falla `/reset-password renders with session authenticated…`;
+  - guardar el token aunque la normalización falle → fallan 2 tests del login;
+  - `normalizeAccessToken` acepta un `expires_in` no entero → fallan 3 tests.
+- **Sin lógica de tokens ni de hash en TypeScript:** buscados `atob`, `jwt-decode`, `bcrypt`, `crypto.subtle` y `createHash` en el código de producción, sin coincidencias. Documentado en `TESTING.md` §10.
+
+**Documentación:**
+- `TESTING.md` §10 (Jest);
+- `uis/backoffice/README.md` («Validación»), con el enlace a `TESTING.md`;
+- `uis/backoffice/CLAUDE.md`: la excepción de dependencias y dónde va cada tipo de test;
+- `AGENTS.md` §4: `npm run test:jest` en la fila del backoffice;
+- `techContext.md`: las dependencias del backoffice.
+
+---
+
 ## 2026-10-12 — AUTH-088, F5: `services/api/TESTING.md` y documentación
 
 **Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`, después de F4 (`9a47153`). A petición del usuario, §6 de `TESTING.md` explica también cómo se usó la IA (propuso el plan y los casos; el desarrollador decidió qué entraba y revisó cada test y corrección). Antes de F5, el test de concurrencia de F4 se ajustó: `join(timeout=10)`, `assert not thread.is_alive()` e hilos `daemon` (va en el commit de F4).

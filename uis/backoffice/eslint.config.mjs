@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Informe de cobertura que genera Jest (`npm run test:jest`).
+    "coverage/**",
   ]),
 ]);
 

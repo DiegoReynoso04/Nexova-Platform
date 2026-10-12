@@ -1,0 +1,25 @@
+// Jest para la lógica TypeScript de autenticación (AUTH-088). Convive con los
+// tests de `node --test` de tests/*.test.mjs: Jest solo recoge __tests__/**/*.test.ts.
+// Plan, comandos y cobertura: services/api/TESTING.md.
+
+/** @type {import('jest').Config} */
+const config = {
+  testEnvironment: 'node',
+  roots: ['<rootDir>/__tests__'],
+  testMatch: ['<rootDir>/__tests__/**/*.test.ts'],
+  modulePathIgnorePatterns: ['<rootDir>/.next/'],
+  moduleNameMapper: { '^@/(.*)$': '<rootDir>/$1' },
+  transform: {
+    // El tsconfig de Next usa `module: esnext` y `moduleResolution: bundler`; Jest necesita CommonJS.
+    '^.+\\.tsx?$': ['ts-jest', { tsconfig: { module: 'commonjs', moduleResolution: 'node', jsx: 'react-jsx' } }],
+  },
+  collectCoverageFrom: [
+    'lib/auth-token.ts',
+    'lib/auth-routes.ts',
+    'services/auth.service.ts',
+    'services/normalizers.ts',
+    'hooks/use-auth-session.ts',
+  ],
+};
+
+export default config;

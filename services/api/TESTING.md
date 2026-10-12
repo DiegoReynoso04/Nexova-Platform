@@ -22,7 +22,7 @@ Desde `services/api` (comprobado en Windows con PowerShell):
 - **`coverage.exe`:** el Control de aplicaciones de Windows (error 4551) puede bloquear los lanzadores `.exe` sin firmar de uv. Durante el desarrollo de esta batería llegó a bloquear `coverage.exe` (hoy arranca). `uv run python -m coverage …` funciona siempre y no depende del `.exe`.
 - **No ejecutes `uv sync`:** sincroniza de forma exacta y desinstala `nexova-shared` y `nexova-incident-analyzer`, que se instalan con pip a propósito (ver [`README.md`](README.md#instalación-desde-la-raíz-del-monorepo)). `uv run` sí los conserva. pytest los encuentra igualmente (`pythonpath` en `pyproject.toml`), pero el comando `unittest` los necesita instalados. Si se perdieron, reinstálalos desde la raíz: `services\api\.venv\Scripts\python -m pip install --no-deps -e packages/shared -e packages/incident-analyzer`.
 
-**Jest (lógica TypeScript de auth en `uis/backoffice`):** *pendiente de F6.*
+**Jest (lógica TypeScript de auth en `uis/backoffice`):** ver §10.
 **Extras API-042 y FE-019:** *pendientes de F7 y F8 (opcionales).*
 
 ## 3. Plan de pruebas
@@ -141,3 +141,37 @@ Medidos el 2026-10-12 con los comandos de §2.
 | Cobertura del módulo de auth (`app/auth/*` y `app/routes/{auth,users,profiles}.py`) | 86 % | 99 % |
 | Cobertura de toda la app (`app/`) | — | 98 % |
 | Tiempo aproximado | ~10 s | ~50 s (bcrypt real en la suite anterior) |
+
+## 10. Jest: lógica TypeScript de autenticación (`uis/backoffice`)
+
+Desde `uis/backoffice`: `npm run test:jest` (equivale a `jest --coverage`). Jest solo recoge `__tests__/**/*.test.ts` (configuración en [`jest.config.mjs`](../../uis/backoffice/jest.config.mjs)). La suite anterior de `node:test` (`tests/*.test.mjs`, comando en `AGENTS.md` §4) sigue igual y ya cubría parte de esta lógica; Jest es lo que pide el ticket y las dos conviven.
+
+| Archivo probado | Qué afirman los tests | Test |
+|---|---|---|
+| `lib/auth-token.ts` | Un token de espacios o un almacenamiento que lanza cuentan como «sin sesión»; guardar un token en blanco no guarda ni avisa; si `setItem` falla se avisa igualmente; los cambios de otra pestaña se escuchan y los de otras claves no | [`auth-token.test.ts`](../../uis/backoffice/__tests__/auth/auth-token.test.ts) |
+| `lib/auth-routes.ts` | `/reset-password` se abre con o sin sesión; las páginas públicas mandan a inicio con sesión; en «Reintentar» se mantiene el aviso de error; `/LOGIN` o una ruta nueva quedan protegidas | [`auth-routes.test.ts`](../../uis/backoffice/__tests__/auth/auth-routes.test.ts) |
+| `services/auth.service.ts` | Validación en cliente (requeridos y confirmación), bodies sin `role` ni confirmación, y el servicio con un cliente HTTP falso: el token solo se guarda si la respuesta se normaliza bien; cada error de la API se traduce a un tipo para la UI | [`auth.service.test.ts`](../../uis/backoffice/__tests__/auth/auth.service.test.ts) |
+| `services/normalizers.ts` (auth) | Token vacío o `expires_in` no entero → error; solo se copian los campos del contrato; los errores no repiten valores recibidos; los 422 mal formados no lanzan | [`normalizers.test.ts`](../../uis/backoffice/__tests__/auth/normalizers.test.ts) |
+| `hooks/use-auth-session.ts` | Reducer, estado derivado y textos del guard; el controlador valida cada token una vez, ignora el 401 (ya no hay token) y el resultado de un token antiguo | [`use-auth-session.test.ts`](../../uis/backoffice/__tests__/auth/use-auth-session.test.ts) |
+
+**Qué no existe en TypeScript y no se prueba:** la generación de tokens, el decodificado de JWT y el hash de contraseñas. El backoffice recibe el JWT de `POST /auth/login` como una cadena opaca, lo guarda y lo envía como `Bearer`. Quién es el usuario y si el token sigue valiendo lo decide la API (`GET /auth/me`). Las contraseñas viajan a la API, que es la única que las hashea (bcrypt). Decodificar el JWT en el cliente obligaría a confiar en datos que el cliente no puede verificar. Comprobado buscando `atob`, `jwt-decode`, `bcrypt`, `crypto.subtle` y `createHash` en el código de producción: no aparecen.
+
+**Validación con mutaciones** (código restaurado después):
+
+| Mutación | Test que la detecta |
+|---|---|
+| `readAuthToken` sin `trim` | `a token made only of spaces counts as no session` |
+| `/reset-password` tratada como solo pública | `/reset-password renders with session authenticated…` |
+| Guardar el token aunque la normalización falle | `a 200 with empty access_token…` y `…non-integer expires_in…` |
+| `normalizeAccessToken` acepta un `expires_in` no entero | 2 tests de `normalizeAccessToken` y 1 del servicio |
+
+**Resultados** (medidos el 2026-10-12): 112 tests en ~1 s. Cobertura de líneas (Jest):
+
+| Archivo | Líneas | Motivo de lo no cubierto |
+|---|---|---|
+| `lib/auth-routes.ts` | 100 % | — |
+| `lib/auth-token.ts` | 100 % (87,5 % de ramas) | Las ramas sin `window` (guardar, borrar y suscribirse en el servidor) |
+| `services/auth.service.ts` | 93,4 % | Un 422 sin JSON, los errores de configuración y de timeout, y los atajos exportados del servicio por defecto |
+| `hooks/use-auth-session.ts` | 80,3 % | El hook de React (`useAuthSession`): necesita React y se valida en el navegador |
+| `services/normalizers.ts` | 58,5 % | Lo no cubierto son normalizadores de incidentes y proveedores, no de auth (los cubre `node:test`) |
+| **Total de los cinco archivos** | **80,2 %** | |
