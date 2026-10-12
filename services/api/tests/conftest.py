@@ -1,9 +1,9 @@
-"""Fixtures de la batería de AUTH-088 (estilo pytest).
+"""Fixtures de las baterías de estilo pytest (AUTH-088 y API-042).
 
-Los tests de esta batería prueban la lógica de autenticación sin TestClient:
-llaman a los servicios, al repositorio, a la seguridad y a las funciones de
-ruta directamente, con una TinyDB temporal real (`tmp_path`), un reloj
-inyectado y un sender de email falso. Nunca usan services/api/data/.
+Los tests de estas baterías prueban la lógica sin TestClient: llaman a los
+servicios, a los repositorios, a la seguridad y a las funciones de ruta
+directamente, con una TinyDB temporal real (`tmp_path`), un reloj inyectado y
+un sender de email falso. Nunca usan services/api/data/.
 
 Los tests `unittest` existentes no usan estas fixtures, salvo la huella de
 `data/`, que se aplica a toda la sesión.
@@ -30,6 +30,8 @@ from app.auth.security import hash_password
 from app.auth.service import UserService
 from app.core.config import Settings
 from app.core.storage import GuardedJSONStorage, Store
+from app.database import SupplierRepository
+from app.modules.incident_manager.repository import IncidentRepository
 
 REAL_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TOKEN_MINUTES = 30
@@ -99,6 +101,18 @@ def auth_repo(settings: Settings, clock: FakeClock) -> AuthRepository:
 @pytest.fixture
 def service(auth_repo: AuthRepository) -> UserService:
     return UserService(auth_repo)
+
+
+@pytest.fixture
+def supplier_repo(settings: Settings, clock: FakeClock) -> SupplierRepository:
+    """Directorio de proveedores sobre la base temporal, con el reloj del test."""
+    return SupplierRepository(settings.suppliers_db_path, clock=clock)
+
+
+@pytest.fixture
+def incident_repo(settings: Settings, clock: FakeClock) -> IncidentRepository:
+    """Gestor de incidencias sobre la base temporal, con el reloj del test."""
+    return IncidentRepository(settings.incidents_db_path, clock=clock)
 
 
 @pytest.fixture
