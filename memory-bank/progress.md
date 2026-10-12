@@ -4,6 +4,101 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-13 — AUTH-088, F8 (extra FE-019): utilidades del frontend con Jest (y el bug del título con emojis)
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`: el fix en `1ddaaf8` (`fix(backoffice)`, con sus tests), los tests en `1c9ed4a` (`test(backoffice)`) y la documentación en el commit `docs` siguiente.
+
+**Qué se hizo:**
+- **`uis/backoffice/__tests__/utils/`:** 49 tests en 4 archivos. `node:test` ya cubría los casos generales, así que aquí van los límites que faltaban:
+  - `supplier-renewal.test.ts` (`daysUntil`, `renewalInfo`): hoy, día 59 (29-02-2028), día 60 y día 61 alrededor de un año bisiesto; la hora del día y los cambios de horario de 2026 no alteran la cuenta; 2026-02-30, 2027-02-29, 2026-2-3, mes 13 o 0, 2026-04-31 y espacios → `null`; `null` y fecha pasada;
+  - `suppliers.service.test.ts` (`parseRate`, `validateSupplierForm`): coma decimal; `0,00`, separador de miles, signos, símbolo de moneda, `Infinity` y `NaN` → `null`; las fechas y el email opcionales no se validan en el cliente;
+  - `incident-manager.service.test.ts` (`countCharacters`, `validateIncidentForm`, `messageForApiError`): el límite del título (los tests llegaron con el fix), la descripción en blanco, la sede obligatoria para cualquier origen y los textos por código;
+  - `api-error-body.test.ts` (`normalizeApiErrorBody`): un `detail` de texto se conserva y uno estructurado se descarta.
+- **`jest.config.mjs`:** `collectCoverageFrom` añade `lib/supplier-renewal.ts`, `services/suppliers.service.ts` y `services/incident-manager.service.ts`.
+- **README del backoffice:** el párrafo de Jest incluye las utilidades.
+
+**Bug encontrado y corregido** (entrada en `TESTING.md` §5, tercera columna):
+- **Qué lo destapó:** un caso límite de esta batería: ¿el cliente cuenta los caracteres del título como la API?
+- **Síntoma:** con 61 emojis, el formulario de alta de incidencias decía «no puede superar los 120 caracteres» y el contador marcaba 122 / 120. La API acepta ese título (61 caracteres).
+- **Causa:** `validateIncidentForm` y el contador de `incident-form.tsx` medían con `.length` (unidades UTF-16: un emoji vale 2), y la API con `len()` de Python (caracteres).
+- **Corrección (opción a del usuario):** `countCharacters` (`[...value].length`) en `services/incident-manager.service.ts`, usada por la validación y por el contador.
+- **Mismo patrón en el resto del backoffice:** revisado, no hay más. Era el único límite de longitud que comprobaba el cliente; el perfil (200), el email (254) y la contraseña (8 y 72 bytes) solo los valida la API.
+- **Commit:** `1ddaaf8`.
+- **Tests:** `61 emojis are accepted` y el resto del límite del título (120 / 121 ASCII, 60, 120 y 121 emojis).
+
+**Validación:**
+- `npm run test:jest`: 161 OK (112 de auth y 49 de utilidades) en ~1 s.
+- `tsc`, `lint` y `build` limpios; `node:test`: 344 de 344 OK.
+- **Cobertura (líneas):**
+  - `supplier-renewal.ts`: 100 %;
+  - `suppliers.service.ts`: 35,2 %;
+  - `incident-manager.service.ts`: 44,3 %;
+  - `normalizers.ts`: 58,5 %.
+  - Las cinco funciones probadas quedan al 100 %; lo no cubierto son los `build*Payload`, las clases de error y la parte HTTP, que cubre `node:test`.
+- **Mutaciones**, todas detectadas y deshechas, con `git diff` de `lib/`, `services/` y `hooks/` vacío:
+  - ventana sin el día 60;
+  - sin la comprobación de calendario (6 tests);
+  - `parseRate` sin coma decimal (3);
+  - `status`/`invalid_choice` con el texto genérico;
+  - descripción sin recortar;
+  - volver a `.length` (3).
+
+---
+
+## 2026-10-13 — AUTH-088, F7 (extra API-042): proveedores y gestor de incidencias con pytest
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`: los tests en `63ef418` (`test(api)`) y la documentación en el commit `docs` siguiente.
+
+**Qué se hizo:**
+- **Antes de escribir:** revisados `test_suppliers_api.py` y `test_incident_manager_*.py`. Cubrían el contrato HTTP y el repositorio del gestor por dentro (transiciones, filtros, orden con fechas distintas y seed). Esta batería fija lo que solo se probaba por HTTP o no se probaba:
+  - las funciones de ruta de los dos grupos;
+  - `updated_at` con el reloj controlado;
+  - el desempate por `id` con la misma fecha;
+  - una transición inválida deja el archivo intacto byte a byte.
+- **`conftest.py`:** fixtures `supplier_repo` e `incident_repo` (base temporal y reloj del test); el docstring menciona las dos baterías.
+- **`test_suppliers_logic.py`:** 30 tests:
+  - alta con id y hora;
+  - límites de tarifa y fecha (0,01, entera, 29-02-2028, 2026-02-29, 2026-3-1);
+  - reglas del CONTEXT (moneda/país, enumeraciones, tarifa de texto o infinita, `id`/`updated_at` del cliente);
+  - filtros (categoría entre varias, AND, vacío);
+  - 404 en lectura, tarifa, estado y borrado sin escribir;
+  - la tarifa registra la hora y el estado no;
+  - borrado y doble borrado;
+  - seed idempotente por `name` sin pisar.
+- **`test_incident_manager_logic.py`:** 30 tests:
+  - alta `open` con texto recortado y fechas del reloj;
+  - título de 120 / 121;
+  - 400 sin escribir;
+  - filtros AND (cada incidencia descartada difiere en un solo campo);
+  - orden y desempate por `id`;
+  - filtro fuera del vocabulario → 400;
+  - resumen con datos y vacío;
+  - `get` y 404;
+  - transición válida (solo `status` y `updated_at`), `open → discarded` y `discarded` final;
+  - transición inválida sin tocar el archivo;
+  - 404 y cuerpo mal formado;
+  - seed idempotente por clave de origen, con la fecha y el estado del histórico.
+
+**Hallazgo documentado, no corregido** (decisión del usuario): TinyDB reutiliza el `id` del último proveedor borrado (se borra el 2, se crea otro y recibe el 2). Ningún documento lo prohíbe (D-SUP-4, D-AUTH-2). Está en `TESTING.md` §7, sin test que lo fije.
+
+**Validación:**
+- `uv run pytest`: 515 OK (455 + 60). Huella de `data/` idéntica.
+- Cobertura de `app/routes/suppliers.py`, `app/database.py`, `app/models.py` y `app/modules/incident_manager/`: **92,6 %** con la batería sola (menos de 1 s) y **99,0 %** con la suite completa.
+- Global de `app/`: 98 %; auth: 99 %.
+- **Mutaciones**, todas detectadas y deshechas, con `git diff -- app` vacío:
+  - el estado del proveedor toca `updated_at`;
+  - la tarifa no registra `updated_at`;
+  - sin el filtro de categoría;
+  - el seed no comprueba el `name`;
+  - aceptar una transición inválida;
+  - invertir el orden;
+  - sin el filtro de origen, de sede o de categoría del gestor;
+  - el seed del gestor no comprueba la clave.
+  - La del filtro de origen sobrevivió a la primera versión del test de filtros y se reforzó.
+- **`TESTING.md`:** §11 (este extra), §12 (FE-019), el tercer bug en §5, el riesgo del id en §7 y los totales de §9.
+
+---
+
 ## 2026-10-12 — AUTH-088, F6: Jest para la lógica TypeScript de autenticación (`uis/backoffice`)
 
 **Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`, después de F5 (`f482e02`). No ha destapado ningún bug.

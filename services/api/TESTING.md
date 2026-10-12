@@ -23,7 +23,7 @@ Desde `services/api` (comprobado en Windows con PowerShell):
 - **No ejecutes `uv sync`:** sincroniza de forma exacta y desinstala `nexova-shared` y `nexova-incident-analyzer`, que se instalan con pip a propósito (ver [`README.md`](README.md#instalación-desde-la-raíz-del-monorepo)). `uv run` sí los conserva. pytest los encuentra igualmente (`pythonpath` en `pyproject.toml`), pero el comando `unittest` los necesita instalados. Si se perdieron, reinstálalos desde la raíz: `services\api\.venv\Scripts\python -m pip install --no-deps -e packages/shared -e packages/incident-analyzer`.
 
 **Jest (lógica TypeScript de auth en `uis/backoffice`):** ver §10.
-**Extras API-042 y FE-019:** *pendientes de F7 y F8 (opcionales).*
+**Extras:** proveedores y gestor de incidencias con pytest (API-042) en §11; utilidades del frontend con Jest (FE-019) en §12.
 
 ## 3. Plan de pruebas
 
@@ -74,14 +74,14 @@ Se eligieron los casos donde un error tiene coste real:
 
 ## 5. Bugs encontrados y corregidos
 
-| | Tope de minutos del token | Byte NUL en la contraseña |
-|---|---|---|
-| **Lo destapó** | Caso de la IA: un valor que la configuración acepta no puede romper cada login (primera versión del test de `test_token.py`) | Caso de la IA: ¿un NUL en la contraseña es un error de validación o un 500? |
-| **Síntoma** | Con `ACCESS_TOKEN_EXPIRE_MINUTES = 10**10` la API arrancaba, pero cada login daba 500 (`OverflowError`) | 500 en el registro, el login (con email existente o desconocido), el reset, el cambio de contraseña (nueva y actual) y el `PUT /users/{id}` del admin |
-| **Causa** | `Settings` solo rechazaba 0 y negativos; `iat + timedelta` se salía del rango de `datetime` | bcrypt rechaza el NUL (`PasswordValueError`) y ni `_check_password` ni `verify_password` lo tenían en cuenta |
-| **Corrección** | Tope técnico de 525600 min (1 año) con `ConfigError` al arrancar. No es una política de sesión: la decide el CTO | El validador rechaza el NUL (422); `verify_password` devuelve `False` sin bcrypt (401 en el login, 400 como contraseña actual) |
-| **Commit** | `65cfb36` | `988ff96` |
-| **Tests** | `test_expiration_at_the_technical_cap…` y `…beyond_the_technical_cap…` | `test_new_password_with_nul_byte…`, `test_password_with_nul_byte…` (login) y `test_current_password_with_nul_byte…` |
+| | Tope de minutos del token | Byte NUL en la contraseña | Título del gestor con emojis (backoffice) |
+|---|---|---|---|
+| **Lo destapó** | Caso de la IA: un valor que la configuración acepta no puede romper cada login (primera versión del test de `test_token.py`) | Caso de la IA: ¿un NUL en la contraseña es un error de validación o un 500? | Un caso límite de la batería de utilidades (§12): ¿el cliente cuenta los caracteres del título como la API? |
+| **Síntoma** | Con `ACCESS_TOKEN_EXPIRE_MINUTES = 10**10` la API arrancaba, pero cada login daba 500 (`OverflowError`) | 500 en el registro, el login (con email existente o desconocido), el reset, el cambio de contraseña (nueva y actual) y el `PUT /users/{id}` del admin | Con 61 emojis, el formulario de alta de incidencias decía «no puede superar los 120 caracteres» y el contador marcaba 122 / 120, aunque la API acepta ese título |
+| **Causa** | `Settings` solo rechazaba 0 y negativos; `iat + timedelta` se salía del rango de `datetime` | bcrypt rechaza el NUL (`PasswordValueError`) y ni `_check_password` ni `verify_password` lo tenían en cuenta | El cliente medía con `.length` (unidades UTF-16: un emoji vale 2) y la API con `len()` de Python (caracteres) |
+| **Corrección** | Tope técnico de 525600 min (1 año) con `ConfigError` al arrancar. No es una política de sesión: la decide el CTO | El validador rechaza el NUL (422); `verify_password` devuelve `False` sin bcrypt (401 en el login, 400 como contraseña actual) | `countCharacters` (`[...value].length`, un carácter por punto de código), usada por la validación y por el contador. Era el único límite de longitud que comprobaba el cliente |
+| **Commit** | `65cfb36` | `988ff96` | `1ddaaf8` |
+| **Tests** | `test_expiration_at_the_technical_cap…` y `…beyond_the_technical_cap…` | `test_new_password_with_nul_byte…`, `test_password_with_nul_byte…` (login) y `test_current_password_with_nul_byte…` | `61 emojis are accepted` y el resto del límite del título en `__tests__/utils/incident-manager.service.test.ts` |
 
 ## 6. Casos propuestos por la IA
 
@@ -122,6 +122,7 @@ Detalle en [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md) §
 | L-4 | **Resuelto** por A1 (`24f0e0d`): `http.client.HTTPException` ya se convierte en `EmailDeliveryError` |
 | L-5 | Auditoría con IP sin política de retención |
 | L-6 | Con otra sesión abierta, tras el reset no se ve el aviso de éxito |
+| Id de proveedor reutilizado | TinyDB reutiliza el `id` del último proveedor borrado: se borra el 2, se crea otro y recibe el 2. Quien conserve el id antiguo podría modificar o borrar el nuevo. Ningún documento lo prohíbe (D-SUP-4: «`id` = `doc_id` de TinyDB»; D-AUTH-2 ya advierte de que ese id no es estable). La UI no borra proveedores. Solo documentado, sin test ni cambios |
 
 ## 8. Límites de la batería
 
@@ -133,14 +134,14 @@ Detalle en [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md) §
 
 ## 9. Resultados
 
-Medidos el 2026-10-12 con los comandos de §2.
+Medidos el 2026-10-12 con los comandos de §2 (el total de la suite, el 2026-10-13).
 
 | Medida | Batería nueva sola | Suite completa |
 |---|---|---|
-| Tests | 143 | 455 (312 anteriores + 143) |
+| Tests | 143 | 515 (312 anteriores + 143 de auth + 60 de §11) |
 | Cobertura del módulo de auth (`app/auth/*` y `app/routes/{auth,users,profiles}.py`) | 86 % | 99 % |
 | Cobertura de toda la app (`app/`) | — | 98 % |
-| Tiempo aproximado | ~10 s | ~50 s (bcrypt real en la suite anterior) |
+| Tiempo aproximado | ~10 s | ~1–1,5 min según la carga de la máquina (bcrypt real en la suite anterior) |
 
 ## 10. Jest: lógica TypeScript de autenticación (`uis/backoffice`)
 
@@ -175,3 +176,67 @@ Desde `uis/backoffice`: `npm run test:jest` (equivale a `jest --coverage`). Jest
 | `hooks/use-auth-session.ts` | 80,3 % | El hook de React (`useAuthSession`): necesita React y se valida en el navegador |
 | `services/normalizers.ts` | 58,5 % | Lo no cubierto son normalizadores de incidentes y proveedores, no de auth (los cubre `node:test`) |
 | **Total de los cinco archivos** | **80,2 %** | |
+
+## 11. Extra: proveedores y gestor de incidencias (pytest)
+
+Misma forma que la batería de auth: llamadas directas a las funciones de ruta y a los repositorios, con TinyDB temporal y reloj inyectado, sin TestClient. Las suites anteriores (`test_suppliers_api.py` y `test_incident_manager_*.py`) ya cubrían el contrato HTTP y el repositorio del gestor por dentro. Esta batería fija las decisiones que solo se probaban por HTTP o que no se probaban.
+
+| Endpoint | Camino feliz | Caso límite | Modo de fallo |
+|---|---|---|---|
+| `POST /suppliers` | id y `updated_at` = hora de creación; nombre recortado | tarifa de 0,01 o entera; 29-02-2028; las 9 categorías | moneda de otro país; país, categoría o estado fuera del CONTEXT; tarifa 0, de texto o infinita; `id`/`updated_at` del cliente |
+| `GET /suppliers` | todos | categoría que coincide con cualquiera de las del proveedor; directorio vacío | país + categoría (AND) sin coincidencias |
+| `GET` / `PATCH` / `DELETE /suppliers/{id}` | lectura; la tarifa registra la hora; suspender y reactivar | el estado **no** toca `updated_at` (es la traza de la tarifa) | id inexistente → 404 en las cuatro operaciones, sin escribir; doble borrado |
+| Seed de proveedores | inserta lo que falta | idempotente por `name` | un proveedor existente (aunque editado) no se pisa |
+| `POST /api/incidents` | nace `open`, texto recortado, fechas del reloj | título de 120 / 121 caracteres | sin sede, nace resuelta, categoría desconocida o `id` del cliente → 400 sin escribir |
+| `GET /api/incidents` | filtros combinados con AND (cada uno necesario) | orden por fecha descendente y desempate por `id` con la misma fecha | filtro fuera del vocabulario → 400 (no una lista vacía) |
+| `GET /api/incidents/summary` | totales por estado | gestor vacío → todo a cero | — |
+| `GET /api/incidents/{id}` | la incidencia | — | id inexistente → 404 |
+| `PATCH /api/incidents/{id}/status` | cambia `status` y `updated_at`, no `created_at` | `open → discarded` directo; `discarded` es final | transición inválida → 400 sin tocar el archivo; id inexistente → 404; cuerpo mal formado → 400 |
+| Seed del gestor | idempotente por clave de origen | conserva la fecha y el estado del histórico | — |
+
+**Cómo ejecutarla sola** (desde `services/api`): `uv run pytest tests/test_suppliers_logic.py tests/test_incident_manager_logic.py --cov=app.routes.suppliers --cov=app.database --cov=app.models --cov=app.modules.incident_manager --cov-fail-under=60`
+
+**Cobertura de esos módulos:** 92,6 % con la batería sola (60 tests, menos de 1 s) y 99,0 % con la suite completa. Con la batería sola falta, sobre todo, la capa HTTP del router del gestor (`IncidentManagerRoute`), que convierte los errores de lectura de la petición y que cubren los tests de HTTP.
+
+| Mutación | Test que la detecta |
+|---|---|
+| El cambio de estado de un proveedor toca `updated_at` | `test_status_change_does_not_touch_updated_at` |
+| La tarifa no registra `updated_at` | `test_rate_change_records_the_time_of_the_change` |
+| Sin el filtro de categoría (proveedores) | `test_category_filter_matches_any…` y `test_country_and_category_filters_combine_with_and` |
+| El seed de proveedores no comprueba el `name` | `test_seed_inserts_only_names_not_yet_present…` |
+| Aceptar una transición inválida | `test_invalid_transition_is_rejected_and_writes_nothing` y el de `discarded` final |
+| Invertir el orden del listado | `test_list_is_newest_first_and_ties_are_broken_by_id` |
+| Sin el filtro de origen, de sede o de categoría (gestor) | `test_filters_are_combined_with_and` |
+| El seed del gestor no comprueba la clave de origen | `test_seed_is_idempotent_by_source_key…` |
+
+La mutación del filtro de origen sobrevivió a la primera versión del test de filtros, porque las incidencias descartadas se distinguían por otro campo además del origen. Se reforzó para que cada una difiera en un solo campo.
+
+## 12. Extra: utilidades del frontend (Jest, `uis/backoffice`)
+
+Tests en `uis/backoffice/__tests__/utils/`. La suite de `node:test` ya cubría los casos generales de estas funciones; aquí van los límites que faltaban.
+
+| Utilidad | Qué afirman los tests |
+|---|---|
+| `lib/supplier-renewal.ts` (`daysUntil`, `renewalInfo`) | Hoy, día 59 (29-02-2028), día 60 (incluido) y día 61 alrededor de un año bisiesto; la hora del día y los cambios de horario no alteran la cuenta; 2026-02-30, 2027-02-29, 2026-2-3 o un mes 13 o 0 → fecha no válida, sin destacar; `null` y fecha pasada |
+| `services/suppliers.service.ts` (`parseRate`, `validateSupplierForm`) | Coma decimal admitida; `0,00`, separador de miles, signos, símbolo de moneda o `Infinity` → no válida; las fechas y el email opcionales los valida la API, no el cliente |
+| `services/incident-manager.service.ts` (`countCharacters`, `validateIncidentForm`, `messageForApiError`) | Título de 120 / 121 caracteres contados como la API, también con emojis; descripción en blanco y sede obligatoria para cualquier origen; textos propios por código de error, nunca el mensaje del servidor |
+| `services/normalizers.ts` (`normalizeApiErrorBody`) | Conserva `code` y un `detail` de texto; un `detail` estructurado se descarta |
+
+**Cómo ejecutarla sola** (desde `uis/backoffice`): `npx jest __tests__/utils --coverage`. `npm run test:jest` ejecuta auth y utilidades juntas: 161 tests en ~1 s.
+
+**Cobertura (líneas):**
+- `lib/supplier-renewal.ts`: 100 %.
+- `services/suppliers.service.ts`: 35,2 %.
+- `services/incident-manager.service.ts`: 44,3 %.
+- `services/normalizers.ts`: 58,5 %.
+
+Las cinco funciones probadas quedan cubiertas al 100 %. El resto de esos archivos son los `build*Payload`, las clases de error y la parte HTTP de cada servicio, que cubre `node:test`.
+
+| Mutación | Test que la detecta |
+|---|---|
+| La ventana de renovación excluye el día 60 | `today and up to day 60 (included) are upcoming…` |
+| Sin la comprobación de calendario (acepta 2026-02-30) | 6 tests de fechas no válidas |
+| `parseRate` sin coma decimal | 3 tests de tarifa |
+| `status` con `invalid_choice` recibe el texto genérico | `each known code on a form field gets its own Spanish text…` |
+| La descripción sin recortar | `a description made of spaces and a missing branch are reported…` |
+| Volver a `.length` en el título | `61 emojis are accepted`, `120 emojis are accepted` y `countCharacters` |
