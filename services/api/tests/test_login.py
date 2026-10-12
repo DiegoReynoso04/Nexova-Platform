@@ -126,6 +126,27 @@ def test_password_over_72_bytes_never_reaches_bcrypt(
     assert bcrypt_verify_calls == [password]
 
 
+def test_password_with_nul_byte_fails_like_bad_credentials_without_reaching_bcrypt(
+    settings: Settings, service: UserService, make_user: MakeUser, bcrypt_verify_calls: list[str]
+) -> None:
+    # Bug encontrado por esta batería: bcrypt lanza una excepción con un NUL y el login
+    # daba 500. Ninguna contraseña registrada puede contenerlo: es un 401 normal, igual
+    # exista o no el email (el burn tampoco llega a bcrypt, como con más de 72 bytes).
+    user, password = make_user()
+    with_nul = f"{password[:4]}\x00{password[4:]}"
+
+    with pytest.raises(InvalidCredentialsError) as known_email:
+        _login(settings, service, user.email, with_nul)
+    with pytest.raises(InvalidCredentialsError) as unknown_email:
+        _login(settings, service, "nobody@example.invalid", with_nul)
+
+    assert (known_email.value.code, known_email.value.detail) == (unknown_email.value.code, unknown_email.value.detail)
+    assert bcrypt_verify_calls == []
+    # Control del espía: una contraseña válida sí llega a bcrypt.
+    assert service.authenticate(user.email, password) is not None
+    assert bcrypt_verify_calls == [password]
+
+
 def test_inactive_user_cannot_log_in_even_with_the_right_password(
     settings: Settings, service: UserService, make_user: MakeUser
 ) -> None:

@@ -58,6 +58,9 @@ def _check_password(value: str) -> str:
         raise ValueError(f"password must have at least {MIN_PASSWORD_LENGTH} characters")
     if len(value.encode("utf-8")) > BCRYPT_MAX_PASSWORD_BYTES:
         raise ValueError(f"password must be at most {BCRYPT_MAX_PASSWORD_BYTES} bytes long (bcrypt limit)")
+    # bcrypt rechaza el byte NUL con una excepción: sin esto, el hash daría 500.
+    if "\x00" in value:
+        raise ValueError("password must not contain NUL characters (bcrypt limit)")
     return value
 
 

@@ -2,7 +2,8 @@
 
 - Contraseñas: `passlib.hash.bcrypt` de `libpass[bcrypt]` (fork mantenido de
   passlib). Nunca se guardan ni se comparan en texto plano: solo `hash` y
-  `verify`. El límite de 72 bytes se valida antes en `app/auth/models.py`.
+  `verify`. El límite de 72 bytes y el byte NUL se validan antes en
+  `app/auth/models.py`.
 - JWT HS256 firmado con `Settings.jwt_secret_key` (JWT_SECRET_KEY). Claims:
   `sub` = `User.id` (UUID de TinyDB), `iat` y `exp` (ahora +
   ACCESS_TOKEN_EXPIRE_MINUTES). `decode_access_token` exige firma válida,
@@ -32,9 +33,10 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    # Una contraseña de más de 72 bytes nunca pudo registrarse: no se compara
-    # (bcrypt la rechazaría o la truncaría).
-    if len(password.encode("utf-8")) > BCRYPT_MAX_PASSWORD_BYTES:
+    # Una contraseña de más de 72 bytes o con un byte NUL nunca pudo registrarse:
+    # no se compara (bcrypt la truncaría o lanzaría una excepción). Esto también
+    # protege `burn_password_check`, que pasa por aquí.
+    if len(password.encode("utf-8")) > BCRYPT_MAX_PASSWORD_BYTES or "\x00" in password:
         return False
     return bool(bcrypt.verify(password, hashed_password))
 
