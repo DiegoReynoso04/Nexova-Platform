@@ -1,4 +1,4 @@
-# TESTING — API de autenticación (AUTH-088)
+# TESTING — Batería de pruebas de AUTH-088 (autenticación y extras)
 
 ## 1. Qué cubre y por qué
 
@@ -12,11 +12,11 @@ Desde `services/api` (comprobado en Windows con PowerShell):
 
 | Qué | Comando |
 |---|---|
-| Toda la suite (batería nueva + 312 tests `unittest` anteriores) | `uv run pytest` |
+| Toda la suite (las baterías nuevas + los 312 tests `unittest` anteriores) | `uv run pytest` |
 | Ídem con la cobertura de toda la app | `uv run pytest --cov` |
 | Cobertura del módulo de auth con umbral | `uv run pytest --cov=app.auth --cov=app.routes.auth --cov=app.routes.users --cov=app.routes.profiles --cov-fail-under=70` |
 | Ídem, informe a partir del último `--cov` | `uv run python -m coverage report --include="app/auth/*,app/routes/auth.py,app/routes/users.py,app/routes/profiles.py" --fail-under=70` |
-| Solo la batería nueva | `uv run pytest tests/test_token.py tests/test_login.py tests/test_register.py tests/test_users.py tests/test_profiles.py tests/test_forgot_password.py tests/test_reset_password.py tests/test_change_password.py` |
+| Solo la batería de auth | `uv run pytest tests/test_token.py tests/test_login.py tests/test_register.py tests/test_users.py tests/test_profiles.py tests/test_forgot_password.py tests/test_reset_password.py tests/test_change_password.py` |
 | Suite anterior con `unittest` (`AGENTS.md` §4, desde la raíz) | `services\api\.venv\Scripts\python -m unittest discover -s services/api/tests -t services/api` |
 
 - **`coverage.exe`:** el Control de aplicaciones de Windows (error 4551) puede bloquear los lanzadores `.exe` sin firmar de uv. Durante el desarrollo de esta batería llegó a bloquear `coverage.exe` (hoy arranca). `uv run python -m coverage …` funciona siempre y no depende del `.exe`.
@@ -67,8 +67,8 @@ Se eligieron los casos donde un error tiene coste real:
 | Quitar la regla H-1 / invertir el orden rol-contraseña | `test_non_admin_cannot_set_a_password…` / `test_role_rule_is_checked_before_the_password_rule` |
 | `delete_user` sin borrar el perfil | `test_deleting_yourself_removes_profile_and_invalidates_your_token` |
 | `<=` → `<` en la caducidad del enlace | `test_link_is_expired_exactly_at_its_expiry_instant` |
-| No anular los enlaces pendientes (nuevo enlace / change-password) | `test_only_the_latest_link_is_pending…` / `test_change_sets_the_new_password…` y RP3 |
-| No marcar `used_at` | RP1, `[ya usado]` y la concurrencia |
+| No anular los enlaces pendientes (nuevo enlace / change-password) | `test_only_the_latest_link_is_pending…` / `test_change_sets_the_new_password…`, y los casos «anulado» de `test_unusable_link_is_rejected…` |
+| No marcar `used_at` | `test_valid_link_sets_the_new_password_and_is_marked_used`, `[ya usado]` y la concurrencia |
 | Quitar el lock de `consume_reset_token` | `test_two_simultaneous_resets_with_the_same_link_succeed_exactly_once` (10 de 10) |
 | Encolar el email también para desconocidos | `test_unknown_or_inactive_email_gets_the_same_answer…` |
 
@@ -127,21 +127,21 @@ Detalle en [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md) §
 ## 8. Límites de la batería
 
 - **`exp == ahora` exacto:** no se prueba porque python-jose usa su propio reloj. La frontera se acota con −5 s y +1 s.
-- **Sin cubrir con la batería nueva sola** (los cubre la suite anterior):
+- **Sin cubrir con la batería de auth sola** (los cubre la suite anterior):
   - el sender real de Resend (exige simular `urlopen`);
   - `create-admin` (CLI interactiva);
   - el cableado de FastAPI en `dependencies.py` (`get_settings` y similares). Los tests llaman a las funciones con las dependencias ya resueltas.
 
 ## 9. Resultados
 
-Medidos el 2026-10-12 con los comandos de §2 (el total de la suite, el 2026-10-13).
+Medidos con los comandos de §2: la batería de auth el 2026-10-12; la suite completa, el 2026-10-13.
 
-| Medida | Batería nueva sola | Suite completa |
+| Medida | Batería de auth sola | Suite completa |
 |---|---|---|
 | Tests | 143 | 515 (312 anteriores + 143 de auth + 60 de §11) |
 | Cobertura del módulo de auth (`app/auth/*` y `app/routes/{auth,users,profiles}.py`) | 86 % | 99 % |
 | Cobertura de toda la app (`app/`) | — | 98 % |
-| Tiempo aproximado | ~10 s | ~1–1,5 min según la carga de la máquina (bcrypt real en la suite anterior) |
+| Tiempo aproximado | ~10 s | ~1–2 min según la carga de la máquina (bcrypt real en la suite anterior) |
 
 ## 10. Jest: lógica TypeScript de autenticación (`uis/backoffice`)
 
@@ -166,7 +166,7 @@ Desde `uis/backoffice`: `npm run test:jest` (equivale a `jest --coverage`). Jest
 | Guardar el token aunque la normalización falle | `a 200 with empty access_token…` y `…non-integer expires_in…` |
 | `normalizeAccessToken` acepta un `expires_in` no entero | 2 tests de `normalizeAccessToken` y 1 del servicio |
 
-**Resultados** (medidos el 2026-10-12): 112 tests en ~1 s. Cobertura de líneas (Jest):
+**Resultados** (medidos el 2026-10-12): 112 tests de auth en ~1 s (de los 161 que ejecuta `npm run test:jest` junto con §12). Cobertura de líneas (Jest):
 
 | Archivo | Líneas | Motivo de lo no cubierto |
 |---|---|---|

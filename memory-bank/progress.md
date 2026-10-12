@@ -4,6 +4,40 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-13 — AUTH-088: cierre de la rama (verificación final)
+
+**Estado: rama `feature/auth-088-test-suite` completa y verificada, sin subir.** Push y PR los hace el usuario. 13 commits sobre `main` (`843ae26`): F1 a F8, tres `fix` (`65cfb36` tope de minutos, `988ff96` byte NUL, `1ddaaf8` título con emojis) y los `docs`.
+
+**Verificación final** (HEAD frente a `main`; los totales de `main` se midieron sobre una copia extraída con `git archive` y los `node_modules` del repo enlazados con una unión de directorio, ya eliminada):
+
+| Suite | `main` (`843ae26`) | HEAD |
+|---|---|---|
+| `services/api`: `uv run pytest` | — (sin pytest) | 515 OK |
+| `services/api`: `unittest` (`AGENTS.md`) | 312 OK | 312 OK |
+| Cobertura global de `app/` | 97 % | 98 % |
+| Cobertura de auth (`--fail-under=70`) | 96 % | 99 % |
+| Cobertura de los módulos de API-042 | 99 % | 99 % |
+| `uis/backoffice`: `node:test` | 344 OK | 344 OK |
+| `uis/backoffice`: `npm run test:jest` | — (sin Jest) | 161 OK |
+| `uis/backoffice`: `tsc`, `lint` y `build` | no se reejecutaron | limpios |
+| `packages/shared` | 81 OK (sin cambios en la rama) | 81 OK |
+| `packages/incident-analyzer` | 121 OK, 7 omitidos (sin cambios) | 121 OK, 7 omitidos |
+| `src/`: `npm run check` | 97 OK (sin cambios) | 97 OK |
+
+- **`git diff main..HEAD --stat`:** idéntico con y sin `--ignore-cr-at-eol` (44 archivos).
+- **Sin archivos que no deban subir:** ni `.vscode/`, ni `.env` (solo `.env.example`), ni `.coverage`, `coverage/`, `htmlcov/` o bases de datos.
+- **Dependencias directas nuevas:** solo pytest, pytest-cov y httpx (grupo `dev` de uv), y jest, ts-jest y @types/jest. El resto de `uv.lock` y `package-lock.json` son transitivas; no se elimina ni cambia ninguna existente.
+- **Huella de `services/api/data/*.json`:** idéntica.
+- **Relectura de `TESTING.md` como evaluador:**
+  - quitada la jerga «RP1»/«RP3» de §4;
+  - el tiempo de la suite completa pasa a «~1–2 min» (hoy, 109 s);
+  - aclarado que los 112 tests de Jest de auth son parte de los 161;
+  - el título y las filas mencionan también los extras.
+  - Enlaces comprobados con un script.
+- **Incidencias de la verificación:** un worktree de `main` en el scratchpad falló al poblarse (probablemente por la longitud de la ruta en Windows). No quedó registrado y el repo no se vio afectado. Se usó `git archive` en su lugar.
+
+---
+
 ## 2026-10-13 — AUTH-088, F8 (extra FE-019): utilidades del frontend con Jest (y el bug del título con emojis)
 
 **Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`: el fix en `1ddaaf8` (`fix(backoffice)`, con sus tests), los tests en `1c9ed4a` (`test(backoffice)`) y la documentación en el commit `docs` siguiente.
