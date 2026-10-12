@@ -132,12 +132,21 @@ export function messageForApiError(field: string, error: string): IncidentFieldE
 // Validación en cliente, body y query
 // ---------------------------------------------------------------------------
 
+/**
+ * Caracteres de un texto tal como los cuenta la API (`len()` de Python): uno por
+ * punto de código. `.length` cuenta unidades UTF-16 y un emoji vale 2, así que
+ * rechazaría títulos que la API acepta.
+ */
+export function countCharacters(value: string): number {
+  return [...value].length;
+}
+
 /** Obligatorios y título ≤ 120 caracteres (tras recortar espacios). Devuelve [] si se puede enviar. */
 export function validateIncidentForm(values: IncidentFormValues): IncidentFieldError[] {
   const errors: IncidentFieldError[] = [];
   const title = values.title.trim();
   if (title === '') errors.push({ field: 'title', message: REQUIRED_MESSAGES.title });
-  else if (title.length > TITLE_MAX_LENGTH) errors.push({ field: 'title', message: TITLE_TOO_LONG_MESSAGE });
+  else if (countCharacters(title) > TITLE_MAX_LENGTH) errors.push({ field: 'title', message: TITLE_TOO_LONG_MESSAGE });
   if (values.description.trim() === '') errors.push({ field: 'description', message: REQUIRED_MESSAGES.description });
   if (values.category === '') errors.push({ field: 'category', message: REQUIRED_MESSAGES.category });
   if (values.origin === '') errors.push({ field: 'origin', message: REQUIRED_MESSAGES.origin });
