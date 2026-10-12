@@ -4,6 +4,57 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-12 — AUTH-088, F5: `services/api/TESTING.md` y documentación
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`, después de F4 (`9a47153`). A petición del usuario, §6 de `TESTING.md` explica también cómo se usó la IA (propuso el plan y los casos; el desarrollador decidió qué entraba y revisó cada test y corrección). Antes de F5, el test de concurrencia de F4 se ajustó: `join(timeout=10)`, `assert not thread.is_alive()` e hilos `daemon` (va en el commit de F4).
+
+**Qué se hizo:**
+- **`services/api/TESTING.md` (nuevo, breve):**
+  - qué cubre y por qué;
+  - cómo ejecutar, con los comandos comprobados en PowerShell (la cobertura de auth en un solo comando con `--cov=app.auth … --cov-fail-under=70`, más la alternativa `uv run python -m coverage report …`), la nota sobre `coverage.exe` y el aviso de `uv sync` con la reinstalación;
+  - huecos marcados para Jest (F6) y para los extras (F7 y F8);
+  - el plan por endpoint (12 más JWT y configuración: feliz, límite, fallo y archivo);
+  - por qué estos casos y la tabla de mutaciones;
+  - los dos bugs (`65cfb36` y `988ff96`);
+  - los casos de la IA, aceptados y solo documentados;
+  - los riesgos M-1…M-3, L-1…L-6 y el H-1 residual;
+  - los límites de la batería y los resultados.
+- **Enlaces a `TESTING.md`:** desde `AGENTS.md` §4 (fila de `services/api`, con `uv run pytest` como alternativa válida y «no usar `uv sync`») y desde `services/api/README.md` («Tests»). El README aclara además que el comando `unittest` no recoge la batería de AUTH-088. El README raíz no se toca (decisión del usuario).
+- **Byte NUL documentado:** en la línea de contraseñas de `services/api/README.md` y en la fila «Validación de entrada» de `docs/auth-password-reset.md` §11.
+- **`docs/auth-password-reset.md` §14:** L-4, resuelto por A1 (`24f0e0d`).
+- **`techContext.md`:** la fila de la API ya no dice que pytest «ejecuta la misma suite».
+
+**Verificado durante F5:**
+- **Comandos literales en PowerShell desde `services/api`:**
+  - `uv run pytest` → 455 OK en ~51 s;
+  - `uv run pytest --cov` → cobertura global de `app/` del 98 %;
+  - la cobertura de auth en un solo comando → 98,93 % («Required test coverage of 70% reached»);
+  - `uv run python -m coverage report --include=… --fail-under=70` → 99 % y código de salida 0;
+  - solo la batería nueva con la cobertura de auth → 143 OK, 85,63 %, en ~10 s;
+  - el comando `unittest` de `AGENTS.md` desde la raíz → 312 OK en ~41 s.
+- **`coverage.exe`:** hoy arranca (en F1 lo bloqueó el Control de aplicaciones); la nota lo dice así.
+- **Detección de mutaciones de F2:** vueltas a ejecutar para saber qué test detecta cada una:
+  - `*60` → `*1`: 8 casos de 4 tests;
+  - sin `require_exp`: el caso `[sin exp]`;
+  - aceptar HS512: el caso `[HS512 …]`;
+  - sin el burn de la ruta: 4 casos del test del email mal formado;
+  - sin el tope: los 2 casos del test estricto.
+  - `app/` queda intacto.
+- **Comportamientos de los casos solo documentados:**
+  - una contraseña de 8 espacios se acepta;
+  - un email Unicode se acepta y se pasa a minúsculas;
+  - un `iat` en el futuro se acepta, pero un `nbf` en el futuro lo rechaza python-jose;
+  - un perfil `"   "` se guarda como `""`.
+- **Enlaces relativos y anclas** de `TESTING.md`, `AGENTS.md`, `services/api/README.md` y `docs/auth-password-reset.md`: todos resuelven (script de comprobación).
+
+**Pendiente para F6:**
+- el enlace a `TESTING.md` desde `uis/backoffice/README.md`, cuando exista la sección de Jest;
+- rellenar el hueco de Jest en `TESTING.md`;
+- `coverage/` en el `.gitignore` del backoffice;
+- la excepción de dependencias en `uis/backoffice/CLAUDE.md`.
+
+---
+
 ## 2026-10-12 — AUTH-088, F4: tests de recuperación y cambio de contraseña
 
 **Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`, después de F3 (`d7565a6`). No ha destapado ningún bug.

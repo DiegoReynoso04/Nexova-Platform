@@ -147,7 +147,7 @@ Sin uv, con el venv del servicio ya instalado: `python -m app.seed` (desde `serv
 Contexto y guía paso a paso (incluido el flujo en `/docs`): [`docs/auth-api.md`](../../docs/auth-api.md). Contrato, decisiones D-AUTH-1…13 y matriz de permisos: `SPECS.md` Parte C.
 
 - **Almacenamiento:** `User` (solo credenciales) y `Profile` (`name`, `phone`, `address`) viven **solo en TinyDB**, en `data/auth.json` (`AUTH_DB_PATH`), separado de los proveedores. Ids UUID propios; `Profile.user_id` = `User.id`. Nunca en PostgreSQL/Supabase.
-- **Contraseñas:** hash bcrypt con `libpass` (`from passlib.hash import bcrypt`); 8 caracteres mínimo y 72 bytes máximo, validado antes del hash.
+- **Contraseñas:** hash bcrypt con `libpass` (`from passlib.hash import bcrypt`); 8 caracteres mínimo, 72 bytes máximo y sin byte NUL, validado antes del hash.
 - **JWT:** HS256 con `JWT_SECRET_KEY`; claims `sub` (= `User.id`), `iat`, `exp` (+`ACCESS_TOKEN_EXPIRE_MINUTES`). Login con formulario OAuth2 en `POST /auth/login` (`username` = email): el botón **Authorize** de `/docs` funciona directamente.
 - **Protección:** `get_current_user` (`app/auth/dependencies.py`) se aplica a los routers de incidentes y proveedores y a las rutas privadas de `/users`, `/auth/me`, `/auth/change-password` y `/profiles`.
 
@@ -209,6 +209,8 @@ services/api/.venv/bin/python scripts/seed_incidents.py packages/incident-analyz
 
 ## Tests
 
+**Plan de pruebas de la API de autenticación (AUTH-088), comandos, cobertura y bugs encontrados: [`TESTING.md`](./TESTING.md).**
+
 Los casos de error y su verificación manual (auditoría de gestión de errores) están en [`docs/error-handling-audit.md`](../../docs/error-handling-audit.md) §7.4.
 
 La suite necesita las dependencias del venv de `services/api` (con el Python global falla al importar `fastapi`). Desde la raíz del monorepo, **sin necesidad de activar el venv**, usando su intérprete directamente:
@@ -228,7 +230,7 @@ Con uv, desde `services/api` y con el venv ya instalado:
 uv run --no-sync python -m unittest discover -s tests -t .
 ```
 
-Con pytest (AUTH-088), desde `services/api`: `uv run pytest` (recoge también los tests `unittest`) y `uv run pytest --cov` para la cobertura. `uv run` sincroniza el venv sin borrar paquetes que no declara (verificado con uv 0.12.21: `nexova-shared` y `nexova-incident-analyzer` siguen instalados); `uv sync`, en cambio, es exacto y **sí** los desinstala. Aunque falten, pytest los encuentra en el monorepo (`pythonpath` en `pyproject.toml`), pero el comando `unittest` de arriba los necesita instalados: reinstalarlos con `pip install --no-deps -e packages/shared -e packages/incident-analyzer` desde la raíz.
+Con pytest (AUTH-088), desde `services/api`: `uv run pytest` (recoge también los tests `unittest`) y `uv run pytest --cov` para la cobertura. El comando `unittest` de arriba solo ejecuta la suite anterior: la batería de AUTH-088 está escrita al estilo pytest y solo la recoge `uv run pytest` (detalle en [`TESTING.md`](./TESTING.md)). `uv run` sincroniza el venv sin borrar paquetes que no declara (verificado con uv 0.12.21: `nexova-shared` y `nexova-incident-analyzer` siguen instalados); `uv sync`, en cambio, es exacto y **sí** los desinstala. Aunque falten, pytest los encuentra en el monorepo (`pythonpath` en `pyproject.toml`), pero el comando `unittest` de arriba los necesita instalados: reinstalarlos con `pip install --no-deps -e packages/shared -e packages/incident-analyzer` desde la raíz.
 
 La suite del núcleo (Fase 1) no necesita el venv: `python -m unittest discover -s packages/incident-analyzer/tests -t packages/incident-analyzer` con cualquier Python ≥ 3.11.
 

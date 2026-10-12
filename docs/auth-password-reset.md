@@ -283,7 +283,7 @@ Nota: el enlace del email apunta a la página configurada en `PASSWORD_RESET_URL
 | Email | API key solo en variables de entorno, oculta en `repr` y en errores; enlace construido solo desde `PASSWORD_RESET_URL`; el email solo lleva el enlace |
 | Change password | Exige token y la contraseña actual; solo actúa sobre el usuario del token |
 | Autorización | El token de reset va ligado al usuario en el servidor; no hay forma de dirigir reset o cambio a otro usuario (tras H-1) |
-| Validación de entrada | Email normalizado (máx. 254), token y contraseña actual de 1–512 caracteres, contraseña nueva máx. 72 bytes, body máx. 1 MiB; la confirmación se comprueba en el frontend |
+| Validación de entrada | Email normalizado (máx. 254), token y contraseña actual de 1–512 caracteres, contraseña nueva máx. 72 bytes y sin byte NUL (añadido en AUTH-088, `988ff96`), body máx. 1 MiB; la confirmación se comprueba en el frontend |
 | Logs y auditoría | Solo evento, usuario, IP, motivo y fecha; los fallos de Resend se registran solo por nombre de clase |
 | Frontend | El token no se guarda en el navegador ni se escribe en consola; se quita de la URL; React escapa el contenido; rutas públicas, abiertas y protegidas correctas |
 | Configuración | Secretos solo en `services/api/.env` (ignorado por git); sin claves por defecto; configuración parcial de email → la API no arranca; los frontends solo reciben URLs |
@@ -347,7 +347,7 @@ Ninguno de estos puntos bloquea AUTH-03; están documentados en `services/api/SP
 | L-1 | La contraseña nueva se hashea antes de validar el token (coste de bcrypt por petición anónima, como el login) |
 | L-2 | `PASSWORD_RESET_URL` admite `http://` (conviene exigir `https://` fuera de local) |
 | L-3 | El token aparece en la URL de la primera carga (logs del servidor de Next o de un proxy, panel de Resend); mitigado con caducidad, un solo uso, `replaceState` y `no-referrer` |
-| L-4 | Excepciones poco comunes del cliente HTTP (`http.client.HTTPException`) no se capturan en el sender; las recoge el middleware de errores sin filtrar datos |
+| L-4 | ~~Excepciones poco comunes del cliente HTTP (`http.client.HTTPException`) no se capturan en el sender; las recoge el middleware de errores sin filtrar datos~~ **Resuelto** por A1 de la auditoría de errores (`24f0e0d`): ahora se convierten en `EmailDeliveryError` y se registran solo por clase |
 | L-5 | **Auditoría y retención:** se guardan IP sin política de retención ni endpoint de consulta (las IP son datos personales) |
 | L-6 | Si el navegador ya tiene otra sesión abierta, tras el reset `/login` redirige a `/` y no se ve el aviso de éxito |
 | — | Plantilla HTML del email (opcional del ticket, no elegido: solo texto plano) |
