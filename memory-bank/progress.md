@@ -4,9 +4,20 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-13 — Memory-bank: AUTH-088 integrada en `main`
+
+**Estado: hecho** en `chore/memory-bank-auth088-merged`, creada desde `main` en `a56e346`. Solo documentación; sin impacto técnico.
+
+- **Hechos comprobados con git** (`git fetch` + `git log --merges main`): `main` está en `a56e346`, el merge de la PR #19 (`feature/auth-088-test-suite`, 2026-10-13). Antes, la PR #18 (`feature/error-handling-audit`, merge `843ae26`, 2026-10-10) y la PR #17 (`feature/centralized-incident-manager`, merge `6dfa013`, 2026-10-08).
+- **`progress.md`:** la entrada de cierre de AUTH-088 decía «sin subir»; corregida.
+- **`techContext.md`:** el estado verificado de `origin/main` pasa de `6dfa013` a `a56e346`, con las PRs #18 y #19.
+- **`AGENTS.md` §4:** el gestor centralizado de incidencias deja de figurar «pendiente de PR».
+
+---
+
 ## 2026-10-13 — AUTH-088: cierre de la rama (verificación final)
 
-**Estado: rama `feature/auth-088-test-suite` completa y verificada, sin subir.** Push y PR los hace el usuario. 13 commits sobre `main` (`843ae26`): F1 a F8, tres `fix` (`65cfb36` tope de minutos, `988ff96` byte NUL, `1ddaaf8` título con emojis) y los `docs`.
+**Estado: rama `feature/auth-088-test-suite` completa y verificada.** ~~Sin subir; push y PR los hace el usuario.~~ *Corregido el 2026-10-13: integrada en `main` con la PR #19 (merge `a56e346`).* 13 commits sobre `main` (`843ae26`): F1 a F8, tres `fix` (`65cfb36` tope de minutos, `988ff96` byte NUL, `1ddaaf8` título con emojis) y los `docs`.
 
 **Verificación final** (HEAD frente a `main`; los totales de `main` se midieron sobre una copia extraída con `git archive` y los `node_modules` del repo enlazados con una unión de directorio, ya eliminada):
 

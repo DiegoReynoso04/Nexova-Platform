@@ -39,7 +39,7 @@ Ambas apps Next.js (`talent-pipeline-tracker`, `backoffice`) tienen su propio `p
 
 ## Estado real en `main` (verificado, no asumido)
 
-Verificado el 2026-10-10 (`git fetch` + `git log origin/main`): `origin/main` está en **`6dfa013`**, el merge de la PR #17 (gestor centralizado de incidencias). `origin/main` tiene mergeados:
+Verificado el 2026-10-13 (`git fetch` + `git log origin/main`): `origin/main` está en **`a56e346`**, el merge de la PR #19 (AUTH-088). `origin/main` tiene mergeados:
 
 - Hito 2 (PR #1, `feature/domain-models`) e Hito 3 (PRs #2 y #3, `feature/talent-pipeline-tracker`).
 - Memory bank, `AGENTS.md`, `.agents/` y scaffold de `uis/backoffice` (PR #4) y `docs/ARCHITECTURE_PROPOSAL.md` (PR #5), ambos desde `feature/agent-memory-bank`.
@@ -48,6 +48,7 @@ Verificado el 2026-10-10 (`git fetch` + `git log origin/main`): `origin/main` es
 - Actualización 2026-10-05 (`git fetch`): las PRs #11 y #12 (solo documentación; merge `7815e26`) y AUTH-02 (PR #13, `feature/auth-frontend`; commit `e2d4cbd`, merge `a4b6369`, 2026-10-05). El merge no aprueba las propuestas P-1…P-7 de `docs/auth-frontend.md`, que siguen pendientes de revisión. Después, la PR #14 (`chore/memory-bank-auth-frontend-merged`; merge `98c8ad2`), solo documentación.
 - Actualización 2026-10-07 (`git fetch`): la PR #15 (`docs/auth02-export-validation`; merge `87a7047`), solo documentación, y AUTH-03 (PR #16, `feature/password-reset`; commits `cb9d0d5` y `2a1926a`, merge `677e735`, 2026-10-07). El merge no aprueba las propuestas P3-1…P3-6 de `docs/auth-password-reset.md` ni decide sobre M-1, M-2 y M-3.
 - Actualización 2026-10-10 (`git fetch`): `origin/main` está en **`6dfa013`**, el merge de la PR #17 (2026-10-08). Esa PR integra el gestor centralizado de incidencias: `packages/shared`, `services/api` → `app/modules/incident_manager/`, `scripts/seed_incidents.py` y `uis/backoffice` → `/incident-manager`, desde `feature/centralized-incident-manager` (F1–F6 y el arreglo móvil `ee944ae`). *(Corrige la nota anterior, que lo daba como "no está en `main`, pendiente de PR".)* El merge no aprueba las decisiones P4-1…P4-13, que siguen pendientes de revisión.
+- Actualización 2026-10-13 (`git fetch`): la auditoría de gestión de errores (PR #18, `feature/error-handling-audit`; merge `843ae26`, 2026-10-10) y AUTH-088 (PR #19, `feature/auth-088-test-suite`; merge `a56e346`, 2026-10-13). `origin/main` está en **`a56e346`**.
 - **Repositorio renombrado (2026-09-30):** `DiegoReynoso04/Milestone-0-Elige-tu-empresa` → `DiegoReynoso04/nexova-platform` (GitHub lo muestra como `Nexova-Platform`; el nombre no distingue mayúsculas y las URLs antiguas redirigen). El remoto `origin` local ya apunta a `https://github.com/DiegoReynoso04/nexova-platform.git`. La carpeta local puede seguir llamándose `Milestone-0-Elige-tu-empresa`: no afecta a nada.
 
 - ~~**No está en `main` (2026-10-10):** la auditoría de gestión de errores vive en la rama `feature/error-handling-audit`, pendiente de push y PR.~~ *Corregido el 2026-10-10: integrada en `main` con la PR #18 (merge `843ae26`).*
