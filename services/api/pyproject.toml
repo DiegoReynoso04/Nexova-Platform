@@ -11,11 +11,12 @@ requires-python = ">=3.11"
 # Rangos acotados a las versiones probadas. Versiones exactas en uv.lock
 # (versionado; lo genera y actualiza `uv run`/`uv lock`).
 #
-# El núcleo `incident_analyzer` (packages/incident-analyzer) NO se declara
-# aquí a propósito: no está publicado y ese nombre está libre en PyPI, así que
-# declararlo haría que pip lo buscase allí (dependency confusion). Se instala
-# siempre desde el monorepo en la misma orden que este servicio:
-#   pip install -e packages/incident-analyzer -e "services/api[dev]"
+# El núcleo `incident_analyzer` (packages/incident-analyzer) y `nexova_shared`
+# (packages/shared) NO se declaran aquí a propósito: no están publicados y esos
+# nombres están libres en PyPI, así que declararlos haría que pip los buscase
+# allí (dependency confusion). Se instalan siempre desde el monorepo en la misma
+# orden que este servicio:
+#   pip install -e packages/shared -e packages/incident-analyzer -e "services/api[dev]"
 dependencies = [
     "fastapi>=0.141,<0.142",
     # AUTH-01 (autorizadas por el ticket): hash bcrypt con libpass (fork
@@ -34,8 +35,38 @@ seed = "app.seed:main"
 create-admin = "app.auth.create_admin:main"
 
 [project.optional-dependencies]
-# httpx lo necesita fastapi.testclient.TestClient. Tests con unittest (sin pytest).
+# Instalación con pip (orden de arriba): httpx lo necesita
+# fastapi.testclient.TestClient. Con pip, la suite se ejecuta con unittest.
 dev = ["httpx>=0.28,<0.29"]
+
+[dependency-groups]
+# Grupo de uv (`uv add --dev`; pytest y pytest-cov los autoriza AUTH-088).
+# `uv run` lo instala por defecto. httpx se repite aquí para que
+# `uv run pytest` funcione sin `--extra dev`.
+dev = [
+    "httpx>=0.28,<0.29",
+    "pytest>=9.1,<9.2",
+    "pytest-cov>=7.1,<7.2",
+]
 
 [tool.setuptools]
 packages = ["app", "app.auth", "app.core", "app.modules", "app.modules.incident_manager", "app.modules.incidents", "app.routes"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Sin el plugin de logging de pytest: añade un handler al logger raíz y entonces
+# `logging.lastResort` deja de escribir en stderr. Los scripts (seed, create-admin)
+# y sus tests cuentan con esa línea en stderr (ver techContext, "Registro en stderr").
+# Consecuencia: no hay fixture `caplog`; se usa `tests/support.capture_logs`.
+addopts = ["-p", "no:logging"]
+# nexova_shared e incident_analyzer se instalan con pip y no se declaran
+# (ver arriba). Si una sincronización de uv los quitara del venv, pytest los
+# sigue encontrando en el monorepo. Rutas relativas a services/api.
+pythonpath = ["../../packages/shared", "../../packages/incident-analyzer"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true

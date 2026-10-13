@@ -38,7 +38,7 @@ El documento de contexto de Nexova **no define ninguna API HTTP**: describe un s
 |---|---|
 | D-API-1 | Rutas `POST /api/incidents/analyze` y `GET /api/incidents/results/export`. **Sin** prefijo `/api/v1` (a diferencia de `docs/ARCHITECTURE_PROPOSAL.md`, que sigue siendo una propuesta pendiente) |
 | D-API-2 | Porcentajes y media de satisfacción como **string decimal** (`"29.2"`, `"3.84"`), `null` si no son calculables. El redondeo lo hace solo el núcleo |
-| D-API-3 | Tests con `unittest` + `fastapi.testclient.TestClient` (sin pytest) |
+| D-API-3 | Tests con `unittest` + `fastapi.testclient.TestClient` (sin pytest). *Actualizado en AUTH-088 (2026-10-10): pytest y pytest-cov, autorizados por el ticket, están en el grupo `dev` de uv; `uv run pytest` ejecuta también la suite `unittest`, que sigue pasando con el comando de `AGENTS.md` §4* |
 | D-API-4 | Límite técnico `MAX_UPLOAD_BYTES`, por defecto **1 MiB (1048576 bytes)**, aplicado al **body HTTP completo** (cabeceras y delimitadores multipart incluidos), **no al CSV**. No es un requisito del cliente. Ver §3.1 "Límite de tamaño" |
 | D-API-5 | El último resultado es **el último análisis que termina correctamente**; un POST fallido no lo modifica |
 | D-API-11 | `Cache-Control: no-store` en las respuestas 200 de `POST /api/incidents/analyze` y `GET /api/incidents/results/export` |
@@ -208,7 +208,7 @@ Variables de entorno del proceso (la API no carga archivos `.env` por sí sola; 
 | `MAX_UPLOAD_BYTES` | `1048576` | entero > 0; se valida al arrancar. Límite del **body HTTP completo**, no del CSV (§3.1) |
 | `SUPPLIERS_DB_PATH` | `services/api/data/suppliers.json` | ruta del archivo TinyDB del directorio de proveedores (Parte B). La usan la API y el seeder |
 | `JWT_SECRET_KEY` | **ninguno (obligatoria)** | clave HS256, ≥ 32 caracteres; sin ella la API no arranca (Parte C) |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | **ninguno (obligatoria)** | entero > 0; sin ella la API no arranca (Parte C) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | **ninguno (obligatoria)** | entero entre 1 y 525600; sin ella o fuera de rango la API no arranca (Parte C). El máximo (1 año) es un **tope técnico**: por encima, la fecha de expiración se sale del rango de `datetime` y cada login fallaba. **No es una política de sesión**: ningún documento fija la duración máxima, que decide el CTO |
 | `AUTH_DB_PATH` | `services/api/data/auth.json` | archivo TinyDB de `User` y `Profile` (Parte C). La usan la API y `create-admin` |
 | `INCIDENTS_DB_PATH` | `services/api/data/incidents.json` | archivo TinyDB del gestor centralizado de incidencias (tablas `incidents` y `seed_keys`). Lo usan el repositorio `app/modules/incident_manager/` y `scripts/seed_incidents.py`. Rutas en la Parte E |
 
@@ -327,7 +327,7 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 | D-AUTH-4 | `JWT_SECRET_KEY` (≥ 32 caracteres) y `ACCESS_TOKEN_EXPIRE_MINUTES` **sin valor por defecto**: `create_app()` lanza `ConfigError` si faltan, así que la API no arranca. El seeder y `create-admin` no las necesitan |
 | D-AUTH-5 | Algoritmo `HS256`. Claims: `sub`, `iat`, `exp`. Al decodificar se exigen firma válida, algoritmo `HS256` (se rechaza `alg: none`), `sub` y `exp` no vencido |
 | D-AUTH-6 | Email normalizado (recortado y en minúsculas) y validado sin regex ni dependencias: una sola `@`, parte local y dominio no vacíos, dominio con punto interior y sin espacios. Máximo 254 caracteres |
-| D-AUTH-7 | Contraseña: mínimo 8 caracteres y **máximo 72 bytes UTF-8** (límite de bcrypt), validado antes del hash (422). No se trunca en silencio |
+| D-AUTH-7 | Contraseña: mínimo 8 caracteres y **máximo 72 bytes UTF-8** (límite de bcrypt), validado antes del hash (422). No se trunca en silencio. Sin bytes NUL (bcrypt los rechaza): 422 al validar, y en el login o como contraseña actual no se comparan (misma respuesta que una contraseña incorrecta: 401 y 400) |
 | D-AUTH-8 | `POST /users` es público y **no acepta `role`**: `UserCreate` = `email`, `password`, `name`, `phone`, `address`; enviar `role` (con cualquier valor) → 422. El backend fija siempre `role=user`. Los roles los asigna un admin con `PUT /users/{id}` (valor fuera del `Enum` → 422); el primer admin se crea con `create-admin` |
 | D-AUTH-9 | Primer admin con el comando explícito `uv run create-admin` (patrón de `uv run seed`); contraseña interactiva y oculta (`getpass`), nunca por argumento |
 | D-AUTH-10 | TinyDB propio en `AUTH_DB_PATH` (por defecto `services/api/data/auth.json`, ignorado por git), tablas `users` y `profiles`. Mismo patrón que D-SUP-10 (lock + abrir/cerrar por operación, un worker) |

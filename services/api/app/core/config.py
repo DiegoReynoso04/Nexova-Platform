@@ -23,6 +23,11 @@ DEFAULT_AUTH_DB_PATH = SERVICE_ROOT / "data" / "auth.json"
 DEFAULT_INCIDENTS_DB_PATH = SERVICE_ROOT / "data" / "incidents.json"
 # HS256 necesita una clave de al menos 256 bits; se exige en caracteres.
 MIN_JWT_SECRET_LENGTH = 32
+# Tope TÉCNICO de ACCESS_TOKEN_EXPIRE_MINUTES (1 año), no una política de sesión:
+# con valores enormes `iat + minutos` se sale del rango de datetime y cada login
+# fallaba (OverflowError al firmar el token) aunque la API hubiera arrancado.
+# La duración máxima de negocio de la sesión no la fija ningún documento: la decide el CTO.
+MAX_ACCESS_TOKEN_EXPIRE_MINUTES = 525_600
 # AUTH-03: vigencia del enlace de restablecimiento. El ticket fija 15–60 minutos.
 DEFAULT_PASSWORD_RESET_TOKEN_MINUTES = 30
 MIN_PASSWORD_RESET_TOKEN_MINUTES = 15
@@ -58,8 +63,10 @@ class Settings:
             raise ConfigError("CORS_ALLOWED_ORIGINS must list explicit origins; '*' is not allowed")
         if self.max_upload_bytes <= 0:
             raise ConfigError("MAX_UPLOAD_BYTES must be a positive integer")
-        if self.access_token_expire_minutes is not None and self.access_token_expire_minutes <= 0:
-            raise ConfigError("ACCESS_TOKEN_EXPIRE_MINUTES must be a positive integer")
+        if self.access_token_expire_minutes is not None and not (
+            1 <= self.access_token_expire_minutes <= MAX_ACCESS_TOKEN_EXPIRE_MINUTES
+        ):
+            raise ConfigError(f"ACCESS_TOKEN_EXPIRE_MINUTES must be between 1 and {MAX_ACCESS_TOKEN_EXPIRE_MINUTES}")
         if not (
             MIN_PASSWORD_RESET_TOKEN_MINUTES <= self.password_reset_token_minutes <= MAX_PASSWORD_RESET_TOKEN_MINUTES
         ):

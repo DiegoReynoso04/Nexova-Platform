@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 
 import { Button } from '@/components/ui/button';
 import type { SubmitState } from '@/hooks/use-incident-form';
-import { validateIncidentForm } from '@/services/incident-manager.service';
+import { countCharacters, validateIncidentForm } from '@/services/incident-manager.service';
 import {
   BRANCH_LABELS,
   INCIDENT_BRANCHES,
@@ -86,7 +86,7 @@ export function IncidentForm({ submit, onSubmit }: IncidentFormProps) {
     if (attempt > 0 && hasSummary) summaryRef.current?.focus();
   }, [attempt, hasSummary, apiError]);
 
-  const titleLength = values.title.trim().length;
+  const titleLength = countCharacters(values.title.trim());
 
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4" aria-describedby="incident-form-help">

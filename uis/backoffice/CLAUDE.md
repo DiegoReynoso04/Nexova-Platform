@@ -36,7 +36,7 @@ Reglas específicas:
 - **Privacidad (obligatoria):** `customer_email` y cualquier dato de las filas del CSV no pueden aparecer en la UI, el estado, logs ni mensajes de error. El contenido del archivo **no se lee en JavaScript** (sin `FileReader`, `file.text()` ni vista previa): el `File` va directo a `FormData`. Prohibido `console.*` con datos de respuestas o errores, y persistir resultados en `localStorage`/`sessionStorage`/IndexedDB (la única excepción es el token de sesión de AUTH-02, ver "Autenticación"). Los mensajes de error mostrados se eligen por `code` de la API, no copiando texto crudo de respuestas.
 - **Arquitectura de `/incidents`:** `app/incidents/page.tsx` es un Server Component (exporta la metadata) que renderiza `components/incidents/incident-analysis-view.tsx` (`'use client'`). La vista solo interactúa a través de `hooks/use-incident-analysis.ts`, que es la frontera de interacción: únicamente él llama a `services/incidents.service.ts`, gestiona cancelación/carreras y hace la descarga (el Blob nunca llega a los componentes ni al estado). Los demás componentes son presentacionales.
 - **Navegación:** enlace "Análisis de incidentes" en la cabecera del layout (`components/ui/nav-link.tsx`, con `aria-current`); la portada no se modifica.
-- **Tests:** módulos puros (normalizadores, cliente, servicio, estado/sesión del hook) y revisión estática del código de producción con el runner nativo de Node 24, **sin añadir dependencias**. Comando exacto en el `README.md` (sección Validación). Los componentes se validan con `tsc` + `lint` + `build` y verificación manual en el navegador.
+- **Tests:** módulos puros (normalizadores, cliente, servicio, estado/sesión del hook) y revisión estática del código de producción con el runner nativo de Node 24, **sin añadir dependencias** (la única excepción es Jest, de AUTH-088; ver «Stack»). Comando exacto en el `README.md` (sección Validación). Los componentes se validan con `tsc` + `lint` + `build` y verificación manual en el navegador.
 - **Primitivas de UI** (botón, spinner, alerta): se reescriben localmente siguiendo el patrón de `uis/talent-pipeline-tracker/components/ui/`; no hay paquete compartido.
 
 ## Directorio de proveedores (`/suppliers`)
@@ -92,6 +92,7 @@ Autorizada por el ticket AUTH-02 ([`docs/auth-frontend.md`](../../docs/auth-fron
 - Next.js (App Router), TypeScript estricto, Tailwind CSS v4 (config vía CSS, sin `tailwind.config.ts`) — mismo stack que `uis/talent-pipeline-tracker`, decisión registrada en `memory-bank/techContext.md`.
 - Solo hooks nativos de React si se añade estado. Prohibido Redux, Zustand, Recoil, Jotai u otra librería de estado externa.
 - No añadir ninguna dependencia nueva sin autorización explícita.
+- **Excepción autorizada por AUTH-088:** `jest`, `ts-jest` y `@types/jest` (solo `devDependencies`), para los tests de Jest de la lógica TypeScript (`__tests__/**/*.test.ts`, configuración en `jest.config.mjs`, `npm run test:jest`). Nada más: ni `jest-environment-jsdom` ni `ts-node`. Los tests de `node:test` siguen en `tests/*.test.mjs`, y Jest no los recoge. Las utilidades del frontend que se prueben con Jest van en `__tests__/`. Plan y cobertura: `services/api/TESTING.md` §10.
 - Prohibido `any`.
 
 ## Arquitectura

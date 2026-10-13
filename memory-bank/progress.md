@@ -4,9 +4,412 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-13 — AUTH-088: cierre de la rama (verificación final)
+
+**Estado: rama `feature/auth-088-test-suite` completa y verificada, sin subir.** Push y PR los hace el usuario. 13 commits sobre `main` (`843ae26`): F1 a F8, tres `fix` (`65cfb36` tope de minutos, `988ff96` byte NUL, `1ddaaf8` título con emojis) y los `docs`.
+
+**Verificación final** (HEAD frente a `main`; los totales de `main` se midieron sobre una copia extraída con `git archive` y los `node_modules` del repo enlazados con una unión de directorio, ya eliminada):
+
+| Suite | `main` (`843ae26`) | HEAD |
+|---|---|---|
+| `services/api`: `uv run pytest` | — (sin pytest) | 515 OK |
+| `services/api`: `unittest` (`AGENTS.md`) | 312 OK | 312 OK |
+| Cobertura global de `app/` | 97 % | 98 % |
+| Cobertura de auth (`--fail-under=70`) | 96 % | 99 % |
+| Cobertura de los módulos de API-042 | 99 % | 99 % |
+| `uis/backoffice`: `node:test` | 344 OK | 344 OK |
+| `uis/backoffice`: `npm run test:jest` | — (sin Jest) | 161 OK |
+| `uis/backoffice`: `tsc`, `lint` y `build` | no se reejecutaron | limpios |
+| `packages/shared` | 81 OK (sin cambios en la rama) | 81 OK |
+| `packages/incident-analyzer` | 121 OK, 7 omitidos (sin cambios) | 121 OK, 7 omitidos |
+| `src/`: `npm run check` | 97 OK (sin cambios) | 97 OK |
+
+- **`git diff main..HEAD --stat`:** idéntico con y sin `--ignore-cr-at-eol` (44 archivos).
+- **Sin archivos que no deban subir:** ni `.vscode/`, ni `.env` (solo `.env.example`), ni `.coverage`, `coverage/`, `htmlcov/` o bases de datos.
+- **Dependencias directas nuevas:** solo pytest, pytest-cov y httpx (grupo `dev` de uv), y jest, ts-jest y @types/jest. El resto de `uv.lock` y `package-lock.json` son transitivas; no se elimina ni cambia ninguna existente.
+- **Huella de `services/api/data/*.json`:** idéntica.
+- **Relectura de `TESTING.md` como evaluador:**
+  - quitada la jerga «RP1»/«RP3» de §4;
+  - el tiempo de la suite completa pasa a «~1–2 min» (hoy, 109 s);
+  - aclarado que los 112 tests de Jest de auth son parte de los 161;
+  - el título y las filas mencionan también los extras.
+  - Enlaces comprobados con un script.
+- **Incidencias de la verificación:** un worktree de `main` en el scratchpad falló al poblarse (probablemente por la longitud de la ruta en Windows). No quedó registrado y el repo no se vio afectado. Se usó `git archive` en su lugar.
+
+---
+
+## 2026-10-13 — AUTH-088, F8 (extra FE-019): utilidades del frontend con Jest (y el bug del título con emojis)
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`: el fix en `1ddaaf8` (`fix(backoffice)`, con sus tests), los tests en `1c9ed4a` (`test(backoffice)`) y la documentación en el commit `docs` siguiente.
+
+**Qué se hizo:**
+- **`uis/backoffice/__tests__/utils/`:** 49 tests en 4 archivos. `node:test` ya cubría los casos generales, así que aquí van los límites que faltaban:
+  - `supplier-renewal.test.ts` (`daysUntil`, `renewalInfo`): hoy, día 59 (29-02-2028), día 60 y día 61 alrededor de un año bisiesto; la hora del día y los cambios de horario de 2026 no alteran la cuenta; 2026-02-30, 2027-02-29, 2026-2-3, mes 13 o 0, 2026-04-31 y espacios → `null`; `null` y fecha pasada;
+  - `suppliers.service.test.ts` (`parseRate`, `validateSupplierForm`): coma decimal; `0,00`, separador de miles, signos, símbolo de moneda, `Infinity` y `NaN` → `null`; las fechas y el email opcionales no se validan en el cliente;
+  - `incident-manager.service.test.ts` (`countCharacters`, `validateIncidentForm`, `messageForApiError`): el límite del título (los tests llegaron con el fix), la descripción en blanco, la sede obligatoria para cualquier origen y los textos por código;
+  - `api-error-body.test.ts` (`normalizeApiErrorBody`): un `detail` de texto se conserva y uno estructurado se descarta.
+- **`jest.config.mjs`:** `collectCoverageFrom` añade `lib/supplier-renewal.ts`, `services/suppliers.service.ts` y `services/incident-manager.service.ts`.
+- **README del backoffice:** el párrafo de Jest incluye las utilidades.
+
+**Bug encontrado y corregido** (entrada en `TESTING.md` §5, tercera columna):
+- **Qué lo destapó:** un caso límite de esta batería: ¿el cliente cuenta los caracteres del título como la API?
+- **Síntoma:** con 61 emojis, el formulario de alta de incidencias decía «no puede superar los 120 caracteres» y el contador marcaba 122 / 120. La API acepta ese título (61 caracteres).
+- **Causa:** `validateIncidentForm` y el contador de `incident-form.tsx` medían con `.length` (unidades UTF-16: un emoji vale 2), y la API con `len()` de Python (caracteres).
+- **Corrección (opción a del usuario):** `countCharacters` (`[...value].length`) en `services/incident-manager.service.ts`, usada por la validación y por el contador.
+- **Mismo patrón en el resto del backoffice:** revisado, no hay más. Era el único límite de longitud que comprobaba el cliente; el perfil (200), el email (254) y la contraseña (8 y 72 bytes) solo los valida la API.
+- **Commit:** `1ddaaf8`.
+- **Tests:** `61 emojis are accepted` y el resto del límite del título (120 / 121 ASCII, 60, 120 y 121 emojis).
+
+**Validación:**
+- `npm run test:jest`: 161 OK (112 de auth y 49 de utilidades) en ~1 s.
+- `tsc`, `lint` y `build` limpios; `node:test`: 344 de 344 OK.
+- **Cobertura (líneas):**
+  - `supplier-renewal.ts`: 100 %;
+  - `suppliers.service.ts`: 35,2 %;
+  - `incident-manager.service.ts`: 44,3 %;
+  - `normalizers.ts`: 58,5 %.
+  - Las cinco funciones probadas quedan al 100 %; lo no cubierto son los `build*Payload`, las clases de error y la parte HTTP, que cubre `node:test`.
+- **Mutaciones**, todas detectadas y deshechas, con `git diff` de `lib/`, `services/` y `hooks/` vacío:
+  - ventana sin el día 60;
+  - sin la comprobación de calendario (6 tests);
+  - `parseRate` sin coma decimal (3);
+  - `status`/`invalid_choice` con el texto genérico;
+  - descripción sin recortar;
+  - volver a `.length` (3).
+
+---
+
+## 2026-10-13 — AUTH-088, F7 (extra API-042): proveedores y gestor de incidencias con pytest
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`: los tests en `63ef418` (`test(api)`) y la documentación en el commit `docs` siguiente.
+
+**Qué se hizo:**
+- **Antes de escribir:** revisados `test_suppliers_api.py` y `test_incident_manager_*.py`. Cubrían el contrato HTTP y el repositorio del gestor por dentro (transiciones, filtros, orden con fechas distintas y seed). Esta batería fija lo que solo se probaba por HTTP o no se probaba:
+  - las funciones de ruta de los dos grupos;
+  - `updated_at` con el reloj controlado;
+  - el desempate por `id` con la misma fecha;
+  - una transición inválida deja el archivo intacto byte a byte.
+- **`conftest.py`:** fixtures `supplier_repo` e `incident_repo` (base temporal y reloj del test); el docstring menciona las dos baterías.
+- **`test_suppliers_logic.py`:** 30 tests:
+  - alta con id y hora;
+  - límites de tarifa y fecha (0,01, entera, 29-02-2028, 2026-02-29, 2026-3-1);
+  - reglas del CONTEXT (moneda/país, enumeraciones, tarifa de texto o infinita, `id`/`updated_at` del cliente);
+  - filtros (categoría entre varias, AND, vacío);
+  - 404 en lectura, tarifa, estado y borrado sin escribir;
+  - la tarifa registra la hora y el estado no;
+  - borrado y doble borrado;
+  - seed idempotente por `name` sin pisar.
+- **`test_incident_manager_logic.py`:** 30 tests:
+  - alta `open` con texto recortado y fechas del reloj;
+  - título de 120 / 121;
+  - 400 sin escribir;
+  - filtros AND (cada incidencia descartada difiere en un solo campo);
+  - orden y desempate por `id`;
+  - filtro fuera del vocabulario → 400;
+  - resumen con datos y vacío;
+  - `get` y 404;
+  - transición válida (solo `status` y `updated_at`), `open → discarded` y `discarded` final;
+  - transición inválida sin tocar el archivo;
+  - 404 y cuerpo mal formado;
+  - seed idempotente por clave de origen, con la fecha y el estado del histórico.
+
+**Hallazgo documentado, no corregido** (decisión del usuario): TinyDB reutiliza el `id` del último proveedor borrado (se borra el 2, se crea otro y recibe el 2). Ningún documento lo prohíbe (D-SUP-4, D-AUTH-2). Está en `TESTING.md` §7, sin test que lo fije.
+
+**Validación:**
+- `uv run pytest`: 515 OK (455 + 60). Huella de `data/` idéntica.
+- Cobertura de `app/routes/suppliers.py`, `app/database.py`, `app/models.py` y `app/modules/incident_manager/`: **92,6 %** con la batería sola (menos de 1 s) y **99,0 %** con la suite completa.
+- Global de `app/`: 98 %; auth: 99 %.
+- **Mutaciones**, todas detectadas y deshechas, con `git diff -- app` vacío:
+  - el estado del proveedor toca `updated_at`;
+  - la tarifa no registra `updated_at`;
+  - sin el filtro de categoría;
+  - el seed no comprueba el `name`;
+  - aceptar una transición inválida;
+  - invertir el orden;
+  - sin el filtro de origen, de sede o de categoría del gestor;
+  - el seed del gestor no comprueba la clave.
+  - La del filtro de origen sobrevivió a la primera versión del test de filtros y se reforzó.
+- **`TESTING.md`:** §11 (este extra), §12 (FE-019), el tercer bug en §5, el riesgo del id en §7 y los totales de §9.
+
+---
+
+## 2026-10-12 — AUTH-088, F6: Jest para la lógica TypeScript de autenticación (`uis/backoffice`)
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`, después de F5 (`f482e02`). No ha destapado ningún bug.
+
+**Dependencias** (autorizadas por el ticket; solo `devDependencies`):
+- **Versiones:** `jest ^30.5.2`, `ts-jest ^29.4.14` y `@types/jest ^30.0.0`.
+- **Compatibilidad comprobada con `npm view`:** ts-jest 29.4.14 declara `jest ^29 || ^30` y `typescript >=4.3 <7`; el TypeScript instalado es la 5.9.3. @types/jest 30 corresponde a Jest 30.
+- **`package-lock.json`:** solo altas (243 paquetes). Ninguna versión existente cambia ni se elimina; solo cambian las `devDependencies` de la entrada raíz. Con el algoritmo `histogram`, el diff son 3578 inserciones y 0 borrados; el diff por defecto de git aparenta 2306 borrados por cómo alinea.
+- **`@parcel/watcher` 2.6.0:** transitiva de `jest-haste-map`. npm no ejecutó su install script (política `allowScripts`) y no se ha aprobado; Jest funciona sin él.
+
+**Qué se hizo:**
+- **`jest.config.mjs`:** entorno `node`; `roots` y `testMatch` limitados a `__tests__/**/*.test.ts`, así que `tests/*.test.mjs` sigue con `node:test`; `@/` → `<rootDir>/`; ts-jest en CommonJS; `.next/` ignorado; `collectCoverageFrom` con los cinco archivos de auth.
+- **`package.json`:** script `"test:jest": "jest --coverage"`.
+- **`coverage/`:** `/coverage` ya estaba en el `.gitignore` del backoffice (plantilla de Next). Se añade `coverage/**` a los ignorados de `eslint.config.mjs`, porque si no ESLint analiza el informe que genera Jest (daba un aviso).
+- **`__tests__/support/`:**
+  - `fake-browser.ts`: Storage en memoria y `window` con `addEventListener` y `removeEventListener`;
+  - `fake-api-client.ts`: cumple la interfaz `ApiClient`.
+  - `__tests__/` queda preparado para las utilidades de FE-019.
+- **`__tests__/auth/`:** 112 tests en 5 archivos:
+  - `auth-token`: con `jest.isolateModules` y `jest.requireActual` por el estado del módulo;
+  - `auth-routes`;
+  - `auth.service`: los `validate*`, los `build*`, `buildLoginForm` y `createAuthService` con el cliente falso;
+  - `normalizers` (parte de auth);
+  - `use-auth-session`: reducer, estado derivado, textos y, además de lo pedido, `createAuthSessionController`.
+- **Añadidos durante la fase** (para cubrir lógica de auth que la cobertura dejó ver): `getCurrentUser` (401 → `session_expired`), `updateProfile`, `requestPasswordReset`, el 422 del registro por campo y `registered_login_failed`.
+
+**Verificado:**
+- `npx jest --coverage` y `npm run test:jest`: 112 OK y código de salida 0.
+- Cobertura de líneas (Jest):
+  - `auth-routes` y `auth-token`: 100 %;
+  - `auth.service`: 93,4 %;
+  - `use-auth-session`: 80,3 % (sin el hook de React);
+  - `normalizers`: 58,5 % (lo no cubierto no es de auth);
+  - total de los cinco archivos: 80,2 %.
+- `npx tsc --noEmit`, `npm run lint` y `npm run build`: limpios.
+- `node:test` con el comando de `AGENTS.md`: 344 de 344 OK.
+- **Mutaciones**, todas detectadas y deshechas, con `git diff -- uis/backoffice/lib uis/backoffice/services uis/backoffice/hooks` vacío:
+  - `readAuthToken` sin `trim` → falla `a token made only of spaces…`;
+  - `/reset-password` tratada como solo pública → falla `/reset-password renders with session authenticated…`;
+  - guardar el token aunque la normalización falle → fallan 2 tests del login;
+  - `normalizeAccessToken` acepta un `expires_in` no entero → fallan 3 tests.
+- **Sin lógica de tokens ni de hash en TypeScript:** buscados `atob`, `jwt-decode`, `bcrypt`, `crypto.subtle` y `createHash` en el código de producción, sin coincidencias. Documentado en `TESTING.md` §10.
+
+**Documentación:**
+- `TESTING.md` §10 (Jest);
+- `uis/backoffice/README.md` («Validación»), con el enlace a `TESTING.md`;
+- `uis/backoffice/CLAUDE.md`: la excepción de dependencias y dónde va cada tipo de test;
+- `AGENTS.md` §4: `npm run test:jest` en la fila del backoffice;
+- `techContext.md`: las dependencias del backoffice.
+
+---
+
+## 2026-10-12 — AUTH-088, F5: `services/api/TESTING.md` y documentación
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`, después de F4 (`9a47153`). A petición del usuario, §6 de `TESTING.md` explica también cómo se usó la IA (propuso el plan y los casos; el desarrollador decidió qué entraba y revisó cada test y corrección). Antes de F5, el test de concurrencia de F4 se ajustó: `join(timeout=10)`, `assert not thread.is_alive()` e hilos `daemon` (va en el commit de F4).
+
+**Qué se hizo:**
+- **`services/api/TESTING.md` (nuevo, breve):**
+  - qué cubre y por qué;
+  - cómo ejecutar, con los comandos comprobados en PowerShell (la cobertura de auth en un solo comando con `--cov=app.auth … --cov-fail-under=70`, más la alternativa `uv run python -m coverage report …`), la nota sobre `coverage.exe` y el aviso de `uv sync` con la reinstalación;
+  - huecos marcados para Jest (F6) y para los extras (F7 y F8);
+  - el plan por endpoint (12 más JWT y configuración: feliz, límite, fallo y archivo);
+  - por qué estos casos y la tabla de mutaciones;
+  - los dos bugs (`65cfb36` y `988ff96`);
+  - los casos de la IA, aceptados y solo documentados;
+  - los riesgos M-1…M-3, L-1…L-6 y el H-1 residual;
+  - los límites de la batería y los resultados.
+- **Enlaces a `TESTING.md`:** desde `AGENTS.md` §4 (fila de `services/api`, con `uv run pytest` como alternativa válida y «no usar `uv sync`») y desde `services/api/README.md` («Tests»). El README aclara además que el comando `unittest` no recoge la batería de AUTH-088. El README raíz no se toca (decisión del usuario).
+- **Byte NUL documentado:** en la línea de contraseñas de `services/api/README.md` y en la fila «Validación de entrada» de `docs/auth-password-reset.md` §11.
+- **`docs/auth-password-reset.md` §14:** L-4, resuelto por A1 (`24f0e0d`).
+- **`techContext.md`:** la fila de la API ya no dice que pytest «ejecuta la misma suite».
+
+**Verificado durante F5:**
+- **Comandos literales en PowerShell desde `services/api`:**
+  - `uv run pytest` → 455 OK en ~51 s;
+  - `uv run pytest --cov` → cobertura global de `app/` del 98 %;
+  - la cobertura de auth en un solo comando → 98,93 % («Required test coverage of 70% reached»);
+  - `uv run python -m coverage report --include=… --fail-under=70` → 99 % y código de salida 0;
+  - solo la batería nueva con la cobertura de auth → 143 OK, 85,63 %, en ~10 s;
+  - el comando `unittest` de `AGENTS.md` desde la raíz → 312 OK en ~41 s.
+- **`coverage.exe`:** hoy arranca (en F1 lo bloqueó el Control de aplicaciones); la nota lo dice así.
+- **Detección de mutaciones de F2:** vueltas a ejecutar para saber qué test detecta cada una:
+  - `*60` → `*1`: 8 casos de 4 tests;
+  - sin `require_exp`: el caso `[sin exp]`;
+  - aceptar HS512: el caso `[HS512 …]`;
+  - sin el burn de la ruta: 4 casos del test del email mal formado;
+  - sin el tope: los 2 casos del test estricto.
+  - `app/` queda intacto.
+- **Comportamientos de los casos solo documentados:**
+  - una contraseña de 8 espacios se acepta;
+  - un email Unicode se acepta y se pasa a minúsculas;
+  - un `iat` en el futuro se acepta, pero un `nbf` en el futuro lo rechaza python-jose;
+  - un perfil `"   "` se guarda como `""`.
+- **Enlaces relativos y anclas** de `TESTING.md`, `AGENTS.md`, `services/api/README.md` y `docs/auth-password-reset.md`: todos resuelven (script de comprobación).
+
+**Pendiente para F6:**
+- el enlace a `TESTING.md` desde `uis/backoffice/README.md`, cuando exista la sección de Jest;
+- rellenar el hueco de Jest en `TESTING.md`;
+- `coverage/` en el `.gitignore` del backoffice;
+- la excepción de dependencias en `uis/backoffice/CLAUDE.md`.
+
+---
+
+## 2026-10-12 — AUTH-088, F4: tests de recuperación y cambio de contraseña
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`, después de F3 (`d7565a6`). No ha destapado ningún bug.
+
+**Qué se hizo** (sin TestClient: rutas, servicio y repositorio llamados directamente):
+- **`conftest.py`:**
+  - `fake_request()`: un `Request` mínimo con IP de TEST-NET-3, para la auditoría;
+  - `read_table`: lee una tabla de la base temporal;
+  - `bcrypt_verify_calls`: el espía de bcrypt, movido aquí desde `test_login.py` porque ahora lo usan dos archivos.
+- **`test_forgot_password.py`:** 8 tests (FP1–FP4). La ruta se llama con un `BackgroundTasks` real y se inspeccionan las tareas encoladas:
+  - email registrado: en la base solo el SHA-256 (el token en claro no aparece en el archivo), `expires_at` según el reloj, auditoría `reset_requested` con IP, y la tarea encolada envía el enlace con ese token;
+  - email desconocido o usuario inactivo: la misma respuesta, sin fila de token, sin tarea y con la auditoría `unknown_email` sin `user_id`;
+  - email normalizado; un único pendiente tras dos peticiones (el primero da `UNKNOWN`); purga de los caducados de otros usuarios;
+  - el sender que falla y `DisabledEmailSender`: no lanzan, y el log de `nexova.api` es exactamente «… could not be delivered: <Clase>», sin traza, sin email y sin token (con `tests/support.capture_logs`).
+- **`test_reset_password.py`:** 14 tests (RP1–RP4 y la concurrencia):
+  - la contraseña nueva vale y la antigua no; `used_at` y la auditoría `reset_completed`;
+  - 1 s antes de `expires_at` es válido; justo en `expires_at`, `EXPIRED`;
+  - tras un reset correcto, los demás pendientes dejan de valer. El segundo pendiente se fabrica a mano, porque hoy `replace_reset_token` deja uno solo: es defensa en profundidad;
+  - usado, caducado, anulado por un enlace nuevo o por change-password, usuario borrado o inactivo, y desconocido → el mismo `InvalidResetTokenError`, sin cambiar el usuario, y la auditoría `reset_rejected` con el motivo real. El `user_id` es `None` cuando la fila del token ya no existe;
+  - token `""` o de 513 caracteres → validación (512 se acepta).
+- **Concurrencia (caso de la IA):** dos `consume_reset_token` con el mismo token, `threading.Barrier(2)` y `sys.setswitchinterval(1e-6)`, sin sleeps, 25 rondas: siempre `[used, valid]`. Los errores de los hilos se anotan en el resultado para que el assert diga qué pasó. Determinista: 20 de 20 ejecuciones en verde.
+  - **Bloqueos:** `join(timeout=10)` y `assert not thread.is_alive()` («posible bloqueo en consume_reset_token»), con los hilos `daemon`. Comprobado con un deadlock provocado (adquirir dos veces el lock no reentrante): sin `daemon`, el test fallaba pero pytest no terminaba nunca; con `daemon`, falla a los 10 s y el proceso termina.
+  - **Medido con un script desechable** (subclase sin lock, 200 rondas): con lock, 200/200 correctas. Sin lock y con `switchinterval` 1e-6, ninguna ronda correcta: 31 con dos `VALID`, 167 con el archivo TinyDB corrupto (503) y 2 mixtas. Con el intervalo por defecto, 197 corruptas y 2 con doble `VALID`.
+  - Conclusión: el lock evita también que la base se corrompa, no solo el doble uso.
+- **`test_change_password.py`:** 6 tests (CP1–CP3):
+  - cambia la contraseña, la auditoría `password_changed` lleva la IP y se purgan los enlaces de reset;
+  - la nueva igual a la actual se acepta (D-PWD-10);
+  - una actual de más de 72 bytes, o con NUL (cierra el caso del fix `988ff96`), es incorrecta sin llegar a bcrypt;
+  - una actual incorrecta da 400 (no 401), sin cambios y con la auditoría `password_change_rejected`;
+  - usuario borrado tras autenticarse → `UserNotFoundError`, sin recrearlo ni auditar el cambio.
+
+**Validación:**
+- Suite completa: de 427 a **455 OK**. Los tres archivos nuevos solos: 28 OK.
+- `uv run pytest --durations=10` antes de F4: ~1:15 en total. Los 10 tests más lentos son de la suite antigua (TestClient y bcrypt), ninguno de F2/F3; los 5:54 de una ejecución de F3 fueron carga de la máquina.
+- Cobertura de auth: **86 %** solo con F2+F3+F4 y **99 %** con la suite completa. Sin cubrir con los nuevos: el cableado de FastAPI en `dependencies.py`, el sender de Resend y `create-admin`, que cubre la suite antigua.
+- Mutaciones, todas detectadas y deshechas, con `app/` intacto según `git diff`:
+  - `<=` → `<` en la caducidad de `consume_reset_token` → falla el test de `expires_at` exacto;
+  - no invalidar los pendientes al pedir un enlace nuevo → fallan el del pendiente único y el de «anulado por un enlace nuevo»;
+  - no purgar los resets en change-password → fallan el CP1 y el de «anulado por change-password»;
+  - no marcar `used_at` → fallan 4 tests: RP1, la purga, «ya usado» y la concurrencia;
+  - quitar el lock de `consume` → falla la concurrencia 10 de 10 veces (8 por archivo corrupto, 1 mixta y 1 por dos `VALID`);
+  - que forgot-password encole también para desconocidos → fallan los 2 casos de FP2;
+  - extra: el reset no purga los otros pendientes → falla el test de la purga.
+- `services/api/data/*.json`: huella idéntica.
+
+---
+
+## 2026-10-12 — AUTH-088, F3: tests de registro, usuarios y perfiles (y el bug del byte NUL)
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`: el fix en `988ff96` (`fix(api)`) y los tests en el commit siguiente (`test(api)`).
+
+**Qué se hizo** (todo sin TestClient: rutas, servicio, repositorio y modelos llamados directamente, con las fixtures de `conftest.py`):
+- **`test_register.py`:** 27 tests (R1–R9 y el NUL):
+  - el usuario se crea con `role=user`, activo, con hash verificable y con perfil, y la respuesta va sin hash;
+  - el email se guarda normalizado; el duplicado exacto, en mayúsculas o con espacios da 409 y no crea un segundo perfil;
+  - contraseña de 7/8 caracteres y de 72/73 bytes; multibyte (ñ×36 OK, ñ×37 error, 😀×18 OK, 😀×19 error, ñ×7 error);
+  - email o contraseña vacíos; campos prohibidos (`role`, incluso `user`; `hashed_password`, `id`, `is_active`, `user_id`) → `extra_forbidden`;
+  - email de 254/255 caracteres; perfil recortado y de 200/201 caracteres;
+  - el NUL en cada modelo de contraseña nueva (`UserCreate`, `UserUpdate`, `ResetPasswordRequest`, `ChangePasswordRequest`) → error de validación y bcrypt no se llama (espía de `hash` y `verify`).
+- **`test_users.py`:** 25 tests (U1–U11):
+  - el admin lista sin hashes; `require_admin` con `user` y `manager` → 403;
+  - GET: uno mismo y el admin OK; el admin sobre un inexistente → 404; un no-admin sobre otro → 403, exista o no;
+  - PUT: email propio normalizado; cuerpo vacío, `password: null` y `role: null` sin cambios y sin 403; el email propio en mayúsculas no da 409; el email de otro (también en mayúsculas) → 409 sin cambios;
+  - H-1: `password` de `user`/`manager` → 403 y no se aplica nada (tampoco el email de la misma petición); `role` de un no-admin → 403; con `role` y `password` a la vez gana la regla del rol;
+  - el admin fija la contraseña y el rol de otro; el admin sobre un inexistente (vacío o con email) → 404 y no lo crea;
+  - DELETE propio: borra el perfil y el token antiguo da 401; un no-admin sobre otro → 403; el admin sobre un inexistente y el doble borrado → 404.
+- **`test_profiles.py`:** 10 tests (P1–P4): GET y PUT parcial; `null` borra, el cuerpo vacío no cambia nada, `strip` y 200/201; campos extra (`user_id`, `id`, `email`) → `extra_forbidden`; un usuario sin perfil → `ProfileNotFoundError` en GET y PUT, y el PUT no lo crea.
+- **`test_login.py`** (en el commit del fix): un NUL con email existente o desconocido → el mismo `InvalidCredentialsError`, sin llegar a bcrypt (espía con control positivo).
+
+**Bug encontrado y corregido** (la entrada para «Bugs encontrados» de `services/api/TESTING.md`, F5):
+- **Qué lo destapó:** el caso propuesto por la IA y aprobado por el usuario «byte NUL en la contraseña: ¿error de validación o excepción de bcrypt que sería un 500?». Se comprobó llamando a la lógica y con un diagnóstico HTTP desechable sobre una TinyDB temporal, fuera del repo.
+- **Síntoma:** `500 internal_error` en `POST /users`, en `POST /auth/login` (con el email existente o desconocido), en `POST /auth/reset-password`, en `POST /auth/change-password` (la contraseña nueva y la actual) y en el `PUT /users/{id}` del admin con `password` (este último, por el mismo `hash_password`; no se probó por HTTP).
+- **Causa:** bcrypt no admite el byte NUL y passlib lanza `PasswordValueError` al hashear o comparar. Ni `_check_password` (`app/auth/models.py`) ni `verify_password` (`app/auth/security.py`) lo tenían en cuenta; `burn_password_check` pasa por `verify_password` y también lanzaba la excepción.
+- **Corrección (opción a del usuario):** se trata igual que el límite de 72 bytes.
+  - `_check_password` rechaza el NUL: 422 en las cuatro entradas de contraseña nueva.
+  - `verify_password` devuelve `False` sin llamar a bcrypt, porque ninguna contraseña registrada puede contenerlo.
+  - `burn_password_check` no lleva una comprobación propia: hereda la de `verify_password`, igual que con los 72 bytes. Así, el login con un NUL da el mismo 401 exista o no el email, y por los dos caminos sin bcrypt. Una contraseña actual con NUL da el 400 `incorrect_password`.
+  - Una frase en `SPECS.md` D-AUTH-7.
+  - Verificado al leer el código: las cuatro contraseñas nuevas usan `Password` (`_check_password`). `ChangePasswordRequest.current_password` no lo usa, y es correcto que no: se compara, no se hashea; lo cubre `verify_password`.
+- **Commit:** `988ff96` (`fix(api)`).
+- **Tests que lo fijan:**
+  - `test_login.py::test_password_with_nul_byte_fails_like_bad_credentials_without_reaching_bcrypt`;
+  - `test_register.py::test_new_password_with_nul_byte_is_rejected_before_reaching_bcrypt` (4 casos);
+  - el de la contraseña actual queda para `test_change_password.py` (F4).
+
+**Validación:**
+- Suite completa (`uv run pytest`): de 365 (364 de F2 + el test de login del fix) a **427 OK**. Los tres archivos nuevos solos: 62 OK en unos 4 s. El comando `unittest` de `AGENTS.md`: 312 OK (no descubre los tests de estilo pytest).
+- Cobertura del módulo de auth (`app/auth/*` y `app/routes/{auth,users,profiles}.py`): **71 %** solo con los tests de F2+F3; **98 %** con la suite completa.
+- Mutaciones, todas detectadas y deshechas, con `app/` intacto según `git diff`:
+  - quitar H-1 en `update_user` → fallan los 2 casos (user/manager) del test de H-1;
+  - invertir el orden role/password → falla `test_role_rule_is_checked_before_the_password_rule`;
+  - quitar `normalize_email` → fallan 8 tests de registro y usuarios;
+  - 72 bytes → 72 caracteres → fallan ñ×37 y 😀×19;
+  - no borrar el perfil en `delete_user` → falla el test del borrado propio;
+  - quitar el NUL de `_check_password` → fallan los 4 casos de los modelos;
+  - quitar el NUL de `verify_password`, o un burn que llame a bcrypt directamente → falla el test de login con NUL.
+- `services/api/data/*.json`: huella idéntica.
+
+**Pendiente:** `services/api/README.md` (línea de contraseñas) y la fila «Validación de entrada» de `docs/auth-password-reset.md` §11 todavía no mencionan el NUL; se revisan en F5 junto con `TESTING.md`.
+
+---
+
+## 2026-10-11 — AUTH-088, F2: tests de token, configuración y login (y el bug que destaparon)
+
+**Estado: hecho, validado y comiteado** en `feature/auth-088-test-suite`: el fix en `65cfb36` (`fix(api)`) y los tests en el commit siguiente (`test(api)`), después de F1 (`42c4529`).
+
+**Qué se hizo:**
+- **`services/api/tests/conftest.py`:** fixtures de estilo pytest:
+  - `clock` (fijo y avanzable), `settings` (bases en `tmp_path` y clave generada), `auth_repo`, `service` y `fake_sender`;
+  - `make_user`, que reutiliza un hash bcrypt calculado una vez por sesión, y `drop_profile`;
+  - la fixture `autouse` de sesión que compara la huella SHA-256 de `services/api/data/*.json` antes y después. Se aplica también a los tests `unittest`.
+- **`test_token.py`:** 41 tests (incluido el tope técnico de minutos, ver el bug abajo) sobre la lógica de `security`, `get_current_user`, `read_current_user` y `Settings`, sin HTTP:
+  - `exp == iat + N*60` para N = 1, 30 y 1440 (la regresión del ticket), y token justo antes y justo después de caducar (calculado desde la configuración, no desde `expires_in_seconds`);
+  - otra clave, HS512, `alg: none`, sin `sub`, `sub` vacío o numérico, sin `exp`, y tokens malformados;
+  - usuario borrado o inactivo, y sin token;
+  - `/auth/me` con y sin perfil;
+  - configuración: minutos ausentes, 0, −1, `abc`, `1.5`, `1e3` y `"   "`; clave de 31 y 32 caracteres y medida tras el `strip`.
+- **`test_login.py`:** 11 tests; la ruta `login` se llama directamente con `OAuth2PasswordRequestForm(username=…, password=…)` construido a mano (verificado):
+  - el token y `expires_in` correctos; el email normalizado;
+  - el mismo error para contraseña incorrecta y email desconocido;
+  - email mal formado → 401 y burn (espía con monkeypatch);
+  - más de 72 bytes nunca llegan a bcrypt (espía de `bcrypt.verify` con un control positivo);
+  - usuario inactivo y contraseña vacía.
+
+**Bug encontrado y corregido.** Es la entrada para la sección «Bugs encontrados» de `services/api/TESTING.md` (F5):
+- **Qué lo destapó:** un caso propuesto por la IA y aprobado por el usuario. La primera versión del test, `test_absurd_expiration_is_rejected_at_startup_not_at_every_login`, aceptaba las dos salidas válidas (rechazo al arrancar o token emitido) y falló.
+- **Síntoma:** con `ACCESS_TOKEN_EXPIRE_MINUTES = 10**10`, la API arrancaba con normalidad, pero cada login respondía 500 (`OverflowError: date value out of range` en `create_access_token`, `app/auth/security.py`). 10**9 todavía funcionaba.
+- **Causa:** `Settings.__post_init__` solo rechazaba 0 y negativos. `iat + timedelta(minutes)` se sale del rango de `datetime` (año 9999).
+- **Corrección (decisión del usuario, opción b):** `MAX_ACCESS_TOKEN_EXPIRE_MINUTES = 525_600` (1 año) en `app/core/config.py`, con `ConfigError` «must be between 1 and 525600», también por `from_env`. Es un **tope técnico, no una política de sesión**: ningún documento fija la duración máxima, que queda pendiente del CTO. Documentado en `SPECS.md` (§7) y en `.env.example`. Ningún test existente usaba más de 45 minutos.
+- **Commit:** `65cfb36` (`fix(api)`).
+- **Tests que lo fijan ahora (estrictos):**
+  - `test_expiration_at_the_technical_cap_is_accepted_and_signs_tokens` (525600 se acepta y firma);
+  - `test_expiration_beyond_the_technical_cap_is_rejected_at_startup` (525601 y 10**10 → `ConfigError` al construir `Settings` y por `from_env`).
+
+**Validación:**
+- Suite completa: de 312 a **364 OK**. Los nuevos solos: **52 OK** en unos 2 s.
+- Cobertura del módulo de auth con los tests nuevos solos: 48 % (F3 y F4 cubren el resto).
+- Mutaciones, todas detectadas y deshechas, con `app/` intacto según `git diff`: `*60 → *3600`, `*60 → *1`, quitar `require_exp`, quitar el burn de la ruta, quitar el burn de `authenticate`, aceptar HS512 y quitar el tope de minutos.
+- `services/api/data/*.json`: huella idéntica.
+
+---
+
+## 2026-10-10 — AUTH-088, F1: pytest y pytest-cov en `services/api`
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase antes del commit), en `feature/auth-088-test-suite`, que sale de `main` en `843ae26` (merge de la PR #18). Primera de las fases del plan de AUTH-088 (batería de pruebas unitarias de la API de autenticación), aprobado por el usuario; las siguientes (F2–F8) escriben los tests, `services/api/TESTING.md` y Jest en el backoffice.
+
+**Qué se hizo:**
+- **`pyproject.toml`:**
+  - `uv add --dev --no-sync --bounds minor pytest pytest-cov httpx` → `[dependency-groups] dev`, con los rangos ajustados a mano al estilo del proyecto: `httpx>=0.28,<0.29`, `pytest>=9.1,<9.2` y `pytest-cov>=7.1,<7.2` (`--bounds minor` dejaba httpx en `<0.28.2`). Se conserva el extra `dev` (httpx) para la instalación con pip.
+  - `[tool.pytest.ini_options]`: `testpaths`, `pythonpath` hacia `packages/shared` y `packages/incident-analyzer` (siguen sin declararse) y `addopts = -p no:logging`.
+  - `[tool.coverage]`: `source = ["app"]`, `branch = true` y `show_missing = true`.
+  - Comentarios corregidos: la orden de pip incluye `packages/shared`; ya no dice «sin pytest».
+- **`uv.lock`:** solo añade `pytest` 9.1.1, `pytest-cov` 7.1.0 y sus transitivas (`coverage` 7.16.2, `pluggy`, `iniconfig`, `packaging`, `pygments`, `colorama`, `tomli`). Ninguna versión existente cambia.
+- **`services/api/.gitignore` (nuevo):** `.coverage`, `.coverage.*` y `htmlcov/`.
+- **Docs:** `SPECS.md` D-API-3 y el README de `services/api` (dependencias y tests con uv) ya no dicen que no hay pytest.
+
+**Hallazgos verificados:**
+- **uv 0.12.21:** `uv run` sincroniza de forma inexacta y conserva los paquetes instalados con pip; `uv sync` es exacto y los desinstala. Probado en un venv desechable con `UV_PROJECT_ENVIRONMENT` y después en el real.
+- **`pythonpath`:** con los dos paquetes desinstalados por `uv sync`, la suite pasó igual con pytest (312) en el venv desechable.
+- **Plugin de logging de pytest:** añade un handler al logger raíz, así que `logging.lastResort` deja de escribir en stderr. Con él fallaban 4 tests de scripts (base corrupta en `create-admin`, el seed de proveedores y el seed del gestor), que esperan la línea `storage … is unavailable` en stderr. No es un bug del producto. Se desactiva con `-p no:logging`, sin tocar los tests.
+- **Control de aplicaciones de Windows (error 4551):** bloquea algunos lanzadores `.exe` de uv sin firmar (`pytest.exe` en `%TEMP%` y `coverage.exe` en el venv real; `pytest.exe` del venv real sí arranca). Se usa `python -m coverage`. No se tocó la política.
+
+**Validación ejecutada:**
+- `pip list` del venv real antes y después: solo altas (los 8 paquetes nuevos), y `nexova-shared` y `nexova-incident-analyzer` siguen instalados.
+- `uv run pytest`: 312 OK (1904 subtests), con un único aviso, el `StarletteDeprecationWarning` conocido.
+- Comando `unittest` de `AGENTS.md` §4: 312 OK. `packages/shared`: 81 OK. `packages/incident-analyzer`: 121 OK (7 omitidos).
+- **Cobertura de partida** (suite existente): global 97 %; módulo de autenticación (`app/auth/*` y `app/routes/{auth,users,profiles}.py`) **96 %**, con `uv run python -m coverage report --include=… --fail-under=70`.
+- `services/api/data/*.json` sin cambios (huella antes y después). Venvs desechables borrados.
+
+---
+
 ## 2026-10-10 — Auditoría de gestión de errores: cierre (W1, verificación final de la rama)
 
-**Estado: hecho, validado y comiteado** en `feature/error-handling-audit`, que sale de `main` en `6dfa013` (merge de la PR #17). **Pendiente: push y PR**, que hace el usuario.
+**Estado: hecho, validado y comiteado** en `feature/error-handling-audit`, que sale de `main` en `6dfa013` (merge de la PR #17). ~~Pendiente: push y PR, que hace el usuario.~~ *Corregido el 2026-10-10: integrada en `main` con la PR #18 (merge `843ae26`).*
 
 **Origen:** auditoría de solo lectura del 2026-10-09 sobre todo el código de producción. Encontró 2 hallazgos ALTO, 6 MEDIO y 10 BAJO, ninguno crítico; el informe se entregó en la conversación y no está versionado. El usuario pidió corregirlos por fases.
 
@@ -54,7 +457,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 **Informe y guía de revisión:** [`docs/error-handling-audit.md`](../docs/error-handling-audit.md). Incluye el informe completo de hallazgos (A1–W1), lo revisado como correcto por diseño, el antes y el ahora para el usuario, la trazabilidad de los 8 criterios del ticket y las guías de verificación manual. Se añadió después del cierre, con un commit `docs` propio.
 
-**Pendientes:** el push y la PR (los hace el usuario), y la revisión de las decisiones de la auditoría: el 503 nuevo en el contrato de la API, `retry()` de Next 16 y el bloqueo del reenvío en el tracker.
+**Pendientes:** ~~el push y la PR (los hace el usuario)~~ (hecho: PR #18, merge `843ae26`) y la revisión de las decisiones de la auditoría: el 503 nuevo en el contrato de la API, `retry()` de Next 16 y el bloqueo del reenvío en el tracker.
 
 ---
 
@@ -909,7 +1312,7 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 
 - **Auditoría de gestión de errores (2026-10-09):**
   - Hecha y comiteada en `feature/error-handling-audit`: `24f0e0d`, `a6f3722`, `2454dcd`, `dc91918`, `899ce1e` y el cierre del memory-bank (entradas del 2026-10-10).
-  - Pendiente: push y PR, que hace el usuario.
+  - ~~Pendiente: push y PR, que hace el usuario.~~ Integrada en `main` con la PR #18 (merge `843ae26`).
   - No se hace, con su motivo en la entrada de cierre:
     - B5: no hay contacto de soporte definido;
     - T5: se acerca más a un refactor;
