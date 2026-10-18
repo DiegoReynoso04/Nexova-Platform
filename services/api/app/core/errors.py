@@ -147,6 +147,17 @@ class IncidentNotFoundError(ApiError):
         super().__init__(404, "incident_not_found", "incident not found")
 
 
+# Inventario (Hito 5). Mensajes fijos: nunca repiten el SKU ni el id recibidos.
+class AssetNotFoundError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(404, "asset_not_found", "asset not found")
+
+
+class SkuAlreadyExistsError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(409, "sku_already_exists", "an asset with this sku already exists")
+
+
 class FileTooLargeError(ApiError):
     def __init__(self, max_bytes: int) -> None:
         super().__init__(413, "file_too_large", f"request body exceeds the {max_bytes} bytes limit")

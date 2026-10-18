@@ -4,6 +4,42 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-18 — Hito 5, F3a: schemas, `service.py` y rutas de productos
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-orm`, sobre F2 (`d68d93e`). Quedan las órdenes para F3b.
+
+- **`vocabulary.py`:** `AssetCategory`, `Office`, `ExitType`, `TEXT_MAX_LENGTH` y `USER_UUID_LENGTH`, importados por `models.py` y por `schemas.py`. Así `schemas.py` no importa `models.py`, y un test lo vigila.
+- **`schemas.py`:** Pydantic puro.
+  - `AssetCreate`: `extra="forbid"`; textos sin espacios en los extremos, no vacíos y de 200 caracteres como máximo; vocabulario cerrado.
+  - `AssetRead`: añade `current_stock`.
+- **`service.py`:**
+  - el stock se calcula en la misma consulta que lee los activos: subconsultas agregadas por `asset_id`, `LEFT JOIN` y `COALESCE`, ordenado por `id`;
+  - activo inexistente → 404 `asset_not_found`;
+  - el alta comprueba antes el SKU y, si el `UNIQUE` lanza `IntegrityError` en el commit, hace rollback, vuelve a comprobar y responde 409 `sku_already_exists`. Cualquier otro `IntegrityError` sigue siendo el 500 opaco.
+  - Los errores nuevos están en `core/errors.py` con mensajes fijos (no repiten el SKU).
+- **`router.py`:**
+  - `APIRouter(prefix="/inventory", tags=["inventory"])` con `GET` y `POST /inventory/products` y `GET /inventory/products/{id}` (el parámetro se llama `id`, como en el enunciado, también en OpenAPI; un test lo comprueba);
+  - `response_model` en todas, sesión por `Depends(get_db)`;
+  - registrado en `main.py` con `dependencies=authenticated`.
+- **Tests:** 20, en `tests/test_inventory_products.py`, con `with TestClient`.
+  - Casos felices, 401 en las 3 rutas, 404, 409 (también la carrera simulada) y 422 (vocabulario, extras, `current_stock`, textos).
+  - Stock: 10 + 5 − 2 − 1 = 12. Un JOIN sin agregar daría 24.
+  - Consultas: una sola, igual con 1 y con 20 activos con órdenes.
+  - Ningún `response_model` hereda de SQLModel.
+  - FastAPI 0.141 guarda los routers incluidos como `_IncludedRouter` en `app.routes`, así que el test recorre `inventory_router.routes` y comprueba las rutas publicadas en `/openapi.json`, que deben ser exactamente `/inventory/products/{id}`.
+- **Mutaciones**, todas detectadas y deshechas: JOIN sin agregar antes; N+1 (stock por activo en un bucle); sin capturar el `IntegrityError`; sin `extra="forbid"`; ruta que devuelve el ORM; sin `COALESCE`; router sin JWT.
+- **Supabase real:**
+  - `POST` de un activo de prueba → 201 con `current_stock: 0`;
+  - `GET` por id y el listado → stock 0;
+  - el `POST` repetido → 409 y sin token → 401;
+  - después se borró con SQL: 0 activos y 0 órdenes en la base.
+  - **Problema conocido:** la secuencia de `assets.id` ya avanzó, así que el primer activo del seed no tendrá `id = 1`.
+- **Validación:**
+  - `unittest`: 368 OK (348 + 20).
+  - `uv run --no-sync python -m pytest`: 571 OK (551 + 20).
+
+---
+
 ## 2026-10-18 — Hito 5, F2: configuración, motor, `get_db`, modelos ORM, lifespan (tablas + RLS) y 503
 
 **Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-orm`, sobre F1 (`6b977af`). Todavía no hay rutas `/inventory` (F3a y F3b).
