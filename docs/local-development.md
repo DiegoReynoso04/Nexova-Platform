@@ -7,7 +7,7 @@ Guía de arranque del monorepo para quien llega nuevo. Resume lo imprescindible 
 | Aplicación | Qué es | Puerto local | Autenticación | Detalle |
 |---|---|---|---|---|
 | `uis/website` | Landing pública + formulario de registro de talento (Hito 1) | — (HTML estático, sin build) | **Ninguna**: es pública y no participa en el sistema de sesión | — (se publica en Netlify desde `netlify.toml`) |
-| `services/api` | API FastAPI de Nexova: autenticación (`/auth`, `/users`, `/profiles`), incidentes y proveedores | `8000` | Emite y exige el JWT | [`services/api/README.md`](../services/api/README.md) |
+| `services/api` | API FastAPI de Nexova: autenticación (`/auth`, `/users`, `/profiles`), incidentes, proveedores e inventario (`/inventory`, Hito 5) | `8000` | Emite y exige el JWT | [`services/api/README.md`](../services/api/README.md) |
 | `uis/backoffice` | Panel interno: `/incidents`, `/suppliers`, cuenta | `3000` | Sesión obligatoria (salvo `/login` y `/register`) | [`uis/backoffice/README.md`](../uis/backoffice/README.md) |
 | `uis/talent-pipeline-tracker` | Gestión de candidaturas contra la API de 4Geeks | `3001` | Sesión obligatoria (salvo `/login` y `/register`), contra `services/api` | [`uis/talent-pipeline-tracker/README.md`](../uis/talent-pipeline-tracker/README.md) |
 
@@ -17,12 +17,18 @@ Guía de arranque del monorepo para quien llega nuevo. Resume lo imprescindible 
 
    ```bash
    cd services/api
-   cp .env.example .env        # solo la primera vez; rellenar JWT_SECRET_KEY (ver el propio archivo)
+   cp .env.example .env        # solo la primera vez; rellenar JWT_SECRET_KEY y DATABASE_URL (ver el propio archivo)
    uv run seed                 # opcional: carga los 15 proveedores iniciales (idempotente)
    uv run --env-file .env uvicorn app.main:create_app --factory --port 8000 --workers 1
    ```
 
    Swagger en `http://localhost:8000/docs`.
+
+   **Desde el Hito 5 la API exige `DATABASE_URL`:** la base PostgreSQL de Supabase del inventario, con la URI del Transaction pooler (puerto 6543). Sin ella no arranca. Cómo obtenerla: [`services/api/README.md`](../services/api/README.md#crear-la-base-en-supabase). Al arrancar, la API crea las tablas del inventario si faltan. Para los datos de la demo, con la API parada o en marcha, y un usuario ya registrado:
+
+   ```bash
+   uv run --env-file .env seed-inventory --email usuario@example.com   # idempotente
+   ```
 
 2. **Backoffice:**
 
@@ -48,12 +54,13 @@ La primera cuenta se crea desde `/register` en cualquiera de las dos apps (rol `
 
 ## 3. Variables de entorno
 
-**Ningún `.env` ni `.env.local` se versiona** (están en `.gitignore`); los valores reales, y en especial `JWT_SECRET_KEY`, solo viven en tu máquina. Lo versionado son los ejemplos (`services/api/.env.example`, `uis/backoffice/.env.example`) y esta documentación.
+**Ningún `.env` ni `.env.local` se versiona** (están en `.gitignore`); los valores reales, y en especial `JWT_SECRET_KEY` y `DATABASE_URL`, solo viven en tu máquina. Lo versionado son los ejemplos (`services/api/.env.example`, `uis/backoffice/.env.example`) y esta documentación.
 
 | App | Variable | Valor local | Para qué |
 |---|---|---|---|
 | `services/api` | `JWT_SECRET_KEY` | secreto propio (≥ 32 caracteres) | Firma de los JWT. Obligatoria |
 | `services/api` | `ACCESS_TOKEN_EXPIRE_MINUTES` | p. ej. `30` | Validez del token. Obligatoria |
+| `services/api` | `DATABASE_URL` | URI del Transaction pooler de tu proyecto de Supabase (puerto 6543) | Base PostgreSQL del inventario (Hito 5). Obligatoria; lleva la contraseña de la base |
 | `services/api` | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Orígenes que pueden llamar a la API desde el navegador (sección 5) |
 | `services/api` | `RESEND_API_KEY` | tu API key de Resend | Envío del email de restablecimiento (AUTH-03). Opcional: va junto con las dos siguientes |
 | `services/api` | `EMAIL_FROM` | `Nexova <onboarding@resend.dev>` | Remitente de pruebas de Resend: solo entrega a la dirección de tu cuenta de Resend |

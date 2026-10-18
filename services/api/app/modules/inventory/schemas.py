@@ -159,3 +159,10 @@ class OutboundOrderRead(BaseModel):
 
 # `GET /inventory/orders`: entradas y salidas en una sola lista, distinguidas por `type`.
 OrderRead = Annotated[InboundOrderRead | OutboundOrderRead, Field(discriminator="type")]
+
+
+class ErrorResponse(BaseModel):
+    """Forma de los errores de la API (`{detail, code}`, `app/core/errors.py`). Solo documenta OpenAPI."""
+
+    detail: str
+    code: str

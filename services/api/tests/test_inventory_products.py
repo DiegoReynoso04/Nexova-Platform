@@ -276,5 +276,56 @@ class NoOrmInResponsesTests(unittest.TestCase):
         self.assertEqual([(item["name"], item["in"]) for item in parameters], [("id", "path")])
 
 
+# Errores documentados en OpenAPI por ruta: `code` de cada ejemplo, por estado HTTP.
+DOCUMENTED_ERRORS = {
+    ("/inventory/products", "get"): {},
+    ("/inventory/products", "post"): {"409": {"sku_already_exists"}},
+    ("/inventory/products/{id}", "get"): {"404": {"asset_not_found"}},
+    ("/inventory/orders/inbound", "post"): {"404": {"asset_not_found"}, "400": {"office_mismatch"}},
+    ("/inventory/orders/outbound", "post"): {"404": {"asset_not_found"}, "400": {"office_mismatch", "insufficient_stock"}},
+    ("/inventory/orders", "get"): {},
+}
+COMMON_ERRORS = {"401": {"not_authenticated"}, "503": {"storage_unavailable"}}
+
+
+class OpenApiErrorsTests(unittest.TestCase):
+    """Los errores reales de cada ruta están documentados en `/openapi.json` con el schema `{detail, code}`."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app = create_app(with_test_auth(Settings(), Path(tmp) / "auth.json"))
+            cls.spec = TestClient(app).get("/openapi.json").json()
+            app.state.inventory_engine.dispose()
+
+    def test_every_route_documents_its_errors(self) -> None:
+        for (path, method), specific in DOCUMENTED_ERRORS.items():
+            responses = self.spec["paths"][path][method]["responses"]
+            for status, codes in (COMMON_ERRORS | specific).items():
+                with self.subTest(route=f"{method.upper()} {path}", status=status):
+                    content = responses[status]["content"]["application/json"]
+                    self.assertEqual(content["schema"], {"$ref": "#/components/schemas/ErrorResponse"})
+                    self.assertTrue(responses[status]["description"])
+                    examples = content["examples"].values()
+                    self.assertEqual({example["value"]["code"] for example in examples}, codes)
+                    for example in examples:
+                        self.assertEqual(set(example["value"]), {"detail", "code"})
+            # Ningún estado de error documentado que la ruta no produzca.
+            documented = {status for status in responses if status.startswith(("4", "5")) and status != "422"}
+            self.assertEqual(documented, set(COMMON_ERRORS) | set(specific), f"{method.upper()} {path}")
+
+    def test_insufficient_stock_example_is_the_literal_context_message(self) -> None:
+        examples = self.spec["paths"]["/inventory/orders/outbound"]["post"]["responses"]["400"]["content"]["application/json"]["examples"]
+        self.assertEqual(
+            examples["insufficient_stock"]["value"]["detail"],
+            "Insufficient stock for asset 'Portátil 14\" Business'. Available: 13, requested: 20.",
+        )
+
+    def test_error_schema_is_detail_and_code(self) -> None:
+        schema = self.spec["components"]["schemas"]["ErrorResponse"]
+        self.assertEqual(set(schema["properties"]), {"detail", "code"})
+        self.assertEqual(set(schema["required"]), {"detail", "code"})
+
+
 if __name__ == "__main__":
     unittest.main()

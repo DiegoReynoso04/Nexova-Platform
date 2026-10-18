@@ -4,6 +4,43 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-18 — Hito 5, F5: documentación de cierre y verificación final (hito hecho)
+
+**Estado: hecho y verificado, sin comitear** (el usuario revisa antes del commit), en `feature/inventory-orm`, sobre F4 (`f004944`). **El Hito 5 (F1–F5) está hecho.** Pendiente: commit de F5, push y PR, que hace el usuario.
+
+- **Documentación:**
+  - `services/api/SPECS.md`: Parte F (§34–§40) con requisitos, decisiones D1–D11 y F2–F4, equivalencia con los nombres del enunciado, contrato, errores y esquema; referencias en la cabecera, §4 y §7.
+  - `services/api/README.md`: sección «Inventario (Hito 5)» (Supabase y Transaction pooler, `DATABASE_URL`, arranque, seed con su salida y endpoints); también la tabla general de endpoints, la configuración, los tests y la estructura.
+  - `services/api/TESTING.md`: §13 (qué cubre, cómo ejecutarlo y las mutaciones); el título pasa a cubrir todas las baterías.
+  - `docs/local-development.md`: `DATABASE_URL` en el arranque y en las variables.
+  - `AGENTS.md` §4: bloque «Inventario (Hito 5)».
+  - **Nuevo:** `docs/inventory-review.md`, guía de revisión con trazabilidad, comandos de PowerShell, recorrido en `/docs`, RLS en Supabase y lo no verificado.
+  - **Memory-bank:** `techContext.md` (fila del inventario y decisión «Inventario: doble base de datos»; el recuento de la suite `unittest` pasa a 406) y `projectbrief.md` (fila de Tecnología, Sergio Molina, NXV-0201, solo con datos del CONTEXT).
+- **Errores en OpenAPI** (pedido en la revisión de F5):
+  - `router.py` documenta con `responses=` los errores reales de cada ruta, con el schema `ErrorResponse` (`{detail, code}`, en `schemas.py`), una descripción y ejemplos construidos con los errores de `core/errors.py`;
+  - el 400 de la salida lleva dos ejemplos, `office_mismatch` e `insufficient_stock` (mensaje literal);
+  - el comportamiento no cambia;
+  - 3 tests nuevos (`OpenApiErrorsTests`) leen `/openapi.json`; dos mutaciones (sin el 503 común, sin el ejemplo de stock) detectadas y deshechas;
+  - mencionado en `SPECS.md` §38 y en la guía.
+- **Arreglo menor:** `services/api/app/core/errors.py` había perdido el salto de línea final en F2. Por eso `git diff main..HEAD --stat` daba una línea más sin `--ignore-cr-at-eol`. Se restaura.
+- **Verificación final** (2026-10-18):
+
+| Comprobación | Resultado |
+|---|---|
+| `services/api`: `unittest` (`AGENTS.md` §4) | 409 OK (312 + 97 del inventario), sin `ResourceWarning` |
+| `services/api`: `uv run --no-sync python -m pytest` | 612 OK (515 + 97) |
+| `packages/shared` | 81 OK (sin cambios en la rama) |
+| `packages/incident-analyzer` | 121 OK, 7 omitidos (sin cambios en la rama) |
+| `git diff main --stat`, con y sin `--ignore-cr-at-eol` | idéntico (34 archivos con F5) |
+| Secretos en `git log -p main..HEAD` y en `git diff main` | no encontrados: ni el project-ref de Supabase, ni el usuario, la contraseña o el host del pooler, ni la `DATABASE_URL`, ni `JWT_SECRET_KEY`, ni ningún `*.pooler.supabase.com`. Las URL `postgresql://usuario:contraseña@` que aparecen son placeholders o fixtures ficticios |
+| `.env`, `.vscode/`, `.coverage` o `data/` en algún commit de la rama | ninguno |
+| Enlaces relativos (y anclas) de los 9 documentos tocados | 103 comprobados, 0 rotos |
+
+- **Datos de la demo en Supabase:** cargados con el seed en F4 y no se tocan.
+- **Problema conocido:** `docs/context-nexova-gestion-inventario-hito-5.md` no termina en salto de línea; se dejó tal cual porque es el CONTEXT original.
+
+---
+
 ## 2026-10-18 — Hito 5, F4: seed `uv run seed-inventory --email …` y `dispose()` del motor
 
 **Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-orm`, sobre F3b (`a9a3fdb`). Siguiente: F5 (documentación de cierre).
