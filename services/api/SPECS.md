@@ -2,13 +2,14 @@
 
 Contrato HTTP de `services/api`. Si el código y este documento discrepan, el documento se actualiza en el mismo cambio que el código.
 
-Una sola aplicación FastAPI (`app/main.py`) con tres dominios:
+Una sola aplicación FastAPI (`app/main.py`) con estos dominios:
 
 - **Parte A (§1–§7): analizador de incidentes** — `/api/incidents/*`.
 - **Parte B (§8–§14): directorio de proveedores** — `/suppliers*`, persistido en TinyDB.
 - **Parte C (§15–§22): autenticación (AUTH-01)** — `/auth`, `/users`, `/profiles`; JWT obligatorio en las rutas de las Partes A y B.
 - **Parte D (§23–§27): recuperación y cambio de contraseña (AUTH-03)** — `POST /auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`; envío con Resend.
 - **Parte E (§28–§33): gestor centralizado de incidencias** — `POST`/`GET /api/incidents`, `GET /api/incidents/summary`, `GET /api/incidents/{id}`, `PATCH /api/incidents/{id}/status`; validación con 400 propio (no 422).
+- **Parte F (§34–§40): inventario de equipos y materiales (Hito 5)** — `/inventory/products*` y `/inventory/orders*`; activos y órdenes en PostgreSQL (Supabase) con SQLModel, mientras la autenticación sigue en TinyDB.
 
 Este documento distingue **dos orígenes** de requisitos. Mezclarlos sería atribuir al cliente decisiones que no tomó.
 
@@ -162,6 +163,9 @@ Formato único: `{"detail": ..., "code": "..."}`.
 | 404 | `user_not_found` / `profile_not_found` | usuario o perfil inexistente, solo visible para quien tiene permiso (Parte C) | `user not found` / `profile not found` |
 | 400 | `validation_error` / `invalid_status_transition` | solo rutas del gestor de incidencias (Parte E, §31): lista `{field, error, message}` | ver §31 |
 | 404 | `incident_not_found` | `/api/incidents/{id}` con un UUID que no existe (Parte E) | `incident not found` |
+| 400 | `insufficient_stock` / `office_mismatch` | inventario: salida mayor que el stock, u orden con otra oficina que la del activo (Parte F, §38) | mensaje literal del CONTEXT / texto fijo |
+| 404 | `asset_not_found` | inventario: activo inexistente (Parte F) | `asset not found` |
+| 409 | `sku_already_exists` | inventario: SKU ya registrado (Parte F) | `an asset with this sku already exists` (no repite el SKU) |
 | 409 | `email_already_registered` | alta o cambio a un email ya registrado (Parte C) | `email already registered` (no repite el email) |
 | 404 | `not_found` | ruta inexistente | `Not Found` |
 | 405 | `method_not_allowed` | método no soportado; incluye la cabecera `Allow` con los métodos permitidos | `Method Not Allowed` |
@@ -169,7 +173,7 @@ Formato único: `{"detail": ..., "code": "..."}`.
 | 415 | `unsupported_file_type` | el nombre no termina en `.csv` | `only .csv files are accepted` (no repite el nombre) |
 | 422 | `validation_error` | falta el campo `file`, otro nombre de campo, cuerpo JSON, `file` enviado como texto | lista de `{loc, msg, type}`. Se eliminan `input`, `ctx` y `url` del formato nativo de FastAPI |
 | 400 | `bad_request` | multipart ilegible (error del parser de Starlette) | `Bad Request` |
-| 503 | `storage_unavailable` | un archivo TinyDB (`SUPPLIERS_DB_PATH`, `AUTH_DB_PATH` o `INCIDENTS_DB_PATH`) no se puede abrir, leer o escribir, o no es una base válida (JSON inválido, no UTF-8, forma distinta de `{tabla: {id: documento}}`). Afecta a las Partes B, C, D y E; con `auth.json` dañado falla también toda ruta protegida, porque el token se valida contra esa base. Hallazgo A2 de la auditoría de gestión de errores (2026-10-09), implementado el 2026-10-10 a petición del usuario | `storage is temporarily unavailable` — nunca la ruta del archivo ni el mensaje de la excepción |
+| 503 | `storage_unavailable` | un archivo TinyDB (`SUPPLIERS_DB_PATH`, `AUTH_DB_PATH` o `INCIDENTS_DB_PATH`) no se puede abrir, leer o escribir, o no es una base válida (JSON inválido, no UTF-8, forma distinta de `{tabla: {id: documento}}`). Afecta a las Partes B, C, D y E; con `auth.json` dañado falla también toda ruta protegida, porque el token se valida contra esa base. Hallazgo A2 de la auditoría de gestión de errores (2026-10-09), implementado el 2026-10-10 a petición del usuario. **Parte F:** también cuando la base PostgreSQL del inventario no responde (`OperationalError`, `InterfaceError` o `TimeoutError` de SQLAlchemy; log `storage inventory is unavailable: <Clase>`, §38) | `storage is temporarily unavailable` — nunca la ruta del archivo ni el mensaje de la excepción |
 | 500 | `internal_error` | cualquier excepción no prevista | `internal server error` — sin mensaje, tipo ni traza |
 
 ---
@@ -210,6 +214,7 @@ Variables de entorno del proceso (la API no carga archivos `.env` por sí sola; 
 | `JWT_SECRET_KEY` | **ninguno (obligatoria)** | clave HS256, ≥ 32 caracteres; sin ella la API no arranca (Parte C) |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | **ninguno (obligatoria)** | entero entre 1 y 525600; sin ella o fuera de rango la API no arranca (Parte C). El máximo (1 año) es un **tope técnico**: por encima, la fecha de expiración se sale del rango de `datetime` y cada login fallaba. **No es una política de sesión**: ningún documento fija la duración máxima, que decide el CTO |
 | `AUTH_DB_PATH` | `services/api/data/auth.json` | archivo TinyDB de `User` y `Profile` (Parte C). La usan la API y `create-admin` |
+| `DATABASE_URL` | **ninguno (obligatoria)** | base PostgreSQL (Supabase) del inventario (Parte F). Desde el entorno solo se aceptan `postgresql://` y `postgresql+psycopg2://`; sin ella o con otro esquema, la API no arranca. El mensaje nunca repite la URL, y `repr(Settings)` no la muestra. La usan la API y `seed-inventory` |
 | `INCIDENTS_DB_PATH` | `services/api/data/incidents.json` | archivo TinyDB del gestor centralizado de incidencias (tablas `incidents` y `seed_keys`). Lo usan el repositorio `app/modules/incident_manager/` y `scripts/seed_incidents.py`. Rutas en la Parte E |
 
 ---
@@ -594,3 +599,160 @@ Tras el seed del fixture sintético de aceptación (o del CSV real): `total` 96;
 - UI: `uis/backoffice` → `/incident-manager` (resumen + listado con filtros y cambio de estado) y `/incident-manager/new` (formulario). Reglas en [`uis/backoffice/CLAUDE.md`](../../uis/backoffice/CLAUDE.md) ("Gestor centralizado de incidencias") y uso en [`uis/backoffice/README.md`](../../uis/backoffice/README.md).
 - Guía de revisión (puesta en marcha en PowerShell, salidas esperadas, trazabilidad de los requisitos y lo no verificado): [`docs/centralized-incident-manager-review.md`](../../docs/centralized-incident-manager-review.md).
 - Fuera de alcance del enunciado: alertas de `sla_breach` (el filtro `?category=sla_breach` ya existe), responsables, tiempos de resolución, borrado y edición de otros campos.
+
+---
+
+# Parte F — Inventario de equipos y materiales (Hito 5)
+
+## 34. Requisitos heredados (enunciado del hito + CONTEXT)
+
+Fuentes, por orden:
+
+- el enunciado del Hito 5 de 4Geeks (resumido por el usuario en la sesión del 2026-10-17; no está versionado);
+- [`docs/context-nexova-gestion-inventario-hito-5.md`](../../docs/context-nexova-gestion-inventario-hito-5.md) (CONTEXT; ticket NXV-0201 de Sergio Molina, CTO): nombres de entidades, campos, vocabulario, reglas de negocio, datos semilla y notas de evaluación.
+
+| Requisito | Dónde se cumple |
+|---|---|
+| Dos bases usadas a propósito: TinyDB para la autenticación y las consultas de usuario, PostgreSQL (Supabase) con SQLModel para el inventario | `app/auth/` (sin cambios) y `app/modules/inventory/` |
+| `DATABASE_URL` en `.env`, nunca en el código; `.env` en `.gitignore` | `app/core/config.py` (§7); `.gitignore` raíz |
+| Una sola dependencia `get_db` que da una sesión SQLModel por petición vía `Depends()`; ninguna sesión global | `database.py` → `get_db` |
+| `SQLModel.metadata.create_all(engine)` al iniciar la aplicación | `database.py` → `init_db`, en el lifespan |
+| Modelos ORM (`table=True`) `Asset`, `AssetEntry` y `AssetExit` con los campos del CONTEXT; FK reales a `Asset`; `user_uuid` sin FK; sin modelo de usuario | `models.py` (§39) |
+| Schemas de request y response en otro archivo y con otra forma; ningún endpoint devuelve un objeto ORM; `current_stock` calculado y nunca almacenado; `office` en modelos y respuestas | `schemas.py`; `response_model` en las 6 rutas |
+| `APIRouter(prefix="/inventory")` con las 6 rutas | `router.py` (§37) |
+| `current_stock = SUMA(entradas) − SUMA(salidas)`; nace en 0; ninguna ruta lo modifica directamente | `service.py` |
+| Una salida que dejaría el stock negativo → 400 con el mensaje literal del CONTEXT, antes de escribir | `service.add_outbound_order` |
+| `assigned_to` obligatorio con `allocation` y nulo con `consumption` (validación) | `OutboundOrderCreate` (422 en el campo) y `CHECK` en la base |
+| Cada orden guarda el `user_uuid` del usuario autenticado (TinyDB) | `router.py` → `get_current_user` |
+| Sin N+1: los datos relacionados en la misma consulta | `service.list_assets` (una consulta) y `service.list_orders` (dos consultas con JOIN) |
+| Datos semilla del CONTEXT; `GET /inventory/products` refleja su neto | `seed.py` → `uv run seed-inventory` (§40) |
+
+## 35. Decisiones de implementación (usuario, Hito 5; D1–D11 y las de F2–F4)
+
+Las tomó **el usuario** al aprobar el plan (2026-10-17) y en la revisión de cada fase. No las han revisado el tech lead ni la CTO.
+
+| ID | Decisión |
+|---|---|
+| D1 | Módulo `app/modules/inventory/` (mismo patrón que el gestor de incidencias), con equivalencia en el §36. El cliente TinyDB de auth no se mueve: el inventario lo usa a través de `get_current_user` |
+| D2 | Dependencias autorizadas por el enunciado: `sqlmodel>=0.0.48,<0.0.49` y `psycopg2-binary>=2.9.13,<2.10`, añadidas con `uv add --no-sync`. Única transitiva nueva: SQLAlchemy 2.1.5. Nunca `uv sync` (desinstala `nexova-shared` y `nexova-incident-analyzer`) |
+| D3 | `DATABASE_URL` obligatoria al arrancar (`require_database()`, después de `require_auth()`), con `repr=False`. El esquema se valida solo en `from_env`, así que los tests inyectan `Settings(database_url="sqlite://")`. Ningún test conecta con Supabase |
+| D4 | El stock es por activo y cada activo es de una oficina: una orden con otra `office` → 400 `office_mismatch`, sin escribir. `UNIQUE` global en `sku`. `category`, `office` y `exit_type` son vocabulario cerrado (`vocabulary.py`) |
+| D5 | Las 6 rutas exigen JWT. `user_uuid` = `id` del usuario de `get_current_user`; nunca se acepta en el body |
+| D6 | Errores con el formato `{detail, code}` de la API (§38) |
+| D7 | Una salida bloquea la fila del activo con `SELECT … FOR UPDATE` (`with_for_update`) y calcula el stock e inserta en la misma transacción. En SQLite (tests) `FOR UPDATE` no se emite: la regla se prueba de forma secuencial y el bloqueo, compilando la consulta con el dialecto de PostgreSQL |
+| D8 | `GET /inventory/orders`: una lista con `type: "inbound" \| "outbound"`, el activo embebido (`id`, `name`, `sku`) y `user_uuid`, ordenada por `created_at` descendente |
+| D9 | Seed `uv run seed-inventory --email <usuario>`, idempotente por `sku`; las órdenes de un activo solo si no tiene ninguna. `assigned_to` con identificadores ficticios (`EMPLEADO-FICTICIO-01`/`-02`), porque el CONTEXT no da empleados |
+| D10 | Supabase por el **Transaction pooler** (puerto 6543). RLS activado sin políticas en las tres tablas |
+| D11 | Rama `feature/inventory-orm`, una fase por commit revisado por el usuario |
+| F2-1 | **psycopg2 forzado:** SQLAlchemy 2.1 resuelve `postgresql://` con psycopg (v3), que no está instalado. `build_engine` cambia el `drivername` a `postgresql+psycopg2` con `make_url`, sin tocar la cadena a mano. No se fija la versión de SQLAlchemy |
+| F2-2 | **Motor:** `NullPool` (el pooler ya reparte las conexiones; un pool local guardaría conexiones que el pooler recicla), `connect_timeout=5` (con Supabase caído, 503 en vez de una petición colgada) y `hide_parameters=True`. En SQLite: `StaticPool` y `PRAGMA foreign_keys=ON` en cada conexión, para que las FK se apliquen de verdad. Un motor por app en `app.state.inventory_engine`; ninguno a nivel de módulo |
+| F2-3 | **Lifespan:** `init_db` (`create_all` + RLS, en una transacción e idempotente) al arrancar y `engine.dispose()` al cerrar, también tras un arranque fallido. Los clientes de test sin `with TestClient` no ejecutan el lifespan ni tocan la base |
+| F2-4 | **`InventoryStartupError`:** si `init_db` falla, se guarda solo la clase del error y se lanza, **fuera del `except`**, una excepción con el mensaje fijo `inventory database is unavailable at startup: <Clase>`, sin `__cause__` ni `__context__` (mismo patrón que `GuardedJSONStorage`, A2). uvicorn imprime su traza, que no lleva host, usuario, contraseña ni URL, y sale con código 3. No se usa `os._exit`, que mataría cualquier proceso que ejecute el lifespan (pytest, `TestClient`) |
+| F2-5 | **RLS:** `ALTER TABLE … ENABLE ROW LEVEL SECURITY` en las tres tablas, solo en PostgreSQL, en cada arranque (es idempotente y cubre tablas creadas antes). Sin políticas: la Data API pública de Supabase (`anon`, `authenticated`) no puede leer ni escribir. La API conecta como dueña de las tablas, a la que RLS no se aplica (no se usa `FORCE`) |
+| F2-6 | **Esquema:** `__tablename__` explícitos (`assets`, `asset_entries`, `asset_exits`); vocabulario en `VARCHAR` (`sa_type=String`, sin ENUM nativos); `TIMESTAMPTZ`; índice en cada `asset_id` (PostgreSQL no indexa las FK); `CHECK` de `quantity > 0`, del vocabulario y de la coherencia de `assigned_to`, como segunda barrera tras los schemas |
+| F3-1 | **Textos:** sin espacios en los extremos, no vacíos y de 200 caracteres como máximo (`name`, `sku`, `supplier`, `assigned_to`). Límite técnico, no del CONTEXT |
+| F3-2 | **Enteros estrictos:** `quantity` entre 1 y 2147483647 (máximo de `int4`) y `asset_id` entero; ni `"5"`, ni `true`, ni `1.5` (422) |
+| F3-3 | **`assigned_to`:** `field_validator` que lee `exit_type` de `info.data`, con `validate_default=True`. El 422 sale con `loc` `["body", "assigned_to"]` (también cuando el campo falta), para que el frontend lo muestre junto al campo |
+| F3-4 | **SKU repetido en una carrera:** además de la comprobación previa, el `IntegrityError` del `UNIQUE` hace rollback, se confirma que el SKU existe y se responde 409. Cualquier otro `IntegrityError` es el 500 opaco |
+| F3-5 | **Desempate de `/orders`:** a igual `created_at`, salidas antes que entradas y, dentro de cada tipo, `id` descendente. `created_at` siempre en UTC, también leído de SQLite |
+| F3-6 | **Ruta por id:** `/inventory/products/{id}`, con el parámetro `id` en OpenAPI, como en el enunciado |
+| F4-1 | **Seed:** una sola transacción; las órdenes pasan por los schemas y por `service.add_inbound_order` / `add_outbound_order` (sin commit por orden), así que la regla del stock no se reimplementa. El email se normaliza como en el login |
+| F4-2 | **Códigos de salida del seed:** `0` bien; `1` configuración (sin `DATABASE_URL`, esquema inválido o falta `--email`), usuario inexistente o inactivo, o datos semilla que la API rechazaría; `2` base no disponible (Supabase o el TinyDB de usuarios). Sin traceback ni datos de conexión |
+
+## 36. Equivalencia con los nombres del enunciado
+
+El enunciado (y el CONTEXT) describe una estructura plana dentro de `services/`. Esta API ya tenía otros dominios, así que el inventario vive en su propio módulo:
+
+| Enunciado | Aquí |
+|---|---|
+| `database.py` (cliente TinyDB + motor SQLModel + `get_db`) | `app/modules/inventory/database.py` (motor, `init_db`, lifespan, `get_db`). El cliente TinyDB de usuarios es `app/auth/repository.py`, sin cambios |
+| `models.py` (`Asset`, `AssetEntry`, `AssetExit`) | `app/modules/inventory/models.py`; el vocabulario, en `vocabulary.py` |
+| `schemas.py` | `app/modules/inventory/schemas.py` |
+| `routers/inventory.py` (`APIRouter(prefix="/inventory")`) | `app/modules/inventory/router.py` |
+| `main.py` | `app/main.py` (registra el router con JWT y el lifespan) |
+| — | `service.py` (stock y órdenes) y `seed.py` (`uv run seed-inventory`) |
+| `Product` / `InboundOrder` / `OutboundOrder` del README del enunciado | `Asset` / `AssetEntry` / `AssetExit` (nombres del CONTEXT) |
+
+## 37. Endpoints
+
+Todas exigen `Authorization: Bearer <token>`: sin token válido, 401 `not_authenticated` (§19). Cuerpos y respuestas en JSON. La validación responde **422** con el formato saneado de la API (§4), no el 400 del gestor de incidencias.
+
+| Método y ruta | Body | Éxito | Errores |
+|---|---|---|---|
+| `GET /inventory/products` | — | **200** + lista de activos ordenada por `id` (`[]` si no hay) | — |
+| `POST /inventory/products` | `{name, sku, category, office}` | **201** + activo con `current_stock: 0` | 422 · 409 `sku_already_exists` |
+| `GET /inventory/products/{id}` | — | **200** + activo | 404 `asset_not_found` · 422 (id no entero) |
+| `POST /inventory/orders/inbound` | `{asset_id, quantity, supplier, office}` | **201** + entrada | 422 · 404 `asset_not_found` · 400 `office_mismatch` |
+| `POST /inventory/orders/outbound` | `{asset_id, quantity, exit_type, assigned_to, office}` | **201** + salida | 422 · 404 `asset_not_found` · 400 `office_mismatch` · 400 `insufficient_stock` |
+| `GET /inventory/orders` | — | **200** + entradas y salidas, de la más reciente a la más antigua | — |
+
+- **Requests:** `extra="forbid"`: un campo desconocido, `current_stock`, `id` o `user_uuid` en el body → 422.
+- **Orden de comprobaciones de una salida:** 422 → 404 → `office_mismatch` → `insufficient_stock`. Si falla alguna, no se escribe nada.
+
+Activo (respuesta):
+
+```json
+{"id": 1, "name": "Portátil 14\" Business", "sku": "NXV-IT-001", "category": "hardware", "office": "Valencia", "current_stock": 13}
+```
+
+Entrada y salida (respuestas; en `GET /inventory/orders`, unión discriminada por `type`):
+
+```json
+{"type": "inbound", "id": 1, "asset": {"id": 1, "name": "Portátil 14\" Business", "sku": "NXV-IT-001"}, "quantity": 10, "supplier": "TechDistrib Valencia S.L.", "office": "Valencia", "created_at": "2026-10-18T20:55:11.366024Z", "user_uuid": "<id del usuario>"}
+{"type": "outbound", "id": 1, "asset": {"id": 1, "name": "Portátil 14\" Business", "sku": "NXV-IT-001"}, "quantity": 2, "exit_type": "allocation", "assigned_to": "EMPLEADO-FICTICIO-01", "office": "Valencia", "created_at": "2026-10-18T20:55:11.548019Z", "user_uuid": "<id del usuario>"}
+```
+
+Vocabulario (CONTEXT): `category` ∈ `hardware`, `peripherals`, `office_supplies`, `training_materials`; `office` ∈ `Valencia`, `Miami`; `exit_type` ∈ `allocation`, `consumption`.
+
+## 38. Errores de estas rutas
+
+| HTTP | `code` | Cuándo | `detail` |
+|---|---|---|---|
+| 400 | `insufficient_stock` | salida mayor que el stock | `Insufficient stock for asset '{name}'. Available: {available}, requested: {quantity}.` (literal del CONTEXT) |
+| 400 | `office_mismatch` | la `office` de la orden no es la del activo | `order office does not match the asset office` |
+| 401 | `not_authenticated` | sin token válido (§19) | `could not validate credentials` |
+| 404 | `asset_not_found` | activo inexistente (ruta por id u orden) | `asset not found` |
+| 409 | `sku_already_exists` | SKU ya registrado, también en una carrera (F3-4) | `an asset with this sku already exists` (no repite el SKU) |
+| 422 | `validation_error` | vocabulario, textos, cantidades, campos extra o `assigned_to` incoherente (`loc` en `assigned_to`) | lista `{loc, msg, type}` (§4) |
+| 503 | `storage_unavailable` | la base del inventario no responde: `OperationalError`, `InterfaceError` o `TimeoutError` de SQLAlchemy | `storage is temporarily unavailable`. El log dice solo `storage inventory is unavailable: <Clase>`: ni la SQL, ni los parámetros, ni el host, ni el usuario |
+| 500 | `internal_error` | cualquier otro error, incluido un `IntegrityError` que no sea del SKU | `internal server error` (§5) |
+
+**OpenAPI:** cada ruta documenta con `responses=` sus errores reales, con el schema `ErrorResponse` (`{detail, code}`, en `schemas.py`), una descripción breve y ejemplos construidos con los errores de `app/core/errors.py`:
+
+- **las 6 rutas:** 401 `not_authenticated` y 503 `storage_unavailable`;
+- **`POST /products`:** 409;
+- **`GET /products/{id}`:** 404;
+- **`POST /orders/inbound`:** 404 y 400 `office_mismatch`;
+- **`POST /orders/outbound`:** 404 y un solo 400 con dos ejemplos, `office_mismatch` e `insufficient_stock` (con el mensaje literal del CONTEXT).
+
+Solo es documentación: el comportamiento no cambia. El 422 lo documenta FastAPI con su formato nativo, no con el saneado de §4. Lo comprueba `tests/test_inventory_products.py` → `OpenApiErrorsTests`.
+
+## 39. Esquema de tablas (PostgreSQL)
+
+Lo crea `init_db` al arrancar (`create_all` solo crea lo que falta). No hay columna `current_stock` ni tabla de usuarios.
+
+| Tabla | Columna | Tipo | Restricciones |
+|---|---|---|---|
+| `assets` | `id` | `SERIAL` | PK |
+| | `name` | `VARCHAR(200)` | NOT NULL |
+| | `sku` | `VARCHAR(200)` | NOT NULL, `UNIQUE` |
+| | `category` | `VARCHAR(32)` | NOT NULL, `CHECK` en el vocabulario |
+| | `office` | `VARCHAR(32)` | NOT NULL, `CHECK` `Valencia`/`Miami` |
+| `asset_entries` | `id` | `SERIAL` | PK |
+| | `asset_id` | `INTEGER` | NOT NULL, FK → `assets.id`, índice |
+| | `quantity` | `INTEGER` | NOT NULL, `CHECK > 0` |
+| | `supplier` | `VARCHAR(200)` | NOT NULL |
+| | `office` | `VARCHAR(32)` | NOT NULL, `CHECK` |
+| | `created_at` | `TIMESTAMP WITH TIME ZONE` | NOT NULL, índice (lo pone la aplicación en UTC) |
+| | `user_uuid` | `VARCHAR(36)` | NOT NULL, **sin FK** |
+| `asset_exits` | `id`, `asset_id`, `quantity`, `office`, `created_at`, `user_uuid` | como en `asset_entries` | como en `asset_entries` |
+| | `exit_type` | `VARCHAR(32)` | NOT NULL, `CHECK` `allocation`/`consumption` |
+| | `assigned_to` | `VARCHAR(200)` | NULL; `CHECK` de coherencia con `exit_type` |
+
+## 40. Seed, persistencia y pendiente
+
+- **Seed:** `uv run --env-file .env seed-inventory --email <usuario>` (entry point `seed-inventory` en `[project.scripts]`). Carga los 6 activos del CONTEXT, 4 entradas y 3 salidas a nombre del usuario indicado. El neto es 13/0/0/7/15/0 (`NXV-IT-001`, `NXV-IT-002`, `NXV-PER-001`, `NXV-PER-002`, `NXV-OFF-001`, `NXV-TRN-001`). Una segunda ejecución inserta 0. Salida y códigos: [`README.md`](./README.md#inventario-hito-5).
+- **Concurrencia:** verificada contra Supabase el 2026-10-18: dos salidas de 5 lanzadas a la vez sobre un stock de 5 dan una 201 y una 400 `Available: 0`.
+- **CORS:** sin cambios (`GET` y `POST` ya estaban permitidos).
+- **Guía de revisión** (comandos de PowerShell, recorrido en `/docs`, trazabilidad de los requisitos y lo no verificado): [`docs/inventory-review.md`](../../docs/inventory-review.md).
+- **Fuera de alcance:** UI del inventario, filtro `?office=` (la regla 5 del CONTEXT dice «cuando sea necesario»), edición o borrado de activos y órdenes, paginación.

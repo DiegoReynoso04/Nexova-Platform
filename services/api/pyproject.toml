@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nexova-incident-api"
 version = "0.1.0"
-description = "Nexova — API HTTP (FastAPI): análisis de incidentes de soporte, directorio de proveedores (TinyDB) y autenticación JWT"
+description = "Nexova — API HTTP (FastAPI): análisis de incidentes de soporte, directorio de proveedores (TinyDB), autenticación JWT e inventario (SQLModel + PostgreSQL)"
 readme = "README.md"
 requires-python = ">=3.11"
 # Rangos acotados a las versiones probadas. Versiones exactas en uv.lock
@@ -22,8 +22,12 @@ dependencies = [
     # AUTH-01 (autorizadas por el ticket): hash bcrypt con libpass (fork
     # mantenido de passlib; se importa como `passlib`) y firma JWT con python-jose.
     "libpass[bcrypt]>=1.9.3,<1.10",
+    # Hito 5 (autorizada por el enunciado): driver de PostgreSQL (Supabase) para SQLModel.
+    "psycopg2-binary>=2.9.13,<2.10",
     "python-jose[cryptography]>=3.5,<3.6",
     "python-multipart>=0.0.32,<0.1",
+    # Hito 5 (autorizada por el enunciado): ORM del inventario (instala SQLAlchemy).
+    "sqlmodel>=0.0.48,<0.0.49",
     "tinydb>=4.9,<4.10",
     "uvicorn>=0.53,<0.54",
 ]
@@ -33,6 +37,9 @@ dependencies = [
 seed = "app.seed:main"
 # `uv run create-admin` (desde services/api): crea el primer admin (contraseña interactiva).
 create-admin = "app.auth.create_admin:main"
+# `uv run --env-file .env seed-inventory --email <usuario>` (desde services/api):
+# datos semilla del inventario (Hito 5) en la base de DATABASE_URL.
+seed-inventory = "app.modules.inventory.seed:main"
 
 [project.optional-dependencies]
 # Instalación con pip (orden de arriba): httpx lo necesita
@@ -50,7 +57,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["app", "app.auth", "app.core", "app.modules", "app.modules.incident_manager", "app.modules.incidents", "app.routes"]
+packages = ["app", "app.auth", "app.core", "app.modules", "app.modules.incident_manager", "app.modules.incidents", "app.modules.inventory", "app.routes"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

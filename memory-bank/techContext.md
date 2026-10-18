@@ -26,8 +26,9 @@ Una responsabilidad por carpeta de primer nivel: `uis/` (frontends), `services/`
 | Gestor centralizado de incidencias (modelo y repositorio) | `services/api/` → `app/modules/incident_manager/` | Misma app FastAPI + TinyDB + Pydantic, **sin dependencias nuevas**. Archivo propio `INCIDENTS_DB_PATH` (por defecto `services/api/data/incidents.json`) con las tablas `incidents` (id UUID v4) y `seed_keys` (solo SHA-256 de la clave de origen). Vocabulario y reglas solo de `nexova_shared` (`test_architecture.py` prohíbe sus literales en `app/`). Rutas HTTP desde F4: `app/modules/incident_manager/router.py`, contrato en `SPECS.md` Parte E — no duplicado aquí | Gestor centralizado de incidencias, F2–F4 (2026-10-07) |
 | Gestor centralizado de incidencias (seed) | `scripts/seed_incidents.py` | Python ≥ 3.11 con el **venv de `services/api`** (necesita `tinydb`/`pydantic`); capa fina sobre `nexova_shared.incidents.prepare_seed_batch` + `IncidentRepository.seed`. CSV por argumento (por defecto `data/raw/incidents/incidents-nexova.csv`), `--db` o `INCIDENTS_DB_PATH`. Salida 1 si el CSV no existe o su cabecera es incorrecta. Comando con el fixture sintético en `services/api/README.md` | Gestor centralizado de incidencias, F3 (2026-10-07) |
 | Gestor centralizado de incidencias (UI) | `uis/backoffice/` → `/incident-manager`, `/incident-manager/new` | Mismo stack y capas que `/suppliers`, **sin dependencias nuevas**. Vocabulario, etiquetas de sede y transiciones en `types/incident-manager.ts` (excepción documentada, test de contrato contra el CONTEXT). Reglas en `uis/backoffice/CLAUDE.md` — no duplicadas aquí | Gestor centralizado de incidencias, F5 (2026-10-07) |
+| Inventario de equipos y materiales (API) | `services/api/` → `app/modules/inventory/`, rutas `/inventory/products*` y `/inventory/orders*` | Misma app FastAPI + **SQLModel 0.0.48 / SQLAlchemy 2.1.5** (`sqlmodel>=0.0.48,<0.0.49`) + **psycopg2-binary 2.9.13** (`psycopg2-binary>=2.9.13,<2.10`), las dos autorizadas por el enunciado; SQLAlchemy es la única transitiva nueva. Activos y órdenes en **PostgreSQL de Supabase** (Transaction pooler, puerto 6543, `DATABASE_URL` obligatoria); usuarios en TinyDB, sin cambios. Seed `uv run seed-inventory --email …`. Tests sobre SQLite, nunca contra Supabase. Contrato en `SPECS.md` Parte F; guía en `docs/inventory-review.md` — no duplicados aquí | Hito 5 (2026-10-17/18, rama `feature/inventory-orm`) |
 | Incident analyzer (CLI) | `scripts/analyze.py` | Capa fina sobre el núcleo (argparse, `input()`, códigos de salida). Sin lógica de negocio. Se ejecuta sin instalar el paquete (añade `packages/incident-analyzer` a `sys.path` si no está instalado) | Procesador de incidentes, Fase 1 |
-| Incident analyzer (API) | `services/api/` | **FastAPI 0.141.1 + Starlette 1.7.0 + pydantic 2.13.5 + python-multipart 0.0.32 + uvicorn 0.53.0**; tests con `unittest` + `TestClient` (httpx 0.28.1); desde AUTH-088 (2026-10-10) también **pytest 9.1.1 + pytest-cov 7.1.0** (grupo `dev` de uv). `uv run pytest` ejecuta la suite `unittest` (312 tests) y las baterías de estilo pytest de AUTH-088 (143 tests de auth y 60 del extra API-042 de proveedores y gestor, sin TestClient, con fixtures en `tests/conftest.py`), que el comando `unittest` no recoge; plan y cifras en `services/api/TESTING.md`. Versiones instaladas el 2026-09-23 en `services/api/.venv` con Python 3.14.6; `pyproject.toml` las acota con rangos (ver decisión abajo). Desde el 2026-09-29 hay `uv.lock` versionado (ver decisión del directorio de proveedores). Contrato en su `SPECS.md` (Parte A) — no duplicado aquí | Procesador de incidentes, Fase 2 (2026-09-23) |
+| Incident analyzer (API) | `services/api/` | **FastAPI 0.141.1 + Starlette 1.7.0 + pydantic 2.13.5 + python-multipart 0.0.32 + uvicorn 0.53.0**; tests con `unittest` + `TestClient` (httpx 0.28.1); desde AUTH-088 (2026-10-10) también **pytest 9.1.1 + pytest-cov 7.1.0** (grupo `dev` de uv). `uv run pytest` ejecuta la suite `unittest` (312 tests al cerrar AUTH-088; 409 desde el Hito 5, con los 97 del inventario) y las baterías de estilo pytest de AUTH-088 (143 tests de auth y 60 del extra API-042 de proveedores y gestor, sin TestClient, con fixtures en `tests/conftest.py`), que el comando `unittest` no recoge; plan y cifras en `services/api/TESTING.md`. Versiones instaladas el 2026-09-23 en `services/api/.venv` con Python 3.14.6; `pyproject.toml` las acota con rangos (ver decisión abajo). Desde el 2026-09-29 hay `uv.lock` versionado (ver decisión del directorio de proveedores). Contrato en su `SPECS.md` (Parte A) — no duplicado aquí | Procesador de incidentes, Fase 2 (2026-09-23) |
 | Directorio de proveedores (API) | `services/api/` → `/suppliers` | Misma app FastAPI + **TinyDB 4.9.0** (`tinydb>=4.9,<4.10`, autorizada) + Pydantic. Archivos con los nombres del brief dentro de `app/`: `models.py`, `database.py`, `routes/suppliers.py`, `seed.py` (`uv run seed`, entry point `[project.scripts]`). Contrato en `SPECS.md` Parte B — no duplicado aquí | Directorio de proveedores (2026-09-29) |
 | Directorio de proveedores (UI) | `uis/backoffice/` → ruta `/suppliers` | Mismo stack y capas que `/incidents`, **sin dependencias nuevas**. Reglas en `uis/backoffice/CLAUDE.md` — no duplicadas aquí | Directorio de proveedores (2026-09-29) |
 | Autenticación AUTH-02 (backoffice) | `uis/backoffice/` → `/login`, `/register`, `/account/profile` + guard global | Mismo stack, **sin dependencias nuevas**. Reglas en `uis/backoffice/CLAUDE.md` ("Autenticación") — no duplicadas aquí | AUTH-02 (2026-10-02, rama `feature/auth-frontend`, PR #13 mergeado; merge `a4b6369`, 2026-10-05) |
@@ -208,7 +209,7 @@ Detalle en `progress.md` (entradas del 2026-10-10). Decisiones técnicas permane
   - **Email:** `http.client.HTTPException` se trata como `EmailDeliveryError`.
   - **Regla:** todo almacén TinyDB nuevo usa `GuardedJSONStorage` con su `Store`.
 - **Scripts y CLIs:** se captura solo la excepción concreta alrededor de la operación (`StorageUnavailableError`, `ConfigError`, `OSError`, `EOFError`/`KeyboardInterrupt`), nunca un `except` genérico. El mensaje va a stderr con el nombre del archivo, sin la ruta completa ni `str(exc)`.
-  - **Códigos de salida:** `seed_incidents.py` 0/1/2 (2 = entorno, incluida la base); `uv run seed` y `create-admin` 1; `analyze.py` 0/1/2.
+  - **Códigos de salida:** `seed_incidents.py` 0/1/2 (2 = entorno, incluida la base); `uv run seed` y `create-admin` 1; `analyze.py` 0/1/2; `seed-inventory` (Hito 5) 0/1/2 (2 = base no disponible).
   - **Mensajes de `OSError`:** `describe_os_error` usa el nombre de la clase si `strerror` es `None`. Cada script tiene su copia, porque los scripts no se importan entre sí.
   - **Línea de registro:** en los scripts, `log_storage_failure` sale por el handler de último recurso de `logging`. Es intencionado: aporta la clase del error.
 - **Frontends Next 16 (backoffice y tracker):**
@@ -223,6 +224,49 @@ Detalle en `progress.md` (entradas del 2026-10-10). Decisiones técnicas permane
     - cada apertura del modal monta un `CandidateForm` nuevo (`key`), porque el `<dialog>` no desmonta su contenido.
   - **Tests estáticos:** `production-source.test.mjs` de cada app vigila estas reglas.
 - **Web (`uis/website`):** `404.html` con rutas absolutas, porque Netlify lo sirve en la ruta pedida aunque esté anidada.
+
+### Inventario: doble base de datos (TinyDB auth + Supabase)
+
+**Implementación (Hito 5, 2026-10-17/18, ticket NXV-0201, [`docs/context-nexova-gestion-inventario-hito-5.md`](../docs/context-nexova-gestion-inventario-hito-5.md); rama `feature/inventory-orm`):**
+- Decisiones D1–D11 y las de F2–F4 en `services/api/SPECS.md` §35, tomadas por el usuario y pendientes de revisión por el tech lead.
+- Guía de revisión: [`docs/inventory-review.md`](../docs/inventory-review.md).
+
+**Puntos técnicos a recordar:**
+- **Dos bases a propósito:**
+  - los usuarios siguen en TinyDB (`AUTH_DB_PATH`) y el inventario los usa solo a través de `get_current_user`;
+  - activos y órdenes van a PostgreSQL (Supabase) con SQLModel;
+  - `user_uuid` es una cadena sin FK, porque no hay tabla de usuarios en Supabase.
+- **`DATABASE_URL`:** obligatoria al arrancar (`Settings.require_database()`, después de `require_auth()`), con `repr=False`. El esquema se valida solo en `from_env` (`postgresql://` o `postgresql+psycopg2://`), de modo que los tests inyectan `Settings(database_url="sqlite://")`. Los mensajes de `ConfigError` nunca repiten la URL.
+- **Driver:** SQLAlchemy 2.1 resuelve `postgresql://` con psycopg (v3), que no está instalado. `build_engine` fija `postgresql+psycopg2` con `make_url`, sin fijar la versión de SQLAlchemy.
+- **Motor:**
+  - un motor por app en `app.state.inventory_engine`, ninguno a nivel de módulo;
+  - PostgreSQL: `NullPool` (el pooler de Supabase ya reparte las conexiones), `connect_timeout=5` y `hide_parameters=True`;
+  - SQLite (solo tests): `StaticPool` y `PRAGMA foreign_keys=ON` en cada conexión.
+- **Sesiones:** `get_db` abre una `Session` por petición y es el único sitio de la API que la crea. El seed abre la suya en `seed.py:_seed_database`. Un test por AST lo vigila.
+- **Lifespan:**
+  - al arrancar, `init_db` (`create_all` + `ALTER TABLE … ENABLE ROW LEVEL SECURITY` en las tres tablas, solo en PostgreSQL, en una transacción e idempotente);
+  - al cerrar, `engine.dispose()`, también tras un arranque fallido;
+  - los clientes de test sin `with TestClient` no ejecutan el lifespan.
+- **Arranque fallido:** `init_db` guarda solo la clase del error y lanza `InventoryStartupError` **fuera del `except`** (sin `__cause__` ni `__context__`; patrón de `GuardedJSONStorage`). uvicorn imprime esa traza, sin host, usuario ni contraseña, y sale con código 3. **No usar `os._exit`**: mataría pytest o cualquier proceso que ejecute el lifespan.
+- **RLS sin políticas:** la Data API pública de Supabase (`anon`, `authenticated`) no puede leer ni escribir. La API conecta como dueña de las tablas, a la que RLS no se aplica (no se usa `FORCE`).
+- **Esquema:**
+  - `assets`, `asset_entries` y `asset_exits`;
+  - vocabulario en VARCHAR con `CHECK` (sin ENUM nativos: `sa_type=String`), `TIMESTAMPTZ`, índice en cada `asset_id` y `UNIQUE` global en `sku`;
+  - `current_stock` no es una columna;
+  - `schemas.py` (Pydantic puro) no importa `models.py`; el vocabulario compartido está en `vocabulary.py`.
+- **Stock:**
+  - en los listados, subconsultas agregadas + LEFT JOIN + COALESCE, una sola consulta (un JOIN sin agregar antes multiplica las filas);
+  - una salida bloquea la fila del activo con `with_for_update()` y calcula el stock e inserta en la misma transacción;
+  - `service.add_*_order` hacen `flush` sin commit: las rutas confirman y el seed las reutiliza en su única transacción;
+  - verificado contra Supabase: dos salidas simultáneas de 5 sobre un stock de 5 → una 201 y una 400.
+- **Errores:**
+  - `OperationalError`, `InterfaceError` y `TimeoutError` de SQLAlchemy → 503 `storage_unavailable`, con el log `storage inventory is unavailable: <Clase>` (`INVENTORY_STORE` en `core/errors.py`, porque `core/storage.py` importa ese módulo);
+  - el `IntegrityError` del SKU en carrera → 409;
+  - cualquier otro → 500 opaco.
+- **Seed `seed-inventory`:** códigos `0`; `1` configuración, falta `--email`, usuario inexistente o inactivo, o datos rechazados por la API; `2` base no disponible (también el TinyDB de usuarios). Está en `PRINT_ALLOWED` de `test_architecture.py`.
+- **OpenAPI:** cada ruta documenta con `responses=` sus errores reales (schema `ErrorResponse` `{detail, code}` y ejemplos construidos con los errores de `core/errors.py`). Un error nuevo de una ruta se añade allí y en `OpenApiErrorsTests`.
+- **FastAPI 0.141:** `app.routes` guarda los routers incluidos como `_IncludedRouter`. Para recorrer las rutas de un router hay que usar `router.routes` (o `/openapi.json`).
+- **Datos de la demo en Supabase:** cargados el 2026-10-18 con el seed (ids 1..6, stock 13/0/0/7/15/0, 7 órdenes). No borrarlos.
 
 ## Skills y agentes en este repo
 

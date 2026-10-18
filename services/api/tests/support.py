@@ -35,15 +35,18 @@ HEADER = "ticket_id,date,client_company,category,description,agent_id,status,cus
 # AUTH-01: clave generada al importar (nunca una clave fija en el repositorio).
 TEST_JWT_SECRET = secrets.token_urlsafe(48)
 TEST_TOKEN_MINUTES = 15
+# Hito 5: SQLite en memoria (una base nueva por app). Ningún test toca Supabase.
+TEST_DATABASE_URL = "sqlite://"
 
 
 def with_test_auth(settings: Settings, auth_db_path: Path) -> Settings:
-    """`settings` + configuración JWT de test y una base de usuarios temporal."""
+    """`settings` + configuración JWT de test, una base de usuarios temporal y el inventario en SQLite."""
     return dataclasses.replace(
         settings,
         auth_db_path=auth_db_path,
         jwt_secret_key=TEST_JWT_SECRET,
         access_token_expire_minutes=TEST_TOKEN_MINUTES,
+        database_url=TEST_DATABASE_URL,
     )
 
 

@@ -4,6 +4,234 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-18 — Hito 5, F5: documentación de cierre y verificación final (hito hecho)
+
+**Estado: hecho y verificado, sin comitear** (el usuario revisa antes del commit), en `feature/inventory-orm`, sobre F4 (`f004944`). **El Hito 5 (F1–F5) está hecho.** Pendiente: commit de F5, push y PR, que hace el usuario.
+
+- **Documentación:**
+  - `services/api/SPECS.md`: Parte F (§34–§40) con requisitos, decisiones D1–D11 y F2–F4, equivalencia con los nombres del enunciado, contrato, errores y esquema; referencias en la cabecera, §4 y §7.
+  - `services/api/README.md`: sección «Inventario (Hito 5)» (Supabase y Transaction pooler, `DATABASE_URL`, arranque, seed con su salida y endpoints); también la tabla general de endpoints, la configuración, los tests y la estructura.
+  - `services/api/TESTING.md`: §13 (qué cubre, cómo ejecutarlo y las mutaciones); el título pasa a cubrir todas las baterías.
+  - `docs/local-development.md`: `DATABASE_URL` en el arranque y en las variables.
+  - `AGENTS.md` §4: bloque «Inventario (Hito 5)».
+  - **Nuevo:** `docs/inventory-review.md`, guía de revisión con trazabilidad, comandos de PowerShell, recorrido en `/docs`, RLS en Supabase y lo no verificado.
+  - **Memory-bank:** `techContext.md` (fila del inventario y decisión «Inventario: doble base de datos»; el recuento de la suite `unittest` pasa a 406) y `projectbrief.md` (fila de Tecnología, Sergio Molina, NXV-0201, solo con datos del CONTEXT).
+- **Errores en OpenAPI** (pedido en la revisión de F5):
+  - `router.py` documenta con `responses=` los errores reales de cada ruta, con el schema `ErrorResponse` (`{detail, code}`, en `schemas.py`), una descripción y ejemplos construidos con los errores de `core/errors.py`;
+  - el 400 de la salida lleva dos ejemplos, `office_mismatch` e `insufficient_stock` (mensaje literal);
+  - el comportamiento no cambia;
+  - 3 tests nuevos (`OpenApiErrorsTests`) leen `/openapi.json`; dos mutaciones (sin el 503 común, sin el ejemplo de stock) detectadas y deshechas;
+  - mencionado en `SPECS.md` §38 y en la guía.
+- **Arreglo menor:** `services/api/app/core/errors.py` había perdido el salto de línea final en F2. Por eso `git diff main..HEAD --stat` daba una línea más sin `--ignore-cr-at-eol`. Se restaura.
+- **Verificación final** (2026-10-18):
+
+| Comprobación | Resultado |
+|---|---|
+| `services/api`: `unittest` (`AGENTS.md` §4) | 409 OK (312 + 97 del inventario), sin `ResourceWarning` |
+| `services/api`: `uv run --no-sync python -m pytest` | 612 OK (515 + 97) |
+| `packages/shared` | 81 OK (sin cambios en la rama) |
+| `packages/incident-analyzer` | 121 OK, 7 omitidos (sin cambios en la rama) |
+| `git diff main --stat`, con y sin `--ignore-cr-at-eol` | idéntico (34 archivos con F5) |
+| Secretos en `git log -p main..HEAD` y en `git diff main` | no encontrados: ni el project-ref de Supabase, ni el usuario, la contraseña o el host del pooler, ni la `DATABASE_URL`, ni `JWT_SECRET_KEY`, ni ningún `*.pooler.supabase.com`. Las URL `postgresql://usuario:contraseña@` que aparecen son placeholders o fixtures ficticios |
+| `.env`, `.vscode/`, `.coverage` o `data/` en algún commit de la rama | ninguno |
+| Enlaces relativos (y anclas) de los 9 documentos tocados | 103 comprobados, 0 rotos |
+
+- **Verificación manual del usuario (2026-10-18):** recorrido en `/docs` contra Supabase, con un login real (*Authorize* con su cuenta; `user_uuid` `45e456e9-…`).
+  - `GET /inventory/products` → 200, ids 1–6 y stock 13/0/0/7/15/0;
+  - salida de 20 de `asset_id` 1 → 400 `insufficient_stock` con `Available: 13, requested: 20.`;
+  - `allocation` sin `assigned_to` → 422 con `loc` `["body", "assigned_to"]`;
+  - `GET /inventory/orders` → 200, 7 órdenes con su `user_uuid`;
+  - tras reiniciar, `/docs` muestra documentados los errores de las rutas (400/404/401).
+  - No registró ninguna orden válida: el neto del seed sigue intacto.
+  - En `docs/inventory-review.md` quedan fuera de «lo no verificado» el recorrido en Swagger y el login real.
+- **Datos de la demo en Supabase:** cargados con el seed en F4 y no se tocan.
+- **Problema conocido:** `docs/context-nexova-gestion-inventario-hito-5.md` no termina en salto de línea; se dejó tal cual porque es el CONTEXT original.
+
+---
+
+## 2026-10-18 — Hito 5, F4: seed `uv run seed-inventory --email …` y `dispose()` del motor
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-orm`, sobre F3b (`a9a3fdb`). Siguiente: F5 (documentación de cierre).
+
+- **`app/modules/inventory/seed.py`**, entry point `seed-inventory` en `pyproject.toml`, añadido a `PRINT_ALLOWED` en `test_architecture.py` (mismo motivo que `app/seed.py`).
+  - **Datos:** los 6 activos literales del CONTEXT. Las entradas (10 y 5 de `NXV-IT-001`, 8 de `NXV-PER-002`, 20 de `NXV-OFF-001`) y las salidas (2 + 5 + 1) las aprobó el usuario.
+  - **Empleados:** `EMPLEADO-FICTICIO-01` y `-02` están documentados en el código como identificadores ficticios, porque el CONTEXT no da empleados.
+  - **Neto:** 13/0/0/7/15/0.
+  - **Usuario:** se busca por `--email` en TinyDB, normalizado como en el login. El `user_uuid` de las órdenes es su `id`.
+  - **Una sola transacción:**
+    - activos idempotentes por `sku`;
+    - las órdenes de un activo solo se insertan si no tiene ninguna;
+    - las órdenes pasan por los schemas de la API y por `service.add_inbound_order` / `add_outbound_order` (sin commit por orden), así que la regla del stock no se reimplementa.
+    - Un dato que la API rechazaría → código 1 y no se escribe nada.
+  - **Códigos de salida:**
+    - 1: configuración (sin `DATABASE_URL`, esquema inválido o falta `--email`, que argparse terminaría con 2), usuario inexistente o inactivo (sin repetir el email), o datos semilla rechazados;
+    - 2: base no disponible (Supabase o el TinyDB de usuarios), solo con la clase del error y sin traceback.
+- **`service.py`:** la lógica de las órdenes se separa del commit: `add_inbound_order` y `add_outbound_order` hacen `flush` sin commit. `create_*_order` las usan y confirman. Las rutas no cambian.
+- **`dispose()`:** el lifespan libera el motor al cerrar, también tras un arranque fallido. Los tests de F2 que usan una app sin lifespan lo liberan con `addCleanup`. Ya no queda ningún `ResourceWarning: unclosed database` en la suite.
+- **Tests:** 14 nuevos (13 en `tests/test_inventory_seed.py` y 1 del `dispose`).
+  - dos ejecuciones (6/4/3 y luego 0);
+  - activo existente con órdenes;
+  - datos que rompen el stock → nada escrito;
+  - email inexistente, inválido o inactivo → 1;
+  - sin `DATABASE_URL` o con otro esquema → 1;
+  - base caída → 2, también lanzando el comando en un subproceso;
+  - `auth.json` ilegible → 2;
+  - `GET /inventory/products` exacto tras el seed (caso del evaluador) y 7 órdenes con el `user_uuid` del usuario.
+  - El test de F2 que vigila dónde se abren sesiones admite ahora `seed.py:_seed_database`.
+- **Mutaciones**, todas detectadas y deshechas: seed sin buscar el SKU; salidas sin la regla del stock; órdenes duplicadas en la segunda ejecución; lifespan sin `dispose()`.
+- **Supabase real** (datos de la demo, **no se borran**):
+  - `uv run --env-file .env seed-inventory --email <usuario>` dos veces: 6/0/4/3 y después 0/6/0/0.
+  - `uv run` reconstruyó el paquete para crear el entry point; `pip list` no cambió.
+  - Con la API arrancada y un JWT del mismo usuario: `GET /inventory/products` → ids 1..6 y stock 13/0/0/7/15/0; `GET /inventory/orders` → 7 órdenes, todas con su `user_uuid`.
+  - `data/auth.json` se usó solo para leer (el sha256 no cambió).
+- **Validación:**
+  - `unittest`: 406 OK (392 + 14).
+  - `uv run --no-sync python -m pytest`: 609 OK (595 + 14).
+
+---
+
+## 2026-10-18 — Hito 5, F3b: órdenes de entrada y salida, regla del stock y `GET /inventory/orders`
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-orm`, sobre F3a (`c3fc7bf`). Siguiente: F4 (seed).
+
+- **Antes, en F3a (ya comiteada):** la ruta por id se publica como `/inventory/products/{id}`, con un test sobre `/openapi.json`.
+- **Base de Supabase:** reiniciada una vez con `TRUNCATE assets, asset_entries, asset_exits RESTART IDENTITY CASCADE`, con autorización del usuario y las tablas ya vacías. Se hizo con un script fuera del repo.
+- **Schemas** (`schemas.py`):
+  - `InboundOrderCreate` y `OutboundOrderCreate`: `extra="forbid"`, así que `user_uuid` en el body da 422.
+  - `quantity`: entero estricto entre 1 y 2147483647. `asset_id`: entero estricto.
+  - La coherencia de `assigned_to` es un `field_validator` que lee `exit_type` de `info.data`, con `validate_default=True`: el 422 sale con `loc` `["body", "assigned_to"]`, también cuando el campo falta.
+  - Respuestas: `InboundOrderRead` y `OutboundOrderRead` (`type` literal, activo embebido `AssetSummary`, `created_at` con zona) y `OrderRead`, la unión discriminada por `type`.
+  - `QUANTITY_MAX` va en `vocabulary.py`.
+- **Service** (`service.py`):
+  - `user_uuid` es el `id` del usuario de `get_current_user`, declarado en la ruta (FastAPI lo resuelve una sola vez por petición).
+  - **Entrada:** 404 `asset_not_found` → 400 `office_mismatch` → insertar.
+  - **Salida:** `locked_asset_query` (`SELECT … FOR UPDATE`) → 404 → oficina → stock → 400 `insufficient_stock` con el mensaje literal del CONTEXT → insertar y commit, todo en la misma transacción. Si algo falla no se hace commit y `get_db` cierra la sesión.
+  - **`GET /orders`:** dos consultas con JOIN a `assets`, ordenadas por `created_at` descendente; a igual fecha, salidas antes que entradas y, dentro de cada tipo, `id` descendente. `created_at` sale siempre en UTC, también desde SQLite.
+  - Errores nuevos `OfficeMismatchError` e `InsufficientStockError`, en `core/errors.py`.
+- **Tests:**
+  - 24 nuevos, en `tests/test_inventory_orders.py`.
+  - `InventoryTestCase` pasa a `tests/inventory_support.py`, compartido con `test_inventory_products.py`.
+  - El test de «ningún ORM» cubre ahora las 6 rutas y despliega `list[...]`, uniones y `Annotated`.
+- **Mutaciones**, todas detectadas y deshechas:
+  - sin `FOR UPDATE`;
+  - el stock comprobado después de insertar;
+  - `>=` en vez de `>` (salida igual al stock rechazada);
+  - sin comprobar la oficina, en la salida y en la entrada;
+  - `user_uuid` tomado del body;
+  - N+1 en `GET /orders`;
+  - el validador de `assigned_to` sobre el body.
+- **Supabase real** (usuario temporal en una TinyDB temporal):
+  - entrada de 5; salida de 7 → 400 con el mensaje exacto; `allocation` de 3 → 201;
+  - stock 2 y `GET /orders` con 2 órdenes;
+  - **concurrencia:** dos salidas de 5 a la vez sobre un stock de 5 → una 201 y una 400 `Available: 0`. La segunda esperó al bloqueo y vio el stock que dejó la primera.
+  - Después se borró todo lo creado y se volvió a hacer `TRUNCATE … RESTART IDENTITY`: la base queda vacía, con los ids desde 1 para el seed.
+- **Validación:**
+  - `unittest`: 392 OK (368 + 24).
+  - `uv run --no-sync python -m pytest`: 595 OK (571 + 24).
+
+---
+
+## 2026-10-18 — Hito 5, F3a: schemas, `service.py` y rutas de productos
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-orm`, sobre F2 (`d68d93e`). Quedan las órdenes para F3b.
+
+- **`vocabulary.py`:** `AssetCategory`, `Office`, `ExitType`, `TEXT_MAX_LENGTH` y `USER_UUID_LENGTH`, importados por `models.py` y por `schemas.py`. Así `schemas.py` no importa `models.py`, y un test lo vigila.
+- **`schemas.py`:** Pydantic puro.
+  - `AssetCreate`: `extra="forbid"`; textos sin espacios en los extremos, no vacíos y de 200 caracteres como máximo; vocabulario cerrado.
+  - `AssetRead`: añade `current_stock`.
+- **`service.py`:**
+  - el stock se calcula en la misma consulta que lee los activos: subconsultas agregadas por `asset_id`, `LEFT JOIN` y `COALESCE`, ordenado por `id`;
+  - activo inexistente → 404 `asset_not_found`;
+  - el alta comprueba antes el SKU y, si el `UNIQUE` lanza `IntegrityError` en el commit, hace rollback, vuelve a comprobar y responde 409 `sku_already_exists`. Cualquier otro `IntegrityError` sigue siendo el 500 opaco.
+  - Los errores nuevos están en `core/errors.py` con mensajes fijos (no repiten el SKU).
+- **`router.py`:**
+  - `APIRouter(prefix="/inventory", tags=["inventory"])` con `GET` y `POST /inventory/products` y `GET /inventory/products/{id}` (el parámetro se llama `id`, como en el enunciado, también en OpenAPI; un test lo comprueba);
+  - `response_model` en todas, sesión por `Depends(get_db)`;
+  - registrado en `main.py` con `dependencies=authenticated`.
+- **Tests:** 20, en `tests/test_inventory_products.py`, con `with TestClient`.
+  - Casos felices, 401 en las 3 rutas, 404, 409 (también la carrera simulada) y 422 (vocabulario, extras, `current_stock`, textos).
+  - Stock: 10 + 5 − 2 − 1 = 12. Un JOIN sin agregar daría 24.
+  - Consultas: una sola, igual con 1 y con 20 activos con órdenes.
+  - Ningún `response_model` hereda de SQLModel.
+  - FastAPI 0.141 guarda los routers incluidos como `_IncludedRouter` en `app.routes`, así que el test recorre `inventory_router.routes` y comprueba las rutas publicadas en `/openapi.json`, que deben ser exactamente `/inventory/products/{id}`.
+- **Mutaciones**, todas detectadas y deshechas: JOIN sin agregar antes; N+1 (stock por activo en un bucle); sin capturar el `IntegrityError`; sin `extra="forbid"`; ruta que devuelve el ORM; sin `COALESCE`; router sin JWT.
+- **Supabase real:**
+  - `POST` de un activo de prueba → 201 con `current_stock: 0`;
+  - `GET` por id y el listado → stock 0;
+  - el `POST` repetido → 409 y sin token → 401;
+  - después se borró con SQL: 0 activos y 0 órdenes en la base.
+  - **Problema conocido:** la secuencia de `assets.id` ya avanzó, así que el primer activo del seed no tendrá `id = 1`.
+- **Validación:**
+  - `unittest`: 368 OK (348 + 20).
+  - `uv run --no-sync python -m pytest`: 571 OK (551 + 20).
+
+---
+
+## 2026-10-18 — Hito 5, F2: configuración, motor, `get_db`, modelos ORM, lifespan (tablas + RLS) y 503
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-orm`, sobre F1 (`6b977af`). Todavía no hay rutas `/inventory` (F3a y F3b).
+
+- **Configuración** (`app/core/config.py`):
+  - `DATABASE_URL` obligatoria al arrancar: `require_database()`, que `create_app` llama después de `require_auth()`.
+  - `repr=False` y `ConfigError` sin repetir la URL.
+  - El esquema se valida solo en `from_env` (`postgresql://` y `postgresql+psycopg2://`), así que los tests inyectan `Settings(database_url="sqlite://")`.
+- **`app/modules/inventory/database.py`:**
+  - `build_engine`, un motor por app en `app.state.inventory_engine`, sin motor ni sesión a nivel de módulo.
+    - **Postgres:** `NullPool`, `connect_timeout=5`, `hide_parameters=True`.
+    - **Driver:** `postgresql://` pasa a `postgresql+psycopg2` con `make_url`, porque SQLAlchemy 2.1 usa psycopg v3 por defecto.
+    - **SQLite:** `StaticPool` y `PRAGMA foreign_keys=ON`.
+    - **URL ilegible:** `ConfigError` sin la URL y sin encadenar la excepción.
+  - `init_db`: `create_all` y luego `ALTER TABLE … ENABLE ROW LEVEL SECURITY` en las tres tablas, solo en Postgres, en una transacción. Es idempotente.
+  - `inventory_lifespan` lo ejecuta al arrancar. Si falla, `init_db` lanza `InventoryStartupError` con un mensaje fijo (`inventory database is unavailable at startup: <Clase>`). Se lanza fuera del `except`, sin `__cause__` ni `__context__`, con el mismo patrón que `GuardedJSONStorage` (A2).
+  - uvicorn imprime la traza de esa excepción, sin la original, y termina con código 3 (`STARTUP_FAILURE`).
+  - *Una primera versión usaba `os._exit(1)`; el usuario la rechazó en la revisión porque mata cualquier proceso que ejecute el lifespan, como pytest o `with TestClient`.*
+  - `get_db`: una `Session` por petición.
+- **`models.py`:**
+  - `Asset`, `AssetEntry` y `AssetExit` (tablas `assets`, `asset_entries` y `asset_exits`).
+  - FK con índice en `asset_id`, `UNIQUE` global en `sku`, `TIMESTAMPTZ` y vocabulario en VARCHAR (sin ENUM nativos).
+  - `CHECK` de `quantity > 0`, del vocabulario y de la coherencia de `assigned_to`.
+  - Sin tabla de usuarios.
+- **503** (`app/core/errors.py`):
+  - `OperationalError`, `InterfaceError` y `TimeoutError` de SQLAlchemy → 503 `storage_unavailable`;
+  - el log solo lleva `storage inventory is unavailable: <Clase>`;
+  - el resto de errores de la base siguen siendo el 500 opaco.
+- **Soporte de tests, cambio mínimo:** `TEST_DATABASE_URL = "sqlite://"` en `tests/support.py`, en `with_test_auth`, en `AuthTestCase` y en `AuthConfigTests.valid()`. Los clientes existentes no usan `with TestClient`: no ejecutan el lifespan ni tocan la base.
+- **Tests nuevos:** 36, en `tests/test_inventory_database.py` y `tests/test_inventory_startup.py`.
+  - **En proceso:** `with TestClient(app)` con la base caída lanza `InventoryStartupError` sin encadenar, y después otra app arranca en el mismo proceso.
+  - **Con uvicorn real** contra un puerto local cerrado: código 3, y la salida no lleva usuario, contraseña, host, base, `postgresql://`, `psycopg2` ni la excepción original.
+  - **Mutaciones**, todas detectadas y deshechas: sin `PRAGMA`; sin la llamada a RLS en `init_db`; sin el `ALTER`; con una sesión a nivel de módulo; con una sesión cacheada en `get_db`; sin forzar psycopg2; `InventoryStartupError` lanzada dentro del `except` (uvicorn imprime entonces `localhost` y `psycopg2`).
+- **Supabase real:**
+  - antes del arranque, las tres tablas no existían;
+  - tras `uv run --env-file .env uvicorn app.main:create_app --factory`, existen con `relrowsecurity=True`, `relforcerowsecurity=False` y 0 políticas;
+  - un segundo arranque también termina bien (idempotente).
+- **Sin `DATABASE_URL`:** `ConfigError: DATABASE_URL is required (see services/api/.env.example)`, con la traza de uvicorn al cargar la factory. Es el mismo comportamiento que ya tenía la falta de `JWT_SECRET_KEY` y no muestra ningún secreto.
+- **Validación:**
+  - `unittest`: 348 OK (312 + 36).
+  - `uv run --no-sync python -m pytest`: 551 OK (515 + 36).
+
+---
+
+## 2026-10-17 — Hito 5 (inventario con SQLModel y Supabase), F1: rama, CONTEXT y dependencias
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase antes del commit), en `feature/inventory-orm`, creada desde `main` en `ef1e083` (merge de la PR #20). Primera fase del plan aprobado por el usuario (F1, F2, F3a, F3b, F4 y F5). Todavía no hay código de inventario.
+
+- **CONTEXT del hito versionado:** `docs/context-nexova-gestion-inventario-hito-5.md`, sin cambios de contenido (solo finales de línea a LF).
+- **Dependencias directas nuevas (autorizadas por el enunciado):**
+  - `sqlmodel>=0.0.48,<0.0.49` (instalada 0.0.48);
+  - `psycopg2-binary>=2.9.13,<2.10` (instalada 2.9.13; tiene wheel `cp314-win_amd64`).
+  - Única transitiva nueva: SQLAlchemy 2.1.5.
+  - Añadidas con `uv add --no-sync` e instaladas con `uv run`, que sincroniza de forma inexacta.
+  - `pip list` antes y después: solo aparecen esos tres paquetes; `nexova-shared` y `nexova-incident-analyzer` siguen instalados.
+- **`.env.example`:** `DATABASE_URL=` vacía, con un comentario sobre el Transaction pooler (puerto 6543) y los esquemas aceptados. Será obligatoria a partir de F2. `.env` no se ha tocado.
+- **Conexión real:** un `SELECT 1` contra Supabase con un script fuera del repo responde `ok`. Solo imprime `ok` o la clase del error.
+- **Hallazgo para F2:** SQLAlchemy 2.1 resuelve `postgresql://` con psycopg (v3), que no está instalado; con la URL tal cual, `create_engine` falla con `ModuleNotFoundError`. El motor tendrá que fijar `postgresql+psycopg2` al construirse.
+- **Validación:**
+  - `unittest`: 312 OK.
+  - `uv run pytest`: 515 OK, con 1 aviso de Starlette sobre httpx que no viene de las dependencias nuevas.
+  - Lanzada como `uv run --no-sync python -m pytest`, porque el Control de aplicaciones de Windows bloquea hoy `.venv/Scripts/pytest.exe` (os error 4551). Ese ejecutable es del 2026-10-10 y F1 no lo ha cambiado.
+
+---
+
 ## 2026-10-13 — Memory-bank: AUTH-088 integrada en `main`
 
 **Estado: hecho** en `chore/memory-bank-auth088-merged`, creada desde `main` en `a56e346`. Solo documentación; sin impacto técnico.

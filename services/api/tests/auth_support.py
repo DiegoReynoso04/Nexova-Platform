@@ -20,7 +20,7 @@ from app.auth.service import UserService
 from app.core.config import Settings
 from app.main import create_app
 
-from .support import TEST_JWT_SECRET, TEST_TOKEN_MINUTES
+from .support import TEST_DATABASE_URL, TEST_JWT_SECRET, TEST_TOKEN_MINUTES
 
 USERS_URL = "/users"
 LOGIN_URL = "/auth/login"
@@ -57,6 +57,7 @@ class AuthTestCase(unittest.TestCase):
             auth_db_path=self.auth_db_path,
             jwt_secret_key=TEST_JWT_SECRET,
             access_token_expire_minutes=TEST_TOKEN_MINUTES,
+            database_url=TEST_DATABASE_URL,
         )
         self.app = create_app(self.settings)
         self.client = TestClient(self.app)

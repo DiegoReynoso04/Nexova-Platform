@@ -11,10 +11,19 @@ from http import HTTPStatus
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = logging.getLogger("nexova.api")
+
+# Hito 5: nombre del almacén del inventario (PostgreSQL) en los registros de
+# fallo, junto a los de TinyDB (`Store` en core/storage.py).
+INVENTORY_STORE = "inventory"
+# Fallos de la base del inventario que no son del código: conexión rechazada o
+# perdida, host inalcanzable, `connect_timeout`, base caída o pool agotado.
+DATABASE_UNAVAILABLE_ERRORS = (OperationalError, InterfaceError, PoolTimeoutError)
 
 INTERNAL_ERROR_DETAIL = "internal server error"
 # Campos de los errores de validación que se devuelven. Se descartan `input`,
@@ -138,6 +147,35 @@ class IncidentNotFoundError(ApiError):
         super().__init__(404, "incident_not_found", "incident not found")
 
 
+# Inventario (Hito 5). Mensajes fijos: nunca repiten el SKU ni el id recibidos.
+class AssetNotFoundError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(404, "asset_not_found", "asset not found")
+
+
+class SkuAlreadyExistsError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(409, "sku_already_exists", "an asset with this sku already exists")
+
+
+class OfficeMismatchError(ApiError):
+    """La oficina de la orden no es la del activo: el stock es por activo y cada activo es de una oficina."""
+
+    def __init__(self) -> None:
+        super().__init__(400, "office_mismatch", "order office does not match the asset office")
+
+
+class InsufficientStockError(ApiError):
+    """Salida mayor que el stock. Mensaje literal del CONTEXT (regla 2)."""
+
+    def __init__(self, name: str, available: int, requested: int) -> None:
+        super().__init__(
+            400,
+            "insufficient_stock",
+            f"Insufficient stock for asset '{name}'. Available: {available}, requested: {requested}.",
+        )
+
+
 class FileTooLargeError(ApiError):
     def __init__(self, max_bytes: int) -> None:
         super().__init__(413, "file_too_large", f"request body exceeds the {max_bytes} bytes limit")
@@ -179,6 +217,16 @@ async def _http_exception_handler(request: Request, exc: Exception) -> JSONRespo
     return error_response(status.value, code, status.phrase, exc.headers)
 
 
+async def _database_unavailable_handler(request: Request, exc: Exception) -> JSONResponse:
+    """La base del inventario no responde: 503 `storage_unavailable`, como un archivo TinyDB dañado.
+
+    El `str()` de estas excepciones lleva la SQL, los parámetros y, en las de
+    psycopg2, el host y el usuario: solo se registra el nombre de la clase.
+    """
+    log_storage_failure(INVENTORY_STORE, exc)
+    return error_response(503, "storage_unavailable", StorageUnavailableError().detail)
+
+
 async def _validation_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, RequestValidationError)
     errors = [{key: error[key] for key in _VALIDATION_ERROR_KEYS if key in error} for error in exc.errors()]
@@ -188,6 +236,8 @@ async def _validation_exception_handler(request: Request, exc: Exception) -> JSO
 def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
     app.add_exception_handler(RequestValidationError, _validation_exception_handler)
+    for error_class in DATABASE_UNAVAILABLE_ERRORS:
+        app.add_exception_handler(error_class, _database_unavailable_handler)
 
 
 class InternalErrorMiddleware:

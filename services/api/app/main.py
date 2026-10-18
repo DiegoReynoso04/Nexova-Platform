@@ -1,7 +1,9 @@
-"""Aplicación FastAPI única del servicio: incidentes, gestor de incidencias, proveedores y autenticación.
+"""Aplicación FastAPI única del servicio: incidentes, gestor de incidencias, proveedores, autenticación e inventario.
 
 Arranque: `uv run --env-file .env uvicorn app.main:create_app --factory` (ver README).
-Sin JWT_SECRET_KEY o ACCESS_TOKEN_EXPIRE_MINUTES la app no arranca (ConfigError).
+Sin JWT_SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES o DATABASE_URL la app no arranca
+(ConfigError). Si la base del inventario no responde al arrancar, uvicorn no
+arranca (`InventoryStartupError`, ver app/modules/inventory/database.py).
 
 Solo ensambla: configuración, middlewares, handlers de error y routers.
 """
@@ -21,6 +23,8 @@ from app.modules.incident_manager.repository import IncidentRepository
 from app.modules.incident_manager.router import router as incident_manager_router
 from app.modules.incidents.router import router as incidents_router
 from app.modules.incidents.store import LastResultStore
+from app.modules.inventory.database import build_engine, inventory_lifespan
+from app.modules.inventory.router import router as inventory_router
 from app.routes.auth import router as auth_router
 from app.routes.profiles import router as profiles_router
 from app.routes.suppliers import router as suppliers_router
@@ -37,9 +41,13 @@ def build_email_sender(settings: Settings) -> EmailSender:
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings if settings is not None else Settings.from_env()
     settings.require_auth()
+    settings.require_database()
 
-    app = FastAPI(title="Nexova API", version="0.1.0")
+    # El lifespan crea las tablas del inventario y activa RLS antes de aceptar peticiones.
+    app = FastAPI(title="Nexova API", version="0.1.0", lifespan=inventory_lifespan)
     app.state.settings = settings
+    # Inventario (Hito 5): motor SQLModel de la base PostgreSQL (Supabase). No conecta aquí.
+    app.state.inventory_engine = build_engine(settings.database_url)
     # Un store por app: cada create_app() (y cada test) empieza sin análisis.
     app.state.result_store = LastResultStore()
     # TinyDB en disco: los proveedores persisten entre reinicios.
@@ -59,6 +67,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # usan el convertidor uuid, así que no capturan /analyze ni /results/export.
     app.include_router(incident_manager_router, prefix="/api/incidents", dependencies=authenticated)
     app.include_router(suppliers_router, prefix="/suppliers", dependencies=authenticated)
+    # Inventario (Hito 5): el router ya lleva su prefijo `/inventory`.
+    app.include_router(inventory_router, dependencies=authenticated)
     # Públicas: /auth/login, POST /users, /auth/forgot-password y /auth/reset-password;
     # el resto (incluida /auth/change-password) declara su propia dependencia.
     app.include_router(auth_router, prefix="/auth")

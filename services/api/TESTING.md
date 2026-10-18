@@ -1,4 +1,4 @@
-# TESTING — Batería de pruebas de AUTH-088 (autenticación y extras)
+# TESTING — Baterías de pruebas de `services/api` (AUTH-088, extras e inventario)
 
 ## 1. Qué cubre y por qué
 
@@ -24,6 +24,7 @@ Desde `services/api` (comprobado en Windows con PowerShell):
 
 **Jest (lógica TypeScript de auth en `uis/backoffice`):** ver §10.
 **Extras:** proveedores y gestor de incidencias con pytest (API-042) en §11; utilidades del frontend con Jest (FE-019) en §12.
+**Inventario (Hito 5):** §13.
 
 ## 3. Plan de pruebas
 
@@ -240,3 +241,47 @@ Las cinco funciones probadas quedan cubiertas al 100 %. El resto de esos archivo
 | `status` con `invalid_choice` recibe el texto genérico | `each known code on a form field gets its own Spanish text…` |
 | La descripción sin recortar | `a description made of spaces and a missing branch are reported…` |
 | Volver a `.length` en el título | `61 emojis are accepted`, `120 emojis are accepted` y `countCharacters` |
+
+## 13. Inventario (Hito 5)
+
+Batería del inventario de equipos y materiales (`app/modules/inventory/`, `SPECS.md` Parte F): 97 tests `unittest`, que recogen los dos comandos de §2.
+
+- **Cómo trabaja:** `TestClient` con `with` (el lifespan crea las tablas), servicios llamados directamente y el comando del seed en proceso y en un subproceso.
+- **Base de datos:** SQLite en memoria (`sqlite://`) o en un archivo temporal, con `PRAGMA foreign_keys=ON`, para que las FK se apliquen de verdad. **Ningún test conecta con Supabase.**
+- **Lo propio de PostgreSQL**, sin conexión: el DDL y la SQL se compilan con su dialecto (FK, `UNIQUE`, `TIMESTAMPTZ`, sin ENUM, `CHECK`, `FOR UPDATE`, sentencias de RLS).
+- **Base caída:** el arranque se prueba contra un puerto local cerrado.
+
+| Archivo | Qué fija |
+|---|---|
+| `test_inventory_database.py` (34) | `DATABASE_URL` obligatoria y solo con esquemas de PostgreSQL desde el entorno, sin repetir la URL; motor (psycopg2 forzado, `NullPool`, `connect_timeout`); esquema; restricciones aplicadas en SQLite; RLS; ninguna sesión global y `get_db` por petición; 503 sin la SQL ni los datos de conexión; lifespan y `dispose()` |
+| `test_inventory_startup.py` (3) | `InventoryStartupError` sin `__cause__`/`__context__` y con el proceso vivo; uvicorn real sale con código 3 sin host, usuario, contraseña ni `psycopg2` en la salida |
+| `test_inventory_products.py` (23) | Rutas de productos; stock = entradas − salidas (10 + 5 − 2 − 1 = 12, donde un JOIN sin agregar daría 24); una sola consulta con 1 y con 20 activos; 409 también en carrera; ningún `response_model` hereda de SQLModel; `/inventory/products/{id}` en OpenAPI; los errores de cada ruta documentados en OpenAPI (`ErrorResponse`, 401/503 comunes y los propios, con el mensaje literal de `insufficient_stock`) |
+| `test_inventory_orders.py` (24) | Los casos del evaluador; oficina; 404; orden de las comprobaciones; `user_uuid` del token y rechazado en el body; límites de cantidad; salida igual al stock; `/orders` (forma, orden, desempate y número de consultas); `FOR UPDATE`; 401 |
+| `test_inventory_seed.py` (13) | Primera ejecución 6/4/3 y segunda 0; activos existentes con órdenes; datos que rompen el stock (nada escrito); códigos 1 y 2 (también en subproceso); `GET /inventory/products` exacto tras el seed (caso del evaluador) y 7 órdenes con el `user_uuid` del usuario |
+
+**Cómo ejecutarla sola** (desde `services/api`):
+
+```bash
+uv run --no-sync python -m unittest tests.test_inventory_database tests.test_inventory_startup tests.test_inventory_products tests.test_inventory_orders tests.test_inventory_seed
+```
+
+`uv run --no-sync python -m pytest tests/test_inventory_*.py` es equivalente. Si el Control de aplicaciones de Windows bloquea `pytest.exe` (os error 4551, visto el 2026-10-17), `python -m pytest` funciona igual.
+
+**Mutaciones** (aplicadas una a una y deshechas; todas detectadas):
+
+| Mutación | Test que la detecta |
+|---|---|
+| Sin `PRAGMA foreign_keys=ON` | `test_foreign_key_is_enforced`, `test_sqlite_engine_shares_one_connection_with_foreign_keys_on` |
+| `init_db` sin RLS, o RLS sin el `ALTER` | `test_init_db_enables_rls_after_creating_the_tables`, `test_postgresql_enables_rls_on_the_three_tables` |
+| Una `Session` a nivel de módulo, o cacheada en `get_db` | `test_no_session_is_created_at_module_level`, `test_each_request_gets_its_own_session_and_it_is_closed`, `test_sessions_are_only_opened_inside_get_db` |
+| Sin forzar psycopg2 | `test_postgresql_url_uses_psycopg2_without_connecting` y el test de uvicorn |
+| `InventoryStartupError` lanzada dentro del `except` | los tres de `test_inventory_startup.py` (uvicorn imprime entonces `localhost` y `psycopg2`) |
+| JOIN sin agregar antes, sin `COALESCE` o N+1 en el listado | `test_current_stock_is_entries_minus_exits`, `test_list_uses_the_same_single_query_for_1_and_20_assets` |
+| Sin capturar el `IntegrityError` del SKU | `test_duplicate_sku_in_a_race_is_409_not_500` |
+| Sin `extra="forbid"`; una ruta que devuelve el ORM; router sin JWT | `test_invalid_bodies_are_422`; `test_every_inventory_route_has_a_non_orm_response_model`; `test_every_product_route_requires_a_token` |
+| Sin `FOR UPDATE`; stock comprobado después de insertar; `>=` en vez de `>` | `test_asset_query_locks_the_row_in_postgresql`; `test_exit_equal_to_stock_is_accepted_and_leaves_zero` (y el de la salida mayor que el stock) |
+| Sin comprobar la oficina; `user_uuid` del body; N+1 en `/orders`; validador de `assigned_to` sobre el body | `test_office_mismatch_is_400_and_writes_nothing`; `test_user_uuid_in_the_body_is_rejected`; `test_same_number_of_queries_with_1_and_20_orders`; `test_allocation_without_assigned_to_is_422_on_that_field` |
+| Sin el 503 común en OpenAPI; sin el ejemplo de `insufficient_stock` | `OpenApiErrorsTests` |
+| Seed sin buscar el SKU; salidas del seed sin la regla del stock; órdenes duplicadas en la segunda ejecución; lifespan sin `dispose()` | `test_first_run_inserts_everything_and_second_run_inserts_nothing`; `test_seed_data_that_breaks_the_stock_rule_writes_nothing`; `test_existing_assets_with_orders_are_not_duplicated`; `test_shutdown_disposes_the_engine` |
+
+**Totales tras el Hito 5:** `unittest` 409 OK (312 + 97) y `uv run pytest` 612 OK (515 + 97).

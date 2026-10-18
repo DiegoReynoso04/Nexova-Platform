@@ -6,6 +6,7 @@ Una sola aplicación FastAPI con estos dominios:
 - **Directorio de proveedores** (`/suppliers*`, FastAPI + TinyDB + Pydantic) — ver [Directorio de proveedores](#directorio-de-proveedores) y `SPECS.md` Parte B.
 - **Autenticación (AUTH-01)** (`/auth`, `/users`, `/profiles`; JWT + bcrypt, `User`/`Profile` en TinyDB) — ver [Autenticación](#autenticación-auth-01), `SPECS.md` Parte C y [`docs/auth-api.md`](../../docs/auth-api.md). **Todas las rutas de incidentes y proveedores exigen un JWT válido.**
 - **Gestor centralizado de incidencias** (`/api/incidents`, `/api/incidents/summary`, `/api/incidents/{id}`; TinyDB + seed del histórico; validación con **400**, no 422) — ver [Gestor centralizado de incidencias](#gestor-centralizado-de-incidencias) y `SPECS.md` Parte E.
+- **Inventario (Hito 5)** (`/inventory/products*`, `/inventory/orders*`; activos y órdenes en PostgreSQL de Supabase con SQLModel, usuarios en TinyDB; **exige `DATABASE_URL`**) — ver [Inventario (Hito 5)](#inventario-hito-5) y `SPECS.md` Parte F.
 
 ## Analizador de incidentes
 
@@ -48,16 +49,22 @@ Columna *Auth*: 🔓 pública · 🔒 JWT válido · 👤 propio usuario o admin
 | `GET` | `/api/incidents/summary` | 🔒 | Totales por estado, categoría, origen y sede (todas las claves, también a 0) |
 | `GET` | `/api/incidents/{id}` | 🔒 | Detalle (id UUID; 404 si no existe o no es un UUID) |
 | `PATCH` | `/api/incidents/{id}/status` | 🔒 | Cambia solo el estado; 400 `invalid_status_transition` si el ciclo de vida no lo permite |
+| `GET` | `/inventory/products` | 🔒 | Inventario: activos con `current_stock` calculado |
+| `POST` | `/inventory/products` | 🔒 | Registra un activo (201, stock 0); 409 si el SKU existe |
+| `GET` | `/inventory/products/{id}` | 🔒 | Un activo con su stock (404 si no existe) |
+| `POST` | `/inventory/orders/inbound` | 🔒 | Registra una entrada (201) |
+| `POST` | `/inventory/orders/outbound` | 🔒 | Registra una asignación o un consumo (201); 400 `insufficient_stock` si supera el stock |
+| `GET` | `/inventory/orders` | 🔒 | Entradas y salidas con el activo embebido, de la más reciente a la más antigua |
 
 Sin token válido → **401**; token válido sobre un recurso ajeno o una acción de admin → **403** (`SPECS.md` §21). Ninguna respuesta incluye `password` ni `hashed_password`.
 
-Si un archivo TinyDB (`suppliers.json`, `auth.json` o `incidents.json`) no se puede abrir, leer o escribir, o está corrupto, la ruta responde **503** `{"detail": "storage is temporarily unavailable", "code": "storage_unavailable"}`, sin la ruta del archivo. El registro dice solo el almacén y la clase del error: `storage auth is unavailable: JSONDecodeError`. Con `auth.json` dañado fallan el login y todas las rutas protegidas. Para recuperarlo, restaura el archivo desde una copia o bórralo: se perderán sus datos y, con `auth.json`, habrá que recrear el administrador con `create-admin`. Detalle: `SPECS.md` §4 y §5.
+Si un archivo TinyDB (`suppliers.json`, `auth.json` o `incidents.json`) no se puede abrir, leer o escribir, o está corrupto, la ruta responde **503** `{"detail": "storage is temporarily unavailable", "code": "storage_unavailable"}`, sin la ruta del archivo. El registro dice solo el almacén y la clase del error: `storage auth is unavailable: JSONDecodeError`. Con `auth.json` dañado fallan el login y todas las rutas protegidas. Para recuperarlo, restaura el archivo desde una copia o bórralo: se perderán sus datos y, con `auth.json`, habrá que recrear el administrador con `create-admin`. Detalle: `SPECS.md` §4 y §5. Las rutas del inventario responden el mismo 503 cuando la base PostgreSQL de Supabase no responde (log `storage inventory is unavailable: <Clase>`).
 
 Documentación interactiva de FastAPI en `http://localhost:8000/docs` con el servidor arrancado.
 
 ## Requisitos
 
-Python 3.11 o superior (verificado con 3.14.6). Dependencias (`pyproject.toml`), acotadas a las versiones probadas (versiones exactas en [`uv.lock`](./uv.lock), versionado): `fastapi>=0.141,<0.142`, `python-multipart>=0.0.32,<0.1`, `uvicorn>=0.53,<0.54`, `tinydb>=4.9,<4.10`, `libpass[bcrypt]>=1.9.3,<1.10` y `python-jose[cryptography]>=3.5,<3.6` (AUTH-01) y, para tests, `httpx>=0.28,<0.29` (extra `dev`, para pip) más `pytest>=9.1,<9.2` y `pytest-cov>=7.1,<7.2` (grupo `dev` de uv, AUTH-088; repite httpx). Sin librerías de configuración.
+Python 3.11 o superior (verificado con 3.14.6). Dependencias (`pyproject.toml`), acotadas a las versiones probadas (versiones exactas en [`uv.lock`](./uv.lock), versionado): `fastapi>=0.141,<0.142`, `python-multipart>=0.0.32,<0.1`, `uvicorn>=0.53,<0.54`, `tinydb>=4.9,<4.10`, `libpass[bcrypt]>=1.9.3,<1.10` y `python-jose[cryptography]>=3.5,<3.6` (AUTH-01), `sqlmodel>=0.0.48,<0.0.49` (instala SQLAlchemy 2.1) y `psycopg2-binary>=2.9.13,<2.10` (Hito 5, inventario) y, para tests, `httpx>=0.28,<0.29` (extra `dev`, para pip) más `pytest>=9.1,<9.2` y `pytest-cov>=7.1,<7.2` (grupo `dev` de uv, AUTH-088; repite httpx). Sin librerías de configuración.
 
 ## Instalación (desde la raíz del monorepo)
 
@@ -72,7 +79,7 @@ python -m pip install -e packages/shared -e packages/incident-analyzer -e "servi
 
 ## Arranque
 
-La API necesita `JWT_SECRET_KEY` y `ACCESS_TOKEN_EXPIRE_MINUTES`; sin ellas **no arranca** (`ConfigError`). Se guardan en `services/api/.env` (ignorado por git) y se cargan con `uv run --env-file`:
+La API necesita `JWT_SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES` y `DATABASE_URL` (Hito 5, ver [Inventario](#inventario-hito-5)); sin ellas **no arranca** (`ConfigError`). Se guardan en `services/api/.env` (ignorado por git) y se cargan con `uv run --env-file`:
 
 ```bash
 cd services/api
@@ -92,6 +99,7 @@ Variables de entorno (la API **no** carga archivos `.env` por sí sola, no usa `
 |---|---|---|
 | `JWT_SECRET_KEY` | — (**obligatoria**) | Clave de firma HS256 de los JWT, mínimo 32 caracteres. Nunca en el código ni en git |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | — (**obligatoria**) | Validez del token de acceso en minutos (entero > 0) |
+| `DATABASE_URL` | — (**obligatoria**) | Base PostgreSQL de Supabase del inventario (Hito 5): la URI del **Transaction pooler** (puerto 6543). Solo `postgresql://` o `postgresql+psycopg2://`. Lleva la contraseña de la base: nunca en el código ni en git. Ver [Crear la base en Supabase](#crear-la-base-en-supabase) |
 | `AUTH_DB_PATH` | `services/api/data/auth.json` | Archivo TinyDB de `User` y `Profile` (API y `create-admin`). `data/` está en `.gitignore` |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Orígenes permitidos, separados por comas. `*` se rechaza al arrancar. Con AUTH-02 el Talent Pipeline Tracker (puerto 3001) también llama a la API para login, registro y perfil: en local usar `http://localhost:3000,http://localhost:3001` (así viene en `.env.example`) |
 | `SUPPLIERS_DB_PATH` | `services/api/data/suppliers.json` | Archivo TinyDB del directorio de proveedores (API y seeder). `data/` está en `.gitignore` |
@@ -207,6 +215,100 @@ services/api/.venv/bin/python scripts/seed_incidents.py packages/incident-analyz
 - Con el fixture de aceptación: 96 insertadas y 4 inválidas (filas 18, 45, 71 y 93); en la segunda ejecución, 0 insertadas y 96 ya existentes.
 - Igual que el seeder de proveedores: ejecutarlo con la API parada o sin escrituras en curso.
 
+## Inventario (Hito 5)
+
+API de inventario de equipos y materiales de Nexova (ticket NXV-0201, Sergio Molina, CTO). Contexto: [`docs/context-nexova-gestion-inventario-hito-5.md`](../../docs/context-nexova-gestion-inventario-hito-5.md). Contrato, decisiones y esquema de tablas: `SPECS.md` Parte F. **Cómo revisarlo** (PowerShell, recorrido en `/docs` y trazabilidad): [`docs/inventory-review.md`](../../docs/inventory-review.md).
+
+- **Dos bases a propósito:**
+  - los usuarios siguen en TinyDB (`AUTH_DB_PATH`) y el token se valida con `get_current_user`, como en el resto de la API;
+  - los activos y las órdenes van a PostgreSQL en Supabase, con SQLModel (`DATABASE_URL`).
+- **Stock calculado:** `current_stock = entradas − salidas`, nunca almacenado. Un activo nace con 0 y ninguna ruta lo cambia directamente.
+- **Regla de las salidas:** una salida que dejaría el stock en negativo → 400 `insufficient_stock` con el mensaje del CONTEXT, sin escribir. `allocation` exige `assigned_to` y `consumption` lo exige nulo (422 en ese campo).
+- **`user_uuid`:** cada orden lleva el `id` del usuario del token; nunca se acepta en el body.
+- **Código:** `app/modules/inventory/` (`models.py`, `schemas.py`, `database.py`, `router.py`, `service.py`, `seed.py` y `vocabulary.py`). Equivalencia con los nombres del enunciado en `SPECS.md` §36.
+
+### Crear la base en Supabase
+
+1. Crea un proyecto en [Supabase](https://supabase.com/) y guarda la contraseña de la base que te pide.
+2. En el panel del proyecto, pulsa **Connect** y elige la cadena del **Transaction pooler** (puerto **6543**). Tiene esta forma:
+
+   ```text
+   postgresql://<usuario>:<contraseña>@<host-del-pooler>:6543/postgres
+   ```
+
+3. Pégala en `services/api/.env` como `DATABASE_URL=…`, sustituyendo `<contraseña>` por la tuya. `.env` está en `.gitignore`: **nunca** subas la cadena a git ni la pegues en el código.
+
+No hace falta crear las tablas a mano: la API las crea al arrancar (`create_all`) y activa RLS sin políticas en las tres. Así la Data API pública de Supabase no puede leerlas ni escribirlas, y la API, que conecta como dueña de las tablas, sí.
+
+- **Esquemas aceptados:** solo `postgresql://` y `postgresql+psycopg2://`. El motor usa siempre psycopg2, porque SQLAlchemy 2.1 usaría psycopg v3, que no está instalado.
+- **Sin `DATABASE_URL`**, o con otro esquema, la API no arranca (`ConfigError`).
+- **Si Supabase no responde al arrancar**, uvicorn no arranca: `InventoryStartupError: inventory database is unavailable at startup: OperationalError`, sin host, usuario ni contraseña.
+- **Si deja de responder durante una petición**, la ruta responde 503 `storage_unavailable`.
+
+### Arranque con el inventario
+
+El mismo comando de [Arranque](#arranque), con `DATABASE_URL` en el `.env`:
+
+```bash
+cd services/api
+uv run --env-file .env uvicorn app.main:create_app --factory --port 8000 --workers 1
+```
+
+### Seed (`uv run seed-inventory`)
+
+Carga los datos semilla del CONTEXT:
+
+- los 6 activos;
+- 4 entradas (10 y 5 de `NXV-IT-001`, 8 de `NXV-PER-002` y 20 de `NXV-OFF-001`);
+- 3 salidas (`allocation` de 2 de `NXV-IT-001`, `consumption` de 5 de `NXV-OFF-001` y `allocation` de 1 de `NXV-PER-002`).
+
+Las órdenes van a nombre de un usuario que ya exista en TinyDB, por ejemplo uno creado con `/register` o con `create-admin`. Los `assigned_to` (`EMPLEADO-FICTICIO-01` y `-02`) son identificadores **ficticios**: el CONTEXT no da empleados.
+
+```bash
+cd services/api
+uv run --env-file .env seed-inventory --email usuario@example.com
+```
+
+Salida de la primera ejecución:
+
+```text
+Órdenes a nombre del usuario <id del usuario>
+Activos insertados: 6
+Activos ya existentes (omitidos): 0
+Entradas insertadas: 4
+Salidas insertadas: 3
+Stock por SKU:
+  NXV-IT-001: 13
+  NXV-IT-002: 0
+  NXV-PER-001: 0
+  NXV-PER-002: 7
+  NXV-OFF-001: 15
+  NXV-TRN-001: 0
+```
+
+- **Segunda ejecución:** inserta 0 (`Activos ya existentes (omitidos): 6`, `Activos que ya tenían órdenes (no se les añade ninguna): 3`) y el mismo stock.
+- **Idempotencia:** los activos se buscan por `sku`; las órdenes de un activo solo se insertan si ese activo no tiene ninguna.
+- **Una sola transacción:** o se carga todo o nada. Las órdenes pasan por las mismas reglas que la API, incluida la del stock.
+- **Códigos de salida:**
+  - `0` correcto;
+  - `1` configuración (sin `DATABASE_URL`, esquema inválido o falta `--email`), usuario inexistente o inactivo (el mensaje no repite el email), o datos semilla que la API rechazaría;
+  - `2` base no disponible (Supabase o el `auth.json` ilegible), con solo la clase del error.
+  - Nunca hay traceback.
+- **Sin uv**, con el venv activado: `python -m app.modules.inventory.seed --email …`.
+
+### Endpoints del inventario
+
+Todos con 🔒 (JWT válido). Detalle de request, response y errores en `SPECS.md` §37–§38.
+
+| Método | Ruta | Éxito | Errores |
+|---|---|---|---|
+| `GET` | `/inventory/products` | 200, activos con `current_stock` (ordenados por `id`) | — |
+| `POST` | `/inventory/products` | 201, activo con `current_stock: 0` | 422 · 409 `sku_already_exists` |
+| `GET` | `/inventory/products/{id}` | 200, activo con su stock | 404 `asset_not_found` |
+| `POST` | `/inventory/orders/inbound` | 201, entrada (`AssetEntry`) | 422 · 404 · 400 `office_mismatch` |
+| `POST` | `/inventory/orders/outbound` | 201, salida (`AssetExit`) | 422 · 404 · 400 `office_mismatch` · 400 `insufficient_stock` |
+| `GET` | `/inventory/orders` | 200, entradas y salidas con `type`, el activo embebido y `user_uuid`, de la más reciente a la más antigua | — |
+
 ## Tests
 
 **Plan de pruebas de la API de autenticación (AUTH-088), comandos, cobertura y bugs encontrados: [`TESTING.md`](./TESTING.md).**
@@ -250,6 +352,11 @@ La suite del núcleo (Fase 1) no necesita el venv: `python -m unittest discover 
 | `test_incident_manager_seed.py` | `scripts/seed_incidents.py`: informe exacto con el fixture de aceptación (96 insertadas, filas inválidas 18/45/71/93), segunda ejecución sin duplicados, resumen tras el seed, no mapeables y duplicadas por número de fila, ningún contenido de fila en consola ni emails/`ticket_id` en la base, códigos de salida (CSV inexistente, cabecera de otro esquema, vacío, no UTF-8; `--db` como directorio o corrupta → `2` sin traceback) e `INCIDENTS_DB_PATH` |
 | `test_create_admin.py` | `create-admin`: admin + `Profile` + hash bcrypt, email existente, contraseñas distintas, entrada inválida, fin de entrada en `input`, Ctrl+C en `getpass`, `auth.json` corrupto y `ConfigError` (código 1, sin crear nada); nunca imprime la contraseña |
 | `test_password_reset.py` | AUTH-03 (forgot/reset/change-password, auditoría, sender de Resend). Incluye las respuestas cortadas del proveedor (`IncompleteRead`, `BadStatusLine`, `LineTooLong`): son `EmailDeliveryError` y se registran como fallo de entrega, no como 500 |
+| `test_inventory_database.py` | Inventario: `DATABASE_URL` (obligatoria, esquemas, sin repetir la URL), motor (psycopg2 forzado, `NullPool`, `connect_timeout`, SQLite con FK), DDL de PostgreSQL compilado sin conectar (FK reales, `UNIQUE`, `TIMESTAMPTZ`, sin ENUM, `CHECK`), restricciones aplicadas en SQLite, RLS, ninguna sesión global, `get_db` por petición, 503 sin filtrar datos, lifespan y `dispose()` |
+| `test_inventory_startup.py` | Arranque con la base caída: `InventoryStartupError` sin encadenar y con el proceso vivo; uvicorn real sin datos de conexión en la salida (código 3) |
+| `test_inventory_products.py` | Rutas de productos: alta, listado y detalle, 401, 404, 409 (también en carrera), 422, stock = entradas − salidas, una sola consulta con 1 y con 20 activos, ningún `response_model` ORM, `/inventory/products/{id}` en OpenAPI y los errores de cada ruta documentados (`ErrorResponse`) |
+| `test_inventory_orders.py` | Órdenes: casos del evaluador (salida > stock → 400 literal sin escribir; `allocation` sin `assigned_to` → 422 en ese campo; stock neto), oficina, 404, `user_uuid` del token, límites de cantidad, salida igual al stock, `/orders` (forma, orden y desempate, mismo número de consultas), `FOR UPDATE`, 401 |
+| `test_inventory_seed.py` | `seed-inventory`: 6/4/3 y luego 0, activos existentes con órdenes, datos que rompen el stock (nada escrito), códigos de salida 1 y 2 (también en subproceso), y `GET /inventory/products` exacto tras el seed |
 | `test_storage.py` | 503 `storage_unavailable` en los tres almacenes: JSON inválido, no UTF-8, otra forma, ruta que no se puede abrir y fallo de escritura. Incluye el login con `auth.json` corrupto. Comprueba que ni el cuerpo ni el log llevan la ruta ni el contenido y que el error no arrastra la excepción original. Regresión del ámbito: el 422 de proveedores, el 400 del gestor (también la transición lanzada dentro de la operación), el 409 y un `ValidationError` de Pydantic dentro de la operación (500, no 503) |
 
 Los tests reutilizan el fixture sintético del núcleo (`example.invalid`). Como las rutas de incidentes y proveedores exigen JWT, `tests/support.py` crea para cada cliente una base de usuarios temporal y un token válido (la clave JWT de test se genera al importar; no hay ninguna fija). Los tests de AUTH-01 hashean con bcrypt real, por eso la suite tarda alrededor de un minuto. El núcleo tiene su propia suite (ver su README).
@@ -285,6 +392,14 @@ app/
 │   ├── router.py            # 5 endpoints /api/incidents, 400 propio (IncidentManagerRoute)
 │   ├── models.py            # Incident, IncidentSummary (enums de nexova_shared)
 │   └── repository.py        # IncidentRepository: TinyDB (incidents + seed_keys), filtros, transiciones, resumen, seed
+├── modules/inventory/       # Inventario, Hito 5 (SPECS Parte F)
+│   ├── models.py            # Asset, AssetEntry, AssetExit (SQLModel, table=True), CHECK e índices
+│   ├── vocabulary.py        # categorías, oficinas, tipos de salida y límites (compartido por modelos y schemas)
+│   ├── schemas.py           # requests y responses Pydantic (no importan models.py)
+│   ├── database.py          # build_engine, init_db (create_all + RLS), lifespan, get_db
+│   ├── service.py           # stock calculado, órdenes con FOR UPDATE, listado sin N+1
+│   ├── router.py            # APIRouter(prefix="/inventory"): 6 endpoints
+│   └── seed.py              # entry point de `uv run seed-inventory`
 └── modules/incidents/
     ├── router.py            # 2 endpoints: request → servicio → respuesta
     ├── schemas.py           # contrato JSON (traducción de AnalysisResult, sin cálculo)

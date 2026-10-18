@@ -32,6 +32,9 @@ MAX_ACCESS_TOKEN_EXPIRE_MINUTES = 525_600
 DEFAULT_PASSWORD_RESET_TOKEN_MINUTES = 30
 MIN_PASSWORD_RESET_TOKEN_MINUTES = 15
 MAX_PASSWORD_RESET_TOKEN_MINUTES = 60
+# Hito 5: esquemas de DATABASE_URL aceptados desde el entorno (Supabase, PostgreSQL
+# con psycopg2). Los tests inyectan `Settings(database_url="sqlite://")` sin pasar por aquí.
+DATABASE_URL_SCHEMES = ("postgresql", "postgresql+psycopg2")
 
 
 class ConfigError(ValueError):
@@ -57,6 +60,10 @@ class Settings:
     email_from: str = ""
     password_reset_url: str = ""
     password_reset_token_minutes: int = DEFAULT_PASSWORD_RESET_TOKEN_MINUTES
+    # Hito 5: base PostgreSQL (Supabase) del inventario. Sin valor por defecto:
+    # `require_database()` la exige al arrancar la API. Lleva la contraseña de la
+    # base, así que nunca aparece en un repr/log ni en un mensaje de error.
+    database_url: str = field(default="", repr=False)
 
     def __post_init__(self) -> None:
         if "*" in self.cors_allowed_origins:
@@ -101,6 +108,15 @@ class Settings:
         if self.access_token_expire_minutes is None:
             raise ConfigError("ACCESS_TOKEN_EXPIRE_MINUTES is required (see services/api/.env.example)")
 
+    def require_database(self) -> None:
+        """Lo llama `create_app` después de `require_auth`: la API no arranca sin DATABASE_URL.
+
+        No valida el esquema (eso lo hace `from_env`) para que los tests puedan
+        inyectar SQLite. El seeder de proveedores y `create-admin` no lo llaman.
+        """
+        if not self.database_url:
+            raise ConfigError("DATABASE_URL is required (see services/api/.env.example)")
+
     @classmethod
     def from_env(cls, environ: Mapping[str, str] = os.environ) -> "Settings":
         origins = environ.get("CORS_ALLOWED_ORIGINS")
@@ -110,6 +126,11 @@ class Settings:
         incidents_db_path = environ.get("INCIDENTS_DB_PATH", "").strip()
         expire_minutes = environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "").strip()
         reset_minutes = environ.get("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "").strip()
+        database_url = environ.get("DATABASE_URL", "").strip()
+        # Solo se mira lo que va antes de "://"; el mensaje nunca repite la URL.
+        scheme, separator, _ = database_url.partition("://")
+        if database_url and (not separator or scheme not in DATABASE_URL_SCHEMES):
+            raise ConfigError("DATABASE_URL must use the postgresql:// or postgresql+psycopg2:// scheme")
         try:
             max_upload_bytes = int(max_upload) if max_upload is not None else DEFAULT_MAX_UPLOAD_BYTES
         except ValueError:
@@ -138,4 +159,5 @@ class Settings:
             email_from=environ.get("EMAIL_FROM", "").strip(),
             password_reset_url=environ.get("PASSWORD_RESET_URL", "").strip(),
             password_reset_token_minutes=password_reset_token_minutes,
+            database_url=database_url,
         )
