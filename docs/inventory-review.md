@@ -169,10 +169,23 @@ Fuente de los puntos: el enunciado del Hito 5 (resumido por el usuario el 2026-1
 | La base caída no filtra datos ni rompe la API | `errors.py` (503); `database.py` (`InventoryStartupError`) | `test_inventory_database.py` → `DatabaseUnavailableTests`; `test_inventory_startup.py` (los 3); `test_inventory_seed.py` → `SeedErrorTests.test_unreachable_database_is_2_without_connection_details`, `SeedCommandTests.test_command_with_the_database_down_exits_2_and_leaks_nothing` |
 | Concurrencia: dos salidas simultáneas no dejan el stock en negativo | `service.locked_asset_query` (`FOR UPDATE`) | `test_inventory_orders.py` → `StockLockTests` (los 3). Contra Supabase, verificado a mano (F3b): dos salidas de 5 sobre un stock de 5 → una 201 y una 400 |
 
+## Verificado por el usuario: recorrido en `/docs` (2026-10-18)
+
+**El usuario hizo el recorrido en Swagger contra Supabase**, con la API arrancada con su `.env` y un **login real**: *Authorize* con su cuenta, así que el token llevaba su `user_uuid` (`45e456e9-…`).
+
+| Paso | Resultado |
+|---|---|
+| `GET /inventory/products` | 200, ids 1–6 con stock 13/0/0/7/15/0 (el neto del seed) |
+| Salida de 20 de `asset_id` 1 | 400 `insufficient_stock` con `Available: 13, requested: 20.` |
+| `allocation` sin `assigned_to` | 422 con `loc` `["body", "assigned_to"]` |
+| `GET /inventory/orders` | 200, las 7 órdenes del seed con su `user_uuid` |
+| `/docs` tras reiniciar la API | los errores de las rutas aparecen documentados (400/404/401) |
+
+No hizo los pasos 3 y 4 del recorrido (una entrada y una salida válidas): no se registró ninguna orden válida, así que **el neto del seed sigue intacto**.
+
 ## Lo que no está verificado
 
-- **Recorrido manual en `/docs` por una persona.** Las rutas se probaron con `TestClient` y, contra Supabase, con scripts HTTP (F3a, F3b y F4), pero nadie ha hecho el recorrido del paso 5 en Swagger.
-- **Login real del usuario de la demo.** En la verificación de F4, el token se firmó con `JWT_SECRET_KEY` para el `id` del usuario (el mismo que daría `/auth/login`), porque no se tenía la contraseña. El login en sí está cubierto por la suite de AUTH-088.
+- **Entrada y salida válidas desde `/docs`.** Los pasos 3 y 4 del recorrido no se hicieron a mano (ver la sección anterior). Están cubiertos por los tests y, contra Supabase, por los scripts HTTP de F3b y por el seed de F4.
 - **RLS desde la Data API.** Se comprobó `relrowsecurity = true` y 0 políticas en las tres tablas, pero no una petición real a la Data API con la clave `anon`.
 - **`CHECK`, FK y `UNIQUE` en PostgreSQL.** En los tests se aplican en SQLite y se comprueban en el DDL compilado para PostgreSQL. En Supabase no se ha intentado insertar a mano una fila inválida.
 - **Concurrencia.** Una sola prueba real (dos hilos), con un único worker de uvicorn. Sin pruebas de carga ni con varios procesos.

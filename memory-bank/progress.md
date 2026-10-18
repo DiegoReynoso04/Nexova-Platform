@@ -36,6 +36,14 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 | `.env`, `.vscode/`, `.coverage` o `data/` en algún commit de la rama | ninguno |
 | Enlaces relativos (y anclas) de los 9 documentos tocados | 103 comprobados, 0 rotos |
 
+- **Verificación manual del usuario (2026-10-18):** recorrido en `/docs` contra Supabase, con un login real (*Authorize* con su cuenta; `user_uuid` `45e456e9-…`).
+  - `GET /inventory/products` → 200, ids 1–6 y stock 13/0/0/7/15/0;
+  - salida de 20 de `asset_id` 1 → 400 `insufficient_stock` con `Available: 13, requested: 20.`;
+  - `allocation` sin `assigned_to` → 422 con `loc` `["body", "assigned_to"]`;
+  - `GET /inventory/orders` → 200, 7 órdenes con su `user_uuid`;
+  - tras reiniciar, `/docs` muestra documentados los errores de las rutas (400/404/401).
+  - No registró ninguna orden válida: el neto del seed sigue intacto.
+  - En `docs/inventory-review.md` quedan fuera de «lo no verificado» el recorrido en Swagger y el login real.
 - **Datos de la demo en Supabase:** cargados con el seed en F4 y no se tocan.
 - **Problema conocido:** `docs/context-nexova-gestion-inventario-hito-5.md` no termina en salto de línea; se dejó tal cual porque es el CONTEXT original.
 
