@@ -4,6 +4,27 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-17 — Hito 5 (inventario con SQLModel y Supabase), F1: rama, CONTEXT y dependencias
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase antes del commit), en `feature/inventory-orm`, creada desde `main` en `ef1e083` (merge de la PR #20). Primera fase del plan aprobado por el usuario (F1, F2, F3a, F3b, F4 y F5). Todavía no hay código de inventario.
+
+- **CONTEXT del hito versionado:** `docs/context-nexova-gestion-inventario-hito-5.md`, sin cambios de contenido (solo finales de línea a LF).
+- **Dependencias directas nuevas (autorizadas por el enunciado):**
+  - `sqlmodel>=0.0.48,<0.0.49` (instalada 0.0.48);
+  - `psycopg2-binary>=2.9.13,<2.10` (instalada 2.9.13; tiene wheel `cp314-win_amd64`).
+  - Única transitiva nueva: SQLAlchemy 2.1.5.
+  - Añadidas con `uv add --no-sync` e instaladas con `uv run`, que sincroniza de forma inexacta.
+  - `pip list` antes y después: solo aparecen esos tres paquetes; `nexova-shared` y `nexova-incident-analyzer` siguen instalados.
+- **`.env.example`:** `DATABASE_URL=` vacía, con un comentario sobre el Transaction pooler (puerto 6543) y los esquemas aceptados. Será obligatoria a partir de F2. `.env` no se ha tocado.
+- **Conexión real:** un `SELECT 1` contra Supabase con un script fuera del repo responde `ok`. Solo imprime `ok` o la clase del error.
+- **Hallazgo para F2:** SQLAlchemy 2.1 resuelve `postgresql://` con psycopg (v3), que no está instalado; con la URL tal cual, `create_engine` falla con `ModuleNotFoundError`. El motor tendrá que fijar `postgresql+psycopg2` al construirse.
+- **Validación:**
+  - `unittest`: 312 OK.
+  - `uv run pytest`: 515 OK, con 1 aviso de Starlette sobre httpx que no viene de las dependencias nuevas.
+  - Lanzada como `uv run --no-sync python -m pytest`, porque el Control de aplicaciones de Windows bloquea hoy `.venv/Scripts/pytest.exe` (os error 4551). Ese ejecutable es del 2026-10-10 y F1 no lo ha cambiado.
+
+---
+
 ## 2026-10-13 — Memory-bank: AUTH-088 integrada en `main`
 
 **Estado: hecho** en `chore/memory-bank-auth088-merged`, creada desde `main` en `a56e346`. Solo documentación; sin impacto técnico.

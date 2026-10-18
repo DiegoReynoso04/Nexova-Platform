@@ -22,8 +22,12 @@ dependencies = [
     # AUTH-01 (autorizadas por el ticket): hash bcrypt con libpass (fork
     # mantenido de passlib; se importa como `passlib`) y firma JWT con python-jose.
     "libpass[bcrypt]>=1.9.3,<1.10",
+    # Hito 5 (autorizada por el enunciado): driver de PostgreSQL (Supabase) para SQLModel.
+    "psycopg2-binary>=2.9.13,<2.10",
     "python-jose[cryptography]>=3.5,<3.6",
     "python-multipart>=0.0.32,<0.1",
+    # Hito 5 (autorizada por el enunciado): ORM del inventario (instala SQLAlchemy).
+    "sqlmodel>=0.0.48,<0.0.49",
     "tinydb>=4.9,<4.10",
     "uvicorn>=0.53,<0.54",
 ]
