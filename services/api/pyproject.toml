@@ -37,6 +37,9 @@ dependencies = [
 seed = "app.seed:main"
 # `uv run create-admin` (desde services/api): crea el primer admin (contraseña interactiva).
 create-admin = "app.auth.create_admin:main"
+# `uv run --env-file .env seed-inventory --email <usuario>` (desde services/api):
+# datos semilla del inventario (Hito 5) en la base de DATABASE_URL.
+seed-inventory = "app.modules.inventory.seed:main"
 
 [project.optional-dependencies]
 # Instalación con pip (orden de arriba): httpx lo necesita

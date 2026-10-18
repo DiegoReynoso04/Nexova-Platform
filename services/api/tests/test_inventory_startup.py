@@ -75,13 +75,17 @@ class InProcessStartupTests(unittest.TestCase):
 
     def test_test_client_startup_fails_and_the_process_survives(self) -> None:
         app = create_app(self.settings)
+        engine = app.state.inventory_engine
         with (
             mock.patch.object(database, "enable_row_level_security", side_effect=database_down()),
+            mock.patch.object(engine, "dispose", wraps=engine.dispose) as dispose,
             self.assertRaises(InventoryStartupError) as caught,
             TestClient(app),
         ):
             pass  # pragma: no cover — el arranque no llega a terminar
         self.assertClean(caught.exception)
+        # El motor se libera también tras el arranque fallido.
+        dispose.assert_called_once_with()
         # El proceso del test sigue vivo: otra app arranca y responde.
         healthy = create_app(self.settings)
         with TestClient(healthy) as client:

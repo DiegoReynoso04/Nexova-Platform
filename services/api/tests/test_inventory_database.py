@@ -179,6 +179,7 @@ class EngineTests(unittest.TestCase):
 
     def test_sqlite_engine_shares_one_connection_with_foreign_keys_on(self) -> None:
         engine = build_engine(TEST_DATABASE_URL)
+        self.addCleanup(engine.dispose)
         self.assertIsInstance(engine.pool, StaticPool)
         self.assertTrue(engine.hide_parameters)
         with engine.connect() as connection:
@@ -344,7 +345,8 @@ class NoGlobalSessionTests(unittest.TestCase):
             for function in ast.walk(tree):
                 if isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef) and self.calls(function):
                     owners.append(f"{path.relative_to(APP_DIR).as_posix()}:{function.name}")
-        self.assertEqual(owners, ["modules/inventory/database.py:get_db"])
+        # get_db (una sesión por petición) y el seed (una sesión por ejecución del comando).
+        self.assertEqual(owners, ["modules/inventory/database.py:get_db", "modules/inventory/seed.py:_seed_database"])
 
 
 class SpySession(Session):
@@ -378,7 +380,9 @@ class GetDbTests(unittest.TestCase):
         patcher = mock.patch.object(database, "Session", SpySession)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Sin `with`: no hay lifespan que libere el motor al terminar.
         self.client = TestClient(probe_app(tmp.name))
+        self.addCleanup(self.client.app.state.inventory_engine.dispose)  # type: ignore[attr-defined]
 
     def test_each_request_gets_its_own_session_and_it_is_closed(self) -> None:
         for _ in range(2):
@@ -411,6 +415,7 @@ class DatabaseUnavailableTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.app = create_app(inventory_settings(tmp.name))
+        self.addCleanup(self.app.state.inventory_engine.dispose)
         self.client = TestClient(self.app)
 
     def errors(self) -> list[Exception]:
@@ -462,8 +467,17 @@ class LifespanTests(unittest.TestCase):
             tables = set(inspect(app.state.inventory_engine).get_table_names())
         self.assertTrue(INVENTORY_TABLE_NAMES <= tables)
 
+    def test_shutdown_disposes_the_engine(self) -> None:
+        app = create_app(self.settings)
+        engine = app.state.inventory_engine
+        with mock.patch.object(engine, "dispose", wraps=engine.dispose) as dispose:
+            with TestClient(app):
+                dispose.assert_not_called()
+            dispose.assert_called_once_with()
+
     def test_existing_clients_without_lifespan_do_not_touch_the_database(self) -> None:
         app = create_app(self.settings)
+        self.addCleanup(app.state.inventory_engine.dispose)
         TestClient(app).get("/health")
         self.assertEqual(inspect(app.state.inventory_engine).get_table_names(), [])
 

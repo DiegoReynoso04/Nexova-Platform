@@ -158,27 +158,28 @@ def _available_stock(session: Session, asset_id: int) -> int:
     return session.exec(select(entries.scalar_subquery() - exits.scalar_subquery())).one()
 
 
-def create_inbound_order(session: Session, payload: InboundOrderCreate, user_uuid: str) -> InboundOrderRead:
-    """Registra una entrada. 404 si el activo no existe; 400 si la oficina no es la del activo."""
+def add_inbound_order(session: Session, payload: InboundOrderCreate, user_uuid: str) -> AssetEntry:
+    """Añade una entrada a la transacción en curso, sin commit (la ruta y el seed hacen el suyo).
+
+    404 si el activo no existe; 400 si la oficina no es la del activo.
+    """
     asset = session.get(Asset, payload.asset_id)
     if asset is None:
         raise AssetNotFoundError()
     if asset.office != payload.office:
         raise OfficeMismatchError()
-    summary = _summary(asset)
     entry = AssetEntry(**payload.model_dump(), user_uuid=user_uuid)
     session.add(entry)
-    session.commit()
-    session.refresh(entry)
-    return _inbound_read(entry, summary)
+    session.flush()
+    return entry
 
 
-def create_outbound_order(session: Session, payload: OutboundOrderCreate, user_uuid: str) -> OutboundOrderRead:
-    """Registra una salida si hay stock. Nada se escribe si falla alguna comprobación.
+def add_outbound_order(session: Session, payload: OutboundOrderCreate, user_uuid: str) -> AssetExit:
+    """Añade una salida a la transacción en curso si hay stock, sin commit. Si falla, no añade nada.
 
     Orden: activo (404) → oficina (400 `office_mismatch`) → stock (400
-    `insufficient_stock`). Si se lanza un error, la sesión se cierra sin commit
-    (`get_db`): la transacción se deshace y el bloqueo se libera.
+    `insufficient_stock`). El stock incluye lo ya añadido y no confirmado en
+    la misma transacción (el seed inserta varias órdenes antes de su commit).
     """
     asset = session.exec(locked_asset_query(payload.asset_id)).first()
     if asset is None:
@@ -188,9 +189,29 @@ def create_outbound_order(session: Session, payload: OutboundOrderCreate, user_u
     available = _available_stock(session, payload.asset_id)
     if payload.quantity > available:
         raise InsufficientStockError(asset.name, available, payload.quantity)
-    summary = _summary(asset)
     exit_order = AssetExit(**payload.model_dump(), user_uuid=user_uuid)
     session.add(exit_order)
+    session.flush()
+    return exit_order
+
+
+def create_inbound_order(session: Session, payload: InboundOrderCreate, user_uuid: str) -> InboundOrderRead:
+    """`POST /inventory/orders/inbound`: añade la entrada y confirma."""
+    entry = add_inbound_order(session, payload, user_uuid)
+    summary = _summary(session.get_one(Asset, payload.asset_id))
+    session.commit()
+    session.refresh(entry)
+    return _inbound_read(entry, summary)
+
+
+def create_outbound_order(session: Session, payload: OutboundOrderCreate, user_uuid: str) -> OutboundOrderRead:
+    """`POST /inventory/orders/outbound`: añade la salida y confirma.
+
+    Si `add_outbound_order` lanza un error, no hay commit y `get_db` cierra la
+    sesión: la transacción se deshace y el bloqueo de la fila se libera.
+    """
+    exit_order = add_outbound_order(session, payload, user_uuid)
+    summary = _summary(session.get_one(Asset, payload.asset_id))
     session.commit()
     session.refresh(exit_order)
     return _outbound_read(exit_order, summary)

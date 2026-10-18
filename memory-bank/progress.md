@@ -4,6 +4,47 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-18 — Hito 5, F4: seed `uv run seed-inventory --email …` y `dispose()` del motor
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-orm`, sobre F3b (`a9a3fdb`). Siguiente: F5 (documentación de cierre).
+
+- **`app/modules/inventory/seed.py`**, entry point `seed-inventory` en `pyproject.toml`, añadido a `PRINT_ALLOWED` en `test_architecture.py` (mismo motivo que `app/seed.py`).
+  - **Datos:** los 6 activos literales del CONTEXT. Las entradas (10 y 5 de `NXV-IT-001`, 8 de `NXV-PER-002`, 20 de `NXV-OFF-001`) y las salidas (2 + 5 + 1) las aprobó el usuario.
+  - **Empleados:** `EMPLEADO-FICTICIO-01` y `-02` están documentados en el código como identificadores ficticios, porque el CONTEXT no da empleados.
+  - **Neto:** 13/0/0/7/15/0.
+  - **Usuario:** se busca por `--email` en TinyDB, normalizado como en el login. El `user_uuid` de las órdenes es su `id`.
+  - **Una sola transacción:**
+    - activos idempotentes por `sku`;
+    - las órdenes de un activo solo se insertan si no tiene ninguna;
+    - las órdenes pasan por los schemas de la API y por `service.add_inbound_order` / `add_outbound_order` (sin commit por orden), así que la regla del stock no se reimplementa.
+    - Un dato que la API rechazaría → código 1 y no se escribe nada.
+  - **Códigos de salida:**
+    - 1: configuración (sin `DATABASE_URL`, esquema inválido o falta `--email`, que argparse terminaría con 2), usuario inexistente o inactivo (sin repetir el email), o datos semilla rechazados;
+    - 2: base no disponible (Supabase o el TinyDB de usuarios), solo con la clase del error y sin traceback.
+- **`service.py`:** la lógica de las órdenes se separa del commit: `add_inbound_order` y `add_outbound_order` hacen `flush` sin commit. `create_*_order` las usan y confirman. Las rutas no cambian.
+- **`dispose()`:** el lifespan libera el motor al cerrar, también tras un arranque fallido. Los tests de F2 que usan una app sin lifespan lo liberan con `addCleanup`. Ya no queda ningún `ResourceWarning: unclosed database` en la suite.
+- **Tests:** 14 nuevos (13 en `tests/test_inventory_seed.py` y 1 del `dispose`).
+  - dos ejecuciones (6/4/3 y luego 0);
+  - activo existente con órdenes;
+  - datos que rompen el stock → nada escrito;
+  - email inexistente, inválido o inactivo → 1;
+  - sin `DATABASE_URL` o con otro esquema → 1;
+  - base caída → 2, también lanzando el comando en un subproceso;
+  - `auth.json` ilegible → 2;
+  - `GET /inventory/products` exacto tras el seed (caso del evaluador) y 7 órdenes con el `user_uuid` del usuario.
+  - El test de F2 que vigila dónde se abren sesiones admite ahora `seed.py:_seed_database`.
+- **Mutaciones**, todas detectadas y deshechas: seed sin buscar el SKU; salidas sin la regla del stock; órdenes duplicadas en la segunda ejecución; lifespan sin `dispose()`.
+- **Supabase real** (datos de la demo, **no se borran**):
+  - `uv run --env-file .env seed-inventory --email <usuario>` dos veces: 6/0/4/3 y después 0/6/0/0.
+  - `uv run` reconstruyó el paquete para crear el entry point; `pip list` no cambió.
+  - Con la API arrancada y un JWT del mismo usuario: `GET /inventory/products` → ids 1..6 y stock 13/0/0/7/15/0; `GET /inventory/orders` → 7 órdenes, todas con su `user_uuid`.
+  - `data/auth.json` se usó solo para leer (el sha256 no cambió).
+- **Validación:**
+  - `unittest`: 406 OK (392 + 14).
+  - `uv run --no-sync python -m pytest`: 609 OK (595 + 14).
+
+---
+
 ## 2026-10-18 — Hito 5, F3b: órdenes de entrada y salida, regla del stock y `GET /inventory/orders`
 
 **Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-orm`, sobre F3a (`c3fc7bf`). Siguiente: F4 (seed).

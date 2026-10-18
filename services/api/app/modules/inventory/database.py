@@ -130,12 +130,17 @@ def enable_row_level_security(connection: Connection) -> None:
 async def inventory_lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Arranque de la app: tablas y RLS en la base del inventario antes de aceptar peticiones.
 
-    Si falla, `InventoryStartupError` hace que uvicorn no arranque.
+    Si falla, `InventoryStartupError` hace que uvicorn no arranque. Al cerrar,
+    también tras un arranque fallido, el motor libera sus conexiones (en
+    SQLite, la conexión en memoria).
     """
     engine = app.state.inventory_engine
     assert isinstance(engine, Engine)
-    await run_in_threadpool(init_db, engine)
-    yield
+    try:
+        await run_in_threadpool(init_db, engine)
+        yield
+    finally:
+        engine.dispose()
 
 
 def get_db(request: Request) -> Iterator[Session]:
