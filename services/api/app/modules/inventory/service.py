@@ -1,22 +1,40 @@
-"""Lógica del inventario sobre una sesión SQLModel: activos con su stock calculado.
+"""Lógica del inventario sobre una sesión SQLModel: activos con su stock calculado y órdenes.
 
 Recibe la sesión de la petición (`get_db`) y nunca la crea: no hay sesión
-global. Devuelve schemas (`AssetRead`), nunca objetos ORM.
+global. Devuelve schemas, nunca objetos ORM.
 
-`current_stock = SUMA(entradas) − SUMA(salidas)` (regla 1 del CONTEXT). Se
-calcula en la misma consulta que lee los activos: cada lado se agrega primero
-en su propia subconsulta y luego se une con LEFT JOIN. Unir las dos tablas de
-órdenes antes de sumar multiplicaría las filas (cada entrada por cada salida).
+`current_stock = SUMA(entradas) − SUMA(salidas)` (regla 1 del CONTEXT). En
+los listados se calcula en la misma consulta que lee los activos: cada lado se
+agrega primero en su propia subconsulta y luego se une con LEFT JOIN. Unir las
+dos tablas de órdenes antes de sumar multiplicaría las filas (cada entrada por
+cada salida).
+
+Una salida bloquea antes la fila del activo (`SELECT … FOR UPDATE`), calcula
+el stock y solo inserta si alcanza, todo en la misma transacción: dos salidas
+simultáneas del mismo activo se ejecutan una detrás de otra y la segunda ve el
+stock que dejó la primera. En SQLite (tests) `FOR UPDATE` no existe y no se
+emite; la regla se prueba allí de forma secuencial.
 """
+
+from datetime import UTC, datetime
 
 from sqlalchemy import ColumnElement, Select, func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.core.errors import AssetNotFoundError, SkuAlreadyExistsError
+from app.core.errors import AssetNotFoundError, InsufficientStockError, OfficeMismatchError, SkuAlreadyExistsError
 
 from .models import Asset, AssetEntry, AssetExit
-from .schemas import AssetCreate, AssetRead
+from .schemas import (
+    AssetCreate,
+    AssetRead,
+    AssetSummary,
+    InboundOrderCreate,
+    InboundOrderRead,
+    OrderRead,
+    OutboundOrderCreate,
+    OutboundOrderRead,
+)
 
 
 def _assets_with_stock() -> Select[tuple[Asset, int]]:
@@ -93,3 +111,103 @@ def create_asset(session: Session, payload: AssetCreate) -> AssetRead:
         raise conflict
     session.refresh(asset)
     return _read(asset, 0)
+
+
+def _summary(asset: Asset) -> AssetSummary:
+    return AssetSummary(id=asset.id, name=asset.name, sku=asset.sku)
+
+
+def _utc(value: datetime) -> datetime:
+    """`created_at` siempre con zona UTC: SQLite la pierde al leer y PostgreSQL la devuelve en la de la sesión."""
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _inbound_read(entry: AssetEntry, asset: AssetSummary) -> InboundOrderRead:
+    return InboundOrderRead(
+        id=entry.id,
+        asset=asset,
+        quantity=entry.quantity,
+        supplier=entry.supplier,
+        office=entry.office,
+        created_at=_utc(entry.created_at),
+        user_uuid=entry.user_uuid,
+    )
+
+
+def _outbound_read(exit_order: AssetExit, asset: AssetSummary) -> OutboundOrderRead:
+    return OutboundOrderRead(
+        id=exit_order.id,
+        asset=asset,
+        quantity=exit_order.quantity,
+        exit_type=exit_order.exit_type,
+        assigned_to=exit_order.assigned_to,
+        office=exit_order.office,
+        created_at=_utc(exit_order.created_at),
+        user_uuid=exit_order.user_uuid,
+    )
+
+
+def locked_asset_query(asset_id: int) -> Select[tuple[Asset]]:
+    """La fila del activo, bloqueada hasta el final de la transacción (`FOR UPDATE`)."""
+    return select(Asset).where(Asset.id == asset_id).with_for_update()
+
+
+def _available_stock(session: Session, asset_id: int) -> int:
+    entries = select(func.coalesce(func.sum(AssetEntry.quantity), 0)).where(AssetEntry.asset_id == asset_id)
+    exits = select(func.coalesce(func.sum(AssetExit.quantity), 0)).where(AssetExit.asset_id == asset_id)
+    return session.exec(select(entries.scalar_subquery() - exits.scalar_subquery())).one()
+
+
+def create_inbound_order(session: Session, payload: InboundOrderCreate, user_uuid: str) -> InboundOrderRead:
+    """Registra una entrada. 404 si el activo no existe; 400 si la oficina no es la del activo."""
+    asset = session.get(Asset, payload.asset_id)
+    if asset is None:
+        raise AssetNotFoundError()
+    if asset.office != payload.office:
+        raise OfficeMismatchError()
+    summary = _summary(asset)
+    entry = AssetEntry(**payload.model_dump(), user_uuid=user_uuid)
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+    return _inbound_read(entry, summary)
+
+
+def create_outbound_order(session: Session, payload: OutboundOrderCreate, user_uuid: str) -> OutboundOrderRead:
+    """Registra una salida si hay stock. Nada se escribe si falla alguna comprobación.
+
+    Orden: activo (404) → oficina (400 `office_mismatch`) → stock (400
+    `insufficient_stock`). Si se lanza un error, la sesión se cierra sin commit
+    (`get_db`): la transacción se deshace y el bloqueo se libera.
+    """
+    asset = session.exec(locked_asset_query(payload.asset_id)).first()
+    if asset is None:
+        raise AssetNotFoundError()
+    if asset.office != payload.office:
+        raise OfficeMismatchError()
+    available = _available_stock(session, payload.asset_id)
+    if payload.quantity > available:
+        raise InsufficientStockError(asset.name, available, payload.quantity)
+    summary = _summary(asset)
+    exit_order = AssetExit(**payload.model_dump(), user_uuid=user_uuid)
+    session.add(exit_order)
+    session.commit()
+    session.refresh(exit_order)
+    return _outbound_read(exit_order, summary)
+
+
+def list_orders(session: Session) -> list[OrderRead]:
+    """Entradas y salidas con su activo, de la más reciente a la más antigua.
+
+    Dos consultas con JOIN a `assets` (una por tabla), sea cual sea el número
+    de órdenes. A igualdad de `created_at`, salidas antes que entradas y, dentro
+    de cada tipo, `id` descendente: el orden es siempre el mismo.
+    """
+    entries = session.exec(select(AssetEntry, Asset).join(Asset, AssetEntry.asset_id == Asset.id)).all()
+    exits = session.exec(select(AssetExit, Asset).join(Asset, AssetExit.asset_id == Asset.id)).all()
+    orders: list[InboundOrderRead | OutboundOrderRead] = [
+        _inbound_read(entry, _summary(asset)) for entry, asset in entries
+    ]
+    orders += [_outbound_read(exit_order, _summary(asset)) for exit_order, asset in exits]
+    orders.sort(key=lambda order: (order.created_at, order.type, order.id), reverse=True)
+    return orders

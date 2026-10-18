@@ -158,6 +158,24 @@ class SkuAlreadyExistsError(ApiError):
         super().__init__(409, "sku_already_exists", "an asset with this sku already exists")
 
 
+class OfficeMismatchError(ApiError):
+    """La oficina de la orden no es la del activo: el stock es por activo y cada activo es de una oficina."""
+
+    def __init__(self) -> None:
+        super().__init__(400, "office_mismatch", "order office does not match the asset office")
+
+
+class InsufficientStockError(ApiError):
+    """Salida mayor que el stock. Mensaje literal del CONTEXT (regla 2)."""
+
+    def __init__(self, name: str, available: int, requested: int) -> None:
+        super().__init__(
+            400,
+            "insufficient_stock",
+            f"Insufficient stock for asset '{name}'. Available: {available}, requested: {requested}.",
+        )
+
+
 class FileTooLargeError(ApiError):
     def __init__(self, max_bytes: int) -> None:
         super().__init__(413, "file_too_large", f"request body exceeds the {max_bytes} bytes limit")

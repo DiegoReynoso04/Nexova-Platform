@@ -1,7 +1,8 @@
 """Hito 5, F3a: rutas de productos (activos) del inventario.
 
-SQLite en memoria y `with TestClient` (el lifespan crea las tablas). Las
-órdenes se insertan directamente con la sesión: sus rutas llegan en F3b.
+SQLite en memoria y `with TestClient` (el lifespan crea las tablas). Para el
+stock, las órdenes se insertan directamente con la sesión; las rutas de
+órdenes tienen sus propios tests (`test_inventory_orders.py`).
 """
 
 import ast
@@ -14,71 +15,28 @@ from unittest import mock
 
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from sqlalchemy import event
-from sqlmodel import Session, SQLModel, func, select
+from sqlmodel import Session, SQLModel
 
 from app.core.config import Settings
 from app.main import create_app
 from app.modules.inventory import schemas, service
-from app.modules.inventory.models import Asset, AssetEntry, AssetExit
+from app.modules.inventory.models import Asset
 from app.modules.inventory.router import router as inventory_router
-from app.modules.inventory.schemas import AssetCreate, AssetRead
+from app.modules.inventory.schemas import (
+    AssetCreate,
+    AssetRead,
+    AssetSummary,
+    InboundOrderCreate,
+    InboundOrderRead,
+    OutboundOrderCreate,
+    OutboundOrderRead,
+)
 
-from .support import APP_DIR, authorize, with_test_auth
+from .inventory_support import ORDERS_URL, PRODUCTS_URL, InventoryTestCase, valid_asset
+from .support import APP_DIR, with_test_auth
 
-PRODUCTS_URL = "/inventory/products"
 ASSET_KEYS = {"id", "name", "sku", "category", "office", "current_stock"}
-USER_UUID = "00000000-0000-4000-8000-000000000000"
-
-
-def valid_asset(**changes: Any) -> dict[str, Any]:
-    return {"name": "Example laptop", "sku": "EXAMPLE-001", "category": "hardware", "office": "Valencia"} | changes
-
-
-class InventoryTestCase(unittest.TestCase):
-    """App real con SQLite en memoria, lifespan ejecutado y un usuario autenticado."""
-
-    def setUp(self) -> None:
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.app = create_app(with_test_auth(Settings(), Path(tmp.name) / "auth.json"))
-        self.client = TestClient(self.app)
-        self.client.__enter__()
-        self.addCleanup(self.client.__exit__, None, None, None)
-        authorize(self.client)
-
-    @property
-    def engine(self) -> Any:
-        return self.app.state.inventory_engine
-
-    def create(self, **changes: Any) -> dict[str, Any]:
-        response = self.client.post(PRODUCTS_URL, json=valid_asset(**changes))
-        self.assertEqual(response.status_code, 201, response.text)
-        return response.json()
-
-    def add_orders(self, asset_id: int, entries: list[int], exits: list[int], office: str = "Valencia") -> None:
-        with Session(self.engine) as session:
-            for quantity in entries:
-                session.add(
-                    AssetEntry(
-                        asset_id=asset_id, quantity=quantity, supplier="Example supplier", office=office, user_uuid=USER_UUID
-                    )
-                )
-            for quantity in exits:
-                session.add(
-                    AssetExit(
-                        asset_id=asset_id,
-                        quantity=quantity,
-                        exit_type="consumption",
-                        office=office,
-                        user_uuid=USER_UUID,
-                    )
-                )
-            session.commit()
-
-    def asset_count(self) -> int:
-        with Session(self.engine) as session:
-            return session.exec(select(func.count()).select_from(Asset)).one()
+ORDER_SCHEMAS = (AssetSummary, InboundOrderCreate, InboundOrderRead, OutboundOrderCreate, OutboundOrderRead)
 
 
 class CreateProductTests(InventoryTestCase):
@@ -218,35 +176,22 @@ class CurrentStockTests(InventoryTestCase):
 
 
 class QueryCountTests(InventoryTestCase):
-    def count_queries(self, url: str) -> int:
-        statements: list[str] = []
-
-        def record(conn: Any, cursor: Any, statement: str, *args: Any) -> None:
-            statements.append(statement)
-
-        event.listen(self.engine, "before_cursor_execute", record)
-        try:
-            self.assertEqual(self.client.get(url).status_code, 200)
-        finally:
-            event.remove(self.engine, "before_cursor_execute", record)
-        return len(statements)
-
     def test_list_uses_the_same_single_query_for_1_and_20_assets(self) -> None:
         first = self.create(sku="EXAMPLE-Q-0")
         self.add_orders(first["id"], entries=[5, 3], exits=[1])
-        with_one = self.count_queries(PRODUCTS_URL)
+        with_one = self.count_queries("GET", PRODUCTS_URL)
         for index in range(1, 20):
             asset = self.create(sku=f"EXAMPLE-Q-{index}")
             self.add_orders(asset["id"], entries=[5, 3], exits=[1])
         self.assertEqual(len(self.client.get(PRODUCTS_URL).json()), 20)
-        with_twenty = self.count_queries(PRODUCTS_URL)
+        with_twenty = self.count_queries("GET", PRODUCTS_URL)
         self.assertEqual(with_one, 1)
         self.assertEqual(with_twenty, with_one)
 
     def test_get_by_id_is_a_single_query(self) -> None:
         asset = self.create()
         self.add_orders(asset["id"], entries=[4], exits=[1])
-        self.assertEqual(self.count_queries(f"{PRODUCTS_URL}/{asset['id']}"), 1)
+        self.assertEqual(self.count_queries("GET", f"{PRODUCTS_URL}/{asset['id']}"), 1)
 
 
 class AuthenticationTests(unittest.TestCase):
@@ -266,6 +211,13 @@ class AuthenticationTests(unittest.TestCase):
                     self.assertEqual(response.headers["WWW-Authenticate"], "Bearer")
 
 
+def response_classes(annotation: Any) -> list[type]:
+    """Clases de un `response_model`, desplegando `list[...]`, uniones y `Annotated`."""
+    if isinstance(annotation, type) and not typing.get_args(annotation):
+        return [annotation]
+    return [model for argument in typing.get_args(annotation) for model in response_classes(argument)]
+
+
 class NoOrmInResponsesTests(unittest.TestCase):
     def inventory_routes(self) -> list[APIRoute]:
         # FastAPI 0.141 guarda los routers incluidos como `_IncludedRouter` en
@@ -278,17 +230,23 @@ class NoOrmInResponsesTests(unittest.TestCase):
         routes = self.inventory_routes()
         self.assertEqual(
             {(route.path, method) for route in routes for method in route.methods},
-            {(PRODUCTS_URL, "GET"), (PRODUCTS_URL, "POST"), (f"{PRODUCTS_URL}/{{id}}", "GET")},
+            {
+                (PRODUCTS_URL, "GET"),
+                (PRODUCTS_URL, "POST"),
+                (f"{PRODUCTS_URL}/{{id}}", "GET"),
+                (f"{ORDERS_URL}/inbound", "POST"),
+                (f"{ORDERS_URL}/outbound", "POST"),
+                (ORDERS_URL, "GET"),
+            },
         )
         for route in routes:
             with self.subTest(path=route.path, methods=sorted(route.methods)):
                 self.assertIsNotNone(route.response_model)
-                models = typing.get_args(route.response_model) or (route.response_model,)
-                for model in models:
+                for model in response_classes(route.response_model):
                     self.assertFalse(issubclass(model, SQLModel), model)
 
     def test_schemas_are_plain_pydantic_and_do_not_import_the_orm(self) -> None:
-        for model in (AssetCreate, AssetRead):
+        for model in (AssetCreate, AssetRead, *ORDER_SCHEMAS):
             self.assertFalse(issubclass(model, SQLModel))
         tree = ast.parse((APP_DIR / "modules" / "inventory" / "schemas.py").read_text(encoding="utf-8"))
         imported = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
@@ -310,6 +268,9 @@ class NoOrmInResponsesTests(unittest.TestCase):
         self.assertIn(f"{PRODUCTS_URL}/{{id}}", inventory_paths)
         self.assertNotIn(f"{PRODUCTS_URL}/{{asset_id}}", inventory_paths)
         self.assertEqual(set(paths[PRODUCTS_URL]), {"get", "post"})
+        self.assertEqual(set(paths[ORDERS_URL]), {"get"})
+        self.assertEqual(set(paths[f"{ORDERS_URL}/inbound"]), {"post"})
+        self.assertEqual(set(paths[f"{ORDERS_URL}/outbound"]), {"post"})
         self.assertEqual(set(paths[f"{PRODUCTS_URL}/{{id}}"]), {"get"})
         parameters = paths[f"{PRODUCTS_URL}/{{id}}"]["get"]["parameters"]
         self.assertEqual([(item["name"], item["in"]) for item in parameters], [("id", "path")])

@@ -11,6 +11,9 @@ from enum import StrEnum
 TEXT_MAX_LENGTH = 200
 # Longitud de un UUID en texto (`str(uuid4())`): el `id` del usuario de TinyDB.
 USER_UUID_LENGTH = 36
+# Cantidad máxima de una orden: el máximo de INTEGER (int4) en PostgreSQL
+# (aprobado por el usuario). Por encima, la base rechazaría el valor con un 500.
+QUANTITY_MAX = 2_147_483_647
 
 
 class AssetCategory(StrEnum):

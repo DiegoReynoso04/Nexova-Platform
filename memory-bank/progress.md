@@ -4,6 +4,47 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-18 — Hito 5, F3b: órdenes de entrada y salida, regla del stock y `GET /inventory/orders`
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-orm`, sobre F3a (`c3fc7bf`). Siguiente: F4 (seed).
+
+- **Antes, en F3a (ya comiteada):** la ruta por id se publica como `/inventory/products/{id}`, con un test sobre `/openapi.json`.
+- **Base de Supabase:** reiniciada una vez con `TRUNCATE assets, asset_entries, asset_exits RESTART IDENTITY CASCADE`, con autorización del usuario y las tablas ya vacías. Se hizo con un script fuera del repo.
+- **Schemas** (`schemas.py`):
+  - `InboundOrderCreate` y `OutboundOrderCreate`: `extra="forbid"`, así que `user_uuid` en el body da 422.
+  - `quantity`: entero estricto entre 1 y 2147483647. `asset_id`: entero estricto.
+  - La coherencia de `assigned_to` es un `field_validator` que lee `exit_type` de `info.data`, con `validate_default=True`: el 422 sale con `loc` `["body", "assigned_to"]`, también cuando el campo falta.
+  - Respuestas: `InboundOrderRead` y `OutboundOrderRead` (`type` literal, activo embebido `AssetSummary`, `created_at` con zona) y `OrderRead`, la unión discriminada por `type`.
+  - `QUANTITY_MAX` va en `vocabulary.py`.
+- **Service** (`service.py`):
+  - `user_uuid` es el `id` del usuario de `get_current_user`, declarado en la ruta (FastAPI lo resuelve una sola vez por petición).
+  - **Entrada:** 404 `asset_not_found` → 400 `office_mismatch` → insertar.
+  - **Salida:** `locked_asset_query` (`SELECT … FOR UPDATE`) → 404 → oficina → stock → 400 `insufficient_stock` con el mensaje literal del CONTEXT → insertar y commit, todo en la misma transacción. Si algo falla no se hace commit y `get_db` cierra la sesión.
+  - **`GET /orders`:** dos consultas con JOIN a `assets`, ordenadas por `created_at` descendente; a igual fecha, salidas antes que entradas y, dentro de cada tipo, `id` descendente. `created_at` sale siempre en UTC, también desde SQLite.
+  - Errores nuevos `OfficeMismatchError` e `InsufficientStockError`, en `core/errors.py`.
+- **Tests:**
+  - 24 nuevos, en `tests/test_inventory_orders.py`.
+  - `InventoryTestCase` pasa a `tests/inventory_support.py`, compartido con `test_inventory_products.py`.
+  - El test de «ningún ORM» cubre ahora las 6 rutas y despliega `list[...]`, uniones y `Annotated`.
+- **Mutaciones**, todas detectadas y deshechas:
+  - sin `FOR UPDATE`;
+  - el stock comprobado después de insertar;
+  - `>=` en vez de `>` (salida igual al stock rechazada);
+  - sin comprobar la oficina, en la salida y en la entrada;
+  - `user_uuid` tomado del body;
+  - N+1 en `GET /orders`;
+  - el validador de `assigned_to` sobre el body.
+- **Supabase real** (usuario temporal en una TinyDB temporal):
+  - entrada de 5; salida de 7 → 400 con el mensaje exacto; `allocation` de 3 → 201;
+  - stock 2 y `GET /orders` con 2 órdenes;
+  - **concurrencia:** dos salidas de 5 a la vez sobre un stock de 5 → una 201 y una 400 `Available: 0`. La segunda esperó al bloqueo y vio el stock que dejó la primera.
+  - Después se borró todo lo creado y se volvió a hacer `TRUNCATE … RESTART IDENTITY`: la base queda vacía, con los ids desde 1 para el seed.
+- **Validación:**
+  - `unittest`: 392 OK (368 + 24).
+  - `uv run --no-sync python -m pytest`: 595 OK (571 + 24).
+
+---
+
 ## 2026-10-18 — Hito 5, F3a: schemas, `service.py` y rutas de productos
 
 **Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-orm`, sobre F2 (`d68d93e`). Quedan las órdenes para F3b.
