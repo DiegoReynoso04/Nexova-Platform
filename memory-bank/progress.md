@@ -4,6 +4,50 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-18 — Hito 5, F2: configuración, motor, `get_db`, modelos ORM, lifespan (tablas + RLS) y 503
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-orm`, sobre F1 (`6b977af`). Todavía no hay rutas `/inventory` (F3a y F3b).
+
+- **Configuración** (`app/core/config.py`):
+  - `DATABASE_URL` obligatoria al arrancar: `require_database()`, que `create_app` llama después de `require_auth()`.
+  - `repr=False` y `ConfigError` sin repetir la URL.
+  - El esquema se valida solo en `from_env` (`postgresql://` y `postgresql+psycopg2://`), así que los tests inyectan `Settings(database_url="sqlite://")`.
+- **`app/modules/inventory/database.py`:**
+  - `build_engine`, un motor por app en `app.state.inventory_engine`, sin motor ni sesión a nivel de módulo.
+    - **Postgres:** `NullPool`, `connect_timeout=5`, `hide_parameters=True`.
+    - **Driver:** `postgresql://` pasa a `postgresql+psycopg2` con `make_url`, porque SQLAlchemy 2.1 usa psycopg v3 por defecto.
+    - **SQLite:** `StaticPool` y `PRAGMA foreign_keys=ON`.
+    - **URL ilegible:** `ConfigError` sin la URL y sin encadenar la excepción.
+  - `init_db`: `create_all` y luego `ALTER TABLE … ENABLE ROW LEVEL SECURITY` en las tres tablas, solo en Postgres, en una transacción. Es idempotente.
+  - `inventory_lifespan` lo ejecuta al arrancar. Si falla, `init_db` lanza `InventoryStartupError` con un mensaje fijo (`inventory database is unavailable at startup: <Clase>`). Se lanza fuera del `except`, sin `__cause__` ni `__context__`, con el mismo patrón que `GuardedJSONStorage` (A2).
+  - uvicorn imprime la traza de esa excepción, sin la original, y termina con código 3 (`STARTUP_FAILURE`).
+  - *Una primera versión usaba `os._exit(1)`; el usuario la rechazó en la revisión porque mata cualquier proceso que ejecute el lifespan, como pytest o `with TestClient`.*
+  - `get_db`: una `Session` por petición.
+- **`models.py`:**
+  - `Asset`, `AssetEntry` y `AssetExit` (tablas `assets`, `asset_entries` y `asset_exits`).
+  - FK con índice en `asset_id`, `UNIQUE` global en `sku`, `TIMESTAMPTZ` y vocabulario en VARCHAR (sin ENUM nativos).
+  - `CHECK` de `quantity > 0`, del vocabulario y de la coherencia de `assigned_to`.
+  - Sin tabla de usuarios.
+- **503** (`app/core/errors.py`):
+  - `OperationalError`, `InterfaceError` y `TimeoutError` de SQLAlchemy → 503 `storage_unavailable`;
+  - el log solo lleva `storage inventory is unavailable: <Clase>`;
+  - el resto de errores de la base siguen siendo el 500 opaco.
+- **Soporte de tests, cambio mínimo:** `TEST_DATABASE_URL = "sqlite://"` en `tests/support.py`, en `with_test_auth`, en `AuthTestCase` y en `AuthConfigTests.valid()`. Los clientes existentes no usan `with TestClient`: no ejecutan el lifespan ni tocan la base.
+- **Tests nuevos:** 36, en `tests/test_inventory_database.py` y `tests/test_inventory_startup.py`.
+  - **En proceso:** `with TestClient(app)` con la base caída lanza `InventoryStartupError` sin encadenar, y después otra app arranca en el mismo proceso.
+  - **Con uvicorn real** contra un puerto local cerrado: código 3, y la salida no lleva usuario, contraseña, host, base, `postgresql://`, `psycopg2` ni la excepción original.
+  - **Mutaciones**, todas detectadas y deshechas: sin `PRAGMA`; sin la llamada a RLS en `init_db`; sin el `ALTER`; con una sesión a nivel de módulo; con una sesión cacheada en `get_db`; sin forzar psycopg2; `InventoryStartupError` lanzada dentro del `except` (uvicorn imprime entonces `localhost` y `psycopg2`).
+- **Supabase real:**
+  - antes del arranque, las tres tablas no existían;
+  - tras `uv run --env-file .env uvicorn app.main:create_app --factory`, existen con `relrowsecurity=True`, `relforcerowsecurity=False` y 0 políticas;
+  - un segundo arranque también termina bien (idempotente).
+- **Sin `DATABASE_URL`:** `ConfigError: DATABASE_URL is required (see services/api/.env.example)`, con la traza de uvicorn al cargar la factory. Es el mismo comportamiento que ya tenía la falta de `JWT_SECRET_KEY` y no muestra ningún secreto.
+- **Validación:**
+  - `unittest`: 348 OK (312 + 36).
+  - `uv run --no-sync python -m pytest`: 551 OK (515 + 36).
+
+---
+
 ## 2026-10-17 — Hito 5 (inventario con SQLModel y Supabase), F1: rama, CONTEXT y dependencias
 
 **Estado: hecho y validado, sin comitear** (el usuario revisa cada fase antes del commit), en `feature/inventory-orm`, creada desde `main` en `ef1e083` (merge de la PR #20). Primera fase del plan aprobado por el usuario (F1, F2, F3a, F3b, F4 y F5). Todavía no hay código de inventario.

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nexova-incident-api"
 version = "0.1.0"
-description = "Nexova — API HTTP (FastAPI): análisis de incidentes de soporte, directorio de proveedores (TinyDB) y autenticación JWT"
+description = "Nexova — API HTTP (FastAPI): análisis de incidentes de soporte, directorio de proveedores (TinyDB), autenticación JWT e inventario (SQLModel + PostgreSQL)"
 readme = "README.md"
 requires-python = ">=3.11"
 # Rangos acotados a las versiones probadas. Versiones exactas en uv.lock
@@ -54,7 +54,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["app", "app.auth", "app.core", "app.modules", "app.modules.incident_manager", "app.modules.incidents", "app.routes"]
+packages = ["app", "app.auth", "app.core", "app.modules", "app.modules.incident_manager", "app.modules.incidents", "app.modules.inventory", "app.routes"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

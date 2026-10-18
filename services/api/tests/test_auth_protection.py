@@ -13,7 +13,7 @@ from app.core.config import MIN_JWT_SECRET_LENGTH, ConfigError, Settings
 from app.main import create_app
 
 from .auth_support import AuthTestCase, bearer, new_password
-from .support import ANALYZE_URL, EXPORT_URL, FIXTURE
+from .support import ANALYZE_URL, EXPORT_URL, FIXTURE, TEST_DATABASE_URL
 from .suppliers_support import SUPPLIERS_URL, valid_supplier
 
 # Las 8 rutas existentes con datos sensibles (incidentes con emails de clientes
@@ -132,7 +132,9 @@ class CorsAuthorizationTests(AuthTestCase):
 
 class AuthConfigTests(unittest.TestCase):
     def valid(self, **changes: Any) -> Settings:
-        base = Settings(jwt_secret_key="k" * MIN_JWT_SECRET_LENGTH, access_token_expire_minutes=30)
+        base = Settings(
+            jwt_secret_key="k" * MIN_JWT_SECRET_LENGTH, access_token_expire_minutes=30, database_url=TEST_DATABASE_URL
+        )
         return dataclasses.replace(base, **changes)
 
     def test_app_does_not_start_without_jwt_secret(self) -> None:
