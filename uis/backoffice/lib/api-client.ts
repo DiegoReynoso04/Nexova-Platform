@@ -34,6 +34,11 @@ export interface ApiClientDependencies {
   fetch?: FetchLike;
   /** Base URL; por defecto `NEXT_PUBLIC_API_URL`. Se lee en cada petición (validación perezosa). */
   getBaseUrl?: () => string | undefined;
+  /**
+   * Nombre de la variable que da la base URL, solo para el mensaje de
+   * `ApiConfigError` (que la UI nunca muestra). Por defecto `NEXT_PUBLIC_API_URL`.
+   */
+  baseUrlVariable?: string;
   /** Token de sesión; por defecto el de `localStorage` (lib/auth-token.ts). Se lee en cada petición. */
   getToken?: () => string | null;
   /** Qué hacer ante un 401 de una petición protegida; por defecto, borrar el token. */
@@ -73,6 +78,8 @@ export interface ApiClient {
   putJson<T>(path: string, body: JsonValue, options: RequestOptions, handle: ResponseHandler<T>): Promise<T>;
 }
 
+const DEFAULT_BASE_URL_VARIABLE = 'NEXT_PUBLIC_API_URL';
+
 // ---------------------------------------------------------------------------
 // Errores de transporte. Mensajes fijos: nunca incluyen datos recibidos.
 // ---------------------------------------------------------------------------
@@ -84,10 +91,10 @@ export class ApiClientError extends Error {
   }
 }
 
-/** `NEXT_PUBLIC_API_URL` ausente o vacía. */
+/** La variable de la base URL (`NEXT_PUBLIC_API_URL` u otra del cliente) ausente o vacía. */
 export class ApiConfigError extends ApiClientError {
-  constructor() {
-    super('API base URL is not configured (NEXT_PUBLIC_API_URL)');
+  constructor(variable = DEFAULT_BASE_URL_VARIABLE) {
+    super(`API base URL is not configured (${variable})`);
     this.name = 'ApiConfigError';
   }
 }
@@ -197,6 +204,7 @@ interface OutgoingRequest {
 export function createApiClient(dependencies: ApiClientDependencies = {}): ApiClient {
   const transport: FetchLike = dependencies.fetch ?? ((input, init) => fetch(input, init));
   const getBaseUrl = dependencies.getBaseUrl ?? defaultBaseUrl;
+  const baseUrlVariable = dependencies.baseUrlVariable ?? DEFAULT_BASE_URL_VARIABLE;
   const getToken = dependencies.getToken ?? readAuthToken;
   const onUnauthorized = dependencies.onUnauthorized ?? clearAuthToken;
 
@@ -216,7 +224,7 @@ export function createApiClient(dependencies: ApiClientDependencies = {}): ApiCl
 
   async function send<T>(path: string, request: OutgoingRequest, options: RequestOptions, handle: ResponseHandler<T>): Promise<T> {
     const baseUrl = getBaseUrl()?.trim();
-    if (!baseUrl) throw new ApiConfigError();
+    if (!baseUrl) throw new ApiConfigError(baseUrlVariable);
     const url = `${baseUrl.replace(/\/+$/, '')}${path}`;
     if (options.signal?.aborted) throw new ApiAbortError();
     const init = buildInit(request, options);

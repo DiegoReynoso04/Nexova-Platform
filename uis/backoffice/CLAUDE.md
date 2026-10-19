@@ -4,12 +4,13 @@ Fuente de verdad de negocio: `contexts/CONTEXT.md` si existe en tu checkout (car
 
 ## Alcance actual
 
-El backoffice tiene cuatro piezas de negocio, y **solo estas cuatro**, protegidas por la autenticación de AUTH-02 (sección propia abajo):
+El backoffice tiene cinco piezas de negocio, y **solo estas cinco**, protegidas por la autenticación de AUTH-02 (sección propia abajo):
 
 1. **Vista de entrada (`/`)** — ficha de empresa y roadmap. Se mantiene tal cual.
 2. **Análisis de incidentes de soporte (`/incidents`)** — capacidad de negocio **autorizada** por el tech lead como Fase 3 del procesador de incidentes de Nexova (rama `feature/incident-analyzer`). Ver sección propia abajo.
 3. **Directorio de proveedores (`/suppliers`)** — autorizado por el tech lead (Sergio Molina) para el encargo de Patricia Solís (rama `api-con-almacenamiento-ligero`). Ver sección propia abajo.
 4. **Gestor centralizado de incidencias (`/incident-manager`, `/incident-manager/new`)** — autorizado por el usuario el 2026-10-07 (rama `feature/centralized-incident-manager`, fase F5). Distinto de `/incidents`. Ver sección propia abajo.
+5. **Inventario de equipos y materiales (`/inventory/products`, `/inventory/orders/inbound`, `/inventory/orders/outbound`, `/inventory/orders`)** — autorizado por el usuario el 2026-10-19 (frontend del Hito 5, rama `feature/inventory-frontend`) sobre la API de `services/api` (SPECS Parte F). Ver sección propia abajo.
 
 Cualquier otra capacidad de negocio (gestión de personas, operaciones, comunicación interna…) sigue **prohibida** sin un contexto de hito propio que la respalde — mismo criterio que `uis/talent-pipeline-tracker` (que tiene su `SPECS.md`).
 
@@ -75,6 +76,41 @@ Reglas específicas (lo no citado sigue las de `/incidents`: URL de la API, fron
 - **Arquitectura:** `app/incident-manager/page.tsx` y `app/incident-manager/new/page.tsx` (Server Components, metadata) → `components/incident-manager/incident-board-view.tsx` / `incident-form-view.tsx` (`'use client'`) → `hooks/use-incident-board.ts`, `use-incident-summary.ts`, `use-incident-form.ts` (reducer puro + sesión sin React + hook) → `services/incident-manager.service.ts` → `lib/api-client.ts`. `unknown` solo en `services/normalizers.ts`. Rutas en `lib/incident-manager-routes.ts`.
 - **Navegación:** enlaces «Incidencias» (`/incident-manager`) y «Registrar incidencia» (`/incident-manager/new`) en la cabecera.
 
+## Inventario (`/inventory/*`)
+
+Autorizado por el usuario el 2026-10-19 (frontend del inventario del Hito 5, rama `feature/inventory-frontend`). Lo usa el personal de operaciones: claridad y velocidad antes que acabado visual.
+
+Fuentes de verdad, por orden:
+
+- Requisitos: el brief literal del frontend del inventario, [`docs/inventory-frontend-brief.md`](../../docs/inventory-frontend-brief.md) (con la nota de equivalencias: su «BRIEFING.md» son el `README.md` raíz y el CONTEXT, y sus rutas `/backoffice/inventory/...` son `/inventory/...`), y [`docs/context-nexova-gestion-inventario-hito-5.md`](../../docs/context-nexova-gestion-inventario-hito-5.md) (entidades, campos, vocabulario y reglas). El briefing de empresa es el [`README.md`](../../README.md) raíz.
+- Contrato HTTP: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte F (§37–§38) y `services/api/app/modules/inventory/schemas.py`. Mismas reglas que `/incidents` para no inventar campos ni endpoints.
+- Guía de revisión de la API: [`docs/inventory-review.md`](../../docs/inventory-review.md).
+
+Reglas específicas (lo no citado sigue las de `/incidents`: frontera de confianza, capas, sin `console.*` ni persistencia en el navegador):
+
+- **Páginas** (las del brief, protegidas por el guard global; no están en `PUBLIC_PATHS` ni en `OPEN_PATHS`): `/inventory/products` (Activos), `/inventory/orders/inbound` (Entrada de activos), `/inventory/orders/outbound` (Salida de activos) e `/inventory/orders` (Historial). `/inventory` redirige a `/inventory/products`. Rutas en `lib/inventory-routes.ts`.
+- **Navegación:** un solo enlace «Inventario» en la cabecera (`components/auth/account-nav.tsx`) → `/inventory/products`, y una subnavegación común a las 4 páginas (Activos · Entrada de activos · Salida de activos · Historial) con la página activa marcada (`aria-current`), en `app/inventory/layout.tsx` + `components/inventory/inventory-nav.tsx`.
+- **URL de la API:** `NEXT_PUBLIC_INVENTORY_API_URL` (ver `.env.example`; solo el host, `http://localhost:8000`; el servicio añade `/inventory/...`). Validación perezosa, como `NEXT_PUBLIC_API_URL`: si falta, error de configuración en la UI, sin romper el build. **Sin reserva** a `NEXT_PUBLIC_API_URL`.
+- **Integración:** `services/inventory.service.ts` es el único módulo que llama a `/inventory`, a través de `lib/inventory-api-client.ts`: el mismo `createApiClient` de `lib/api-client.ts` con otra base URL. Por eso siguen valiendo el único `fetch`, el `Authorization: Bearer` en toda petición y el 401 → sesión caducada. Tipos en `types/inventory.ts`; `unknown` solo en `services/normalizers.ts`.
+- **Vocabulario en el frontend (excepción, como en `/suppliers`):** `types/inventory.ts` define categorías, oficinas, tipos de salida, `QUANTITY_MAX` y `TEXT_MAX_LENGTH`. `tests/inventory-contract.test.mjs` exige que coincidan con el CONTEXT y con `services/api/app/modules/inventory/vocabulary.py`. Los valores (`hardware`, `Valencia`, `allocation`…) se muestran tal como los devuelve la API. Títulos y etiquetas usan los términos del CONTEXT: «Activos» (no «productos»), «Entrada de activos», «Salida de activos», «Asignación», «Consumo», «Oficina», «Proveedor», «Asignado a», «Stock actual».
+- **Formularios:**
+  - el selector muestra «nombre — SKU (oficina)», nunca un id;
+  - la **oficina** es la del activo elegido, en solo lectura, y es la que se envía;
+  - `asset_id` y `quantity` se envían como **números** (la API usa enteros estrictos);
+  - el activo puede llegar preseleccionado con `?asset_id=` desde Activos;
+  - validación en cliente antes de enviar (activo, cantidad entera de 1 a `QUANTITY_MAX`, proveedor, tipo de salida y «Asignado a» con una asignación): si no pasa, no hay petición;
+  - tras el éxito, confirmación y formulario limpio (`key = formKey`).
+- **Salida de activos:** al elegir un activo se lee su `current_stock` (`GET /inventory/products/{id}`, cancelando la lectura anterior) y se muestra. **Cantidad** queda deshabilitada hasta conocer el stock; si la lectura falla, se habilita con el aviso «No se pudo consultar el stock». Una cantidad mayor que el stock muestra una advertencia que **no bloquea** el envío (la API es la autoridad). «Asignado a» solo es visible y obligatorio con una asignación (con un consumo se envía `null`). Tras una salida correcta se vuelve a leer el stock.
+- **Errores (excepción acotada a `/inventory` a la regla de textos fijos):**
+  - **4xx (salvo 401 y 422) o 5xx con un cuerpo `{detail, code}` legible:** un título en español y el `detail` de la API, como **texto plano**, en un elemento visible. `insufficient_stock` va **junto al campo Cantidad**. Si `detail` no es un texto (objeto, lista, vacío), se descarta y se usa el texto fijo.
+  - **Sin cuerpo legible** (red, timeout, respuesta que no es JSON o fuera de contrato): los textos fijos en español del backoffice, sin código HTTP ni detalles técnicos.
+  - **422:** un texto propio en español por campo, situado según `loc` (el `msg` de la API no se muestra).
+  - **401:** el flujo de sesión caducada de siempre.
+  - Lo cubre `tests/inventory.service.test.mjs` (500 y 503 con `detail` → visible; 500 sin JSON y `detail` de tipo objeto → texto fijo).
+- **Nivel de stock:** 0 = «Agotado», de 1 a 5 = «Bajo», más de 5 = «Suficiente», con texto o icono además del color; umbrales en una función pura documentada.
+- **Historial:** solo lectura (sin editar ni borrar). Cada fila: nombre del activo, cantidad, tipo (entrada o salida, con etiqueta e icono distintos), fecha en formato local legible y `user_uuid`.
+- **Arquitectura:** cada página es un Server Component (metadata) que renderiza una vista `'use client'` de `components/inventory/`, que solo interactúa con su hook de `hooks/` (reducer puro + sesión sin React + hook, como `/incident-manager`) → `services/inventory.service.ts` → `lib/inventory-api-client.ts`.
+
 ## Autenticación (AUTH-02)
 
 Autorizada por el ticket AUTH-02 ([`docs/auth-frontend.md`](../../docs/auth-frontend.md)). Contrato HTTP: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte C (`POST /auth/login`, `POST /users`, `GET /auth/me`, `PUT /profiles/me`). Mismas reglas que `/incidents` para no inventar campos ni endpoints.
@@ -97,14 +133,14 @@ Autorizada por el ticket AUTH-02 ([`docs/auth-frontend.md`](../../docs/auth-fron
 
 ## Arquitectura
 
-- Al consumir una API propia (hoy: análisis de incidentes, directorio de proveedores y gestor de incidencias), seguir el mismo patrón de frontera de confianza que `uis/talent-pipeline-tracker`: `services/normalizers.ts` como único lugar con `unknown` de red, errores tipados en `lib/api-client.ts`, y componentes sin HTTP directo.
+- Al consumir una API propia (hoy: análisis de incidentes, directorio de proveedores, gestor de incidencias e inventario), seguir el mismo patrón de frontera de confianza que `uis/talent-pipeline-tracker`: `services/normalizers.ts` como único lugar con `unknown` de red, errores tipados en `lib/api-client.ts`, y componentes sin HTTP directo.
 - **Límites de error (Next 16):**
   - `app/error.tsx` se muestra dentro del layout raíz, así que la cabecera, la sesión y el guard siguen activos. `app/global-error.tsx` solo actúa si falla el propio layout raíz: tiene su propio `<html>`/`<body>`, importa `globals.css` y no puede usar la sesión ni el guard. `app/not-found.tsx` cubre las rutas inexistentes.
   - Los tres usan textos fijos en español y llevan enlace a `/`. Los dos límites de error son Client Components con «Reintentar», que llama a `retry()`. Firma de props de Next 16.3: `{ error: Error & { digest?: string }; retry: () => void }`; `reset` existe, pero la documentación recomienda `retry`.
   - **El error no se lee:** ni `console.*`, ni `error.message`, `digest` o `stack`.
   - React sigue registrando en la consola del navegador los errores que capturan los límites, con su mensaje. Por eso ningún error lanzado en el código de producción puede llevar datos de la API o del usuario en su mensaje.
   - `tests/production-source.test.mjs` lo comprueba.
-- **Textos de error sin detalles técnicos:** ningún texto de `components/` ni `app/` muestra variables de entorno (`NEXT_PUBLIC_*`), rutas del repositorio (`services/api`) ni códigos HTTP entre paréntesis. Los avisos usan textos neutros con una acción («Inténtalo de nuevo», «Avisa al equipo técnico») y mantienen la distinción por tipo de error. No hay contacto de soporte porque el contexto no define ninguno: no se inventa. Lo comprueba `tests/production-source.test.mjs`.
+- **Textos de error sin detalles técnicos:** ningún texto de `components/` ni `app/` muestra variables de entorno (`NEXT_PUBLIC_*`), rutas del repositorio (`services/api`) ni códigos HTTP entre paréntesis. (Única excepción acotada: `/inventory` muestra el `detail` de texto de la API en sus 4xx/5xx; ver su sección.) Los avisos usan textos neutros con una acción («Inténtalo de nuevo», «Avisa al equipo técnico») y mantienen la distinción por tipo de error. No hay contacto de soporte porque el contexto no define ninguno: no se inventa. Lo comprueba `tests/production-source.test.mjs`.
 - **Contenedores con scroll horizontal:** todo `overflow-x-auto` de `components/` lleva también `relative`. Así los elementos `position: absolute` de dentro (p. ej. `sr-only`) quedan recortados y no ensanchan la página; sin él, `/incident-manager` tenía scroll horizontal a 375 px. Lo comprueba `tests/production-source.test.mjs`, con una lista explícita de excepciones pendientes (`/suppliers`, `/incidents`).
 
 <!-- BEGIN:nextjs-agent-rules -->

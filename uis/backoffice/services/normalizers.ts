@@ -8,7 +8,8 @@
 //   para badges y filtros, y un valor desconocido indicaría un contrato roto.
 //   Igual para el gestor de incidencias (SPECS Parte E): estados, orígenes,
 //   categorías y sedes deben ser valores del CONTEXT, y el resumen debe traer
-//   todas las claves de cada enumerado.
+//   todas las claves de cada enumerado. Y para el inventario (SPECS Parte F):
+//   categorías, oficinas, tipos de salida y el `type` de cada orden.
 // - Construyen objetos nuevos campo a campo (whitelist). Nunca se hace spread
 //   del objeto recibido, así que ninguna propiedad desconocida (p. ej. un
 //   `customer_email` que la API enviase por error) llega al estado de la UI.
@@ -46,6 +47,18 @@ import {
   type IncidentApiError,
   type IncidentSummary,
 } from '@/types/incident-manager';
+import {
+  ASSET_CATEGORIES,
+  EXIT_TYPES,
+  OFFICES,
+  ORDER_TYPES,
+  type Asset,
+  type AssetSummary,
+  type InboundOrder,
+  type InventoryField,
+  type InventoryOrder,
+  type OutboundOrder,
+} from '@/types/inventory';
 import {
   SUPPLIER_CATEGORIES,
   SUPPLIER_COUNTRIES,
@@ -480,4 +493,96 @@ export function normalizeIncidentApiError(input: unknown): IncidentApiError {
       )
     : [];
   return { code: typeof code === 'string' ? code : null, errors };
+}
+
+// ---------------------------------------------------------------------------
+// Inventario (services/api/SPECS.md Parte F, §37–§38)
+// ---------------------------------------------------------------------------
+
+function parseAsset(input: unknown, path: string): Asset {
+  const value = expectObject(input, path);
+  return {
+    id: readInteger(value, 'id', path),
+    name: readString(value, 'name', path),
+    sku: readString(value, 'sku', path),
+    category: readOneOf(value, 'category', path, ASSET_CATEGORIES),
+    office: readOneOf(value, 'office', path, OFFICES),
+    current_stock: readInteger(value, 'current_stock', path),
+  };
+}
+
+/** Respuesta 200 de `GET /inventory/products/{id}`. */
+export function normalizeAsset(input: unknown): Asset {
+  return parseAsset(input, 'response');
+}
+
+/** Respuesta 200 de `GET /inventory/products`: lista de activos. */
+export function normalizeAssetList(input: unknown): Asset[] {
+  if (!Array.isArray(input)) throw new UnexpectedResponseError('response', 'array', describeType(input));
+  return input.map((item, index) => parseAsset(item, `response[${index}]`));
+}
+
+function parseAssetSummary(source: JsonObject, path: string): AssetSummary {
+  const value = readObject(source, 'asset', path);
+  const assetPath = `${path}.asset`;
+  return {
+    id: readInteger(value, 'id', assetPath),
+    name: readString(value, 'name', assetPath),
+    sku: readString(value, 'sku', assetPath),
+  };
+}
+
+function parseOrder(input: unknown, path: string): InventoryOrder {
+  const value = expectObject(input, path);
+  const type = readOneOf(value, 'type', path, ORDER_TYPES);
+  const common = {
+    id: readInteger(value, 'id', path),
+    asset: parseAssetSummary(value, path),
+    quantity: readInteger(value, 'quantity', path),
+    office: readOneOf(value, 'office', path, OFFICES),
+    created_at: readString(value, 'created_at', path),
+    user_uuid: readString(value, 'user_uuid', path),
+  };
+  if (type === 'inbound') {
+    return { type, ...common, supplier: readString(value, 'supplier', path) };
+  }
+  return {
+    type,
+    ...common,
+    exit_type: readOneOf(value, 'exit_type', path, EXIT_TYPES),
+    assigned_to: readNullableString(value, 'assigned_to', path),
+  };
+}
+
+/** Respuesta 201 de `POST /inventory/orders/inbound`. */
+export function normalizeInboundOrder(input: unknown): InboundOrder {
+  const order = parseOrder(input, 'response');
+  if (order.type !== 'inbound') throw new UnexpectedResponseError('response.type', 'inbound', 'outbound');
+  return order;
+}
+
+/** Respuesta 201 de `POST /inventory/orders/outbound`. */
+export function normalizeOutboundOrder(input: unknown): OutboundOrder {
+  const order = parseOrder(input, 'response');
+  if (order.type !== 'outbound') throw new UnexpectedResponseError('response.type', 'outbound', 'inbound');
+  return order;
+}
+
+/** Respuesta 200 de `GET /inventory/orders`: entradas y salidas, distinguidas por `type`. */
+export function normalizeOrderList(input: unknown): InventoryOrder[] {
+  if (!Array.isArray(input)) throw new UnexpectedResponseError('response', 'array', describeType(input));
+  return input.map((item, index) => parseOrder(item, `response[${index}]`));
+}
+
+const INVENTORY_FIELDS: readonly InventoryField[] = ['asset_id', 'quantity', 'supplier', 'exit_type', 'assigned_to', 'office'];
+
+/**
+ * `detail` de un 422 del inventario → el campo de cada error (`null` si no es
+ * del formulario). El `msg` de la API se descarta: el servicio elige un texto
+ * propio en español por campo. Nunca lanza.
+ */
+export function normalizeInventoryValidationErrors(input: unknown): (InventoryField | null)[] {
+  return collectValidationErrors(input, (location) => (isOneOf(INVENTORY_FIELDS, location) ? location : null)).map(
+    (error) => error.field
+  );
 }

@@ -1,5 +1,5 @@
 // Reglas estáticas sobre el código de producción del backoffice (incidentes,
-// proveedores y gestor de incidencias; uis/backoffice/CLAUDE.md): `unknown` solo en services/normalizers.ts, nunca
+// proveedores, gestor de incidencias e inventario; uis/backoffice/CLAUDE.md): `unknown` solo en services/normalizers.ts, nunca
 // `any` ni aserciones de tipo, y ninguna API que lea el archivo, persista datos
 // o conserve errores originales. Se analiza el código sin comentarios.
 
@@ -74,6 +74,33 @@ describe('código de producción', () => {
       'types/incident-manager.ts',
     ]) {
       assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('incluye la integración del inventario (Hito 5)', () => {
+    for (const file of [
+      'lib/inventory-api-client.ts',
+      'lib/inventory-routes.ts',
+      'services/inventory.service.ts',
+      'types/inventory.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('el inventario usa su propio cliente, sin reserva a NEXT_PUBLIC_API_URL', () => {
+    const client = codeWithoutComments('lib/inventory-api-client.ts');
+    assert.match(client, /process\.env\.NEXT_PUBLIC_INVENTORY_API_URL/);
+    assert.doesNotMatch(client, /NEXT_PUBLIC_API_URL/);
+    const service = codeWithoutComments('services/inventory.service.ts');
+    assert.match(service, /inventoryApiClient/);
+    assert.doesNotMatch(service, /\bapiClient\b/);
+    // Ningún otro módulo nombra las rutas de la API: el servicio lo centraliza.
+    // lib/inventory-routes.ts se excluye: las páginas del brief se llaman igual
+    // que las rutas de la API, pero son rutas de navegación, no peticiones.
+    const allowed = ['services/inventory.service.ts', 'lib/inventory-routes.ts'];
+    for (const file of PRODUCTION_FILES.filter((path) => !allowed.includes(path))) {
+      assert.doesNotMatch(codeWithoutComments(file), /['`]\/inventory\/(products|orders)['`/]/, file);
     }
   });
 

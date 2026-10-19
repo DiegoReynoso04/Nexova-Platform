@@ -24,6 +24,8 @@ const config = {
     'lib/supplier-renewal.ts',
     'services/suppliers.service.ts',
     'services/incident-manager.service.ts',
+    // Inventario (Hito 5): cantidad y validadores de los formularios.
+    'services/inventory.service.ts',
   ],
 };
 

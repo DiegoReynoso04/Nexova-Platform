@@ -4,9 +4,37 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-19 — Frontend del inventario (`uis/backoffice`), F1: memory-bank, contrato, cliente y servicio
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-frontend`, creada desde `origin/main` en `8e5448e` (merge de la PR #21). Plan aprobado por el usuario: F1 (integración, sin UI), F2 (Activos, subnavegación y `/inventory` → `/inventory/products`), F3 (Entrada), F4 (Salida), F5 (Historial) y F6 (cierre y restauración de la demo).
+
+- **Memory-bank:** sincronizado con el merge de la PR #21 (`8e5448e`, 2026-10-19). El inventario ya no figura como «pendiente de PR» ni en una rama sin integrar; `origin/main` se verificó en `8e5448e` (también la PR #20, `ef1e083`).
+- **`uis/backoffice/CLAUDE.md`:** quinta pieza (`/inventory/*`, autorizada por el usuario) y su sección:
+  - páginas y navegación (un enlace «Inventario» en la cabecera y una subnavegación en `app/inventory/layout.tsx`);
+  - `NEXT_PUBLIC_INVENTORY_API_URL` sin reserva;
+  - vocabulario y etiquetas del CONTEXT;
+  - formularios (oficina del activo, números, `?asset_id=`, cantidad bloqueada hasta conocer el stock, advertencia que no bloquea);
+  - la excepción de errores acotada a `/inventory`: el `detail` de texto de los 4xx/5xx se muestra; sin cuerpo legible, textos fijos; 422 con texto propio por campo; 401 como siempre.
+- **Código** (sin UI todavía):
+  - `types/inventory.ts`: contrato y vocabulario.
+  - `services/normalizers.ts`: activos, órdenes discriminadas por `type`, campos de los 422.
+  - `lib/inventory-api-client.ts`: el mismo `createApiClient` con la base URL de `NEXT_PUBLIC_INVENTORY_API_URL`.
+  - `lib/api-client.ts`: `ApiConfigError` nombra la variable del cliente (mensaje que la UI no muestra).
+  - `services/inventory.service.ts` y `lib/inventory-routes.ts`.
+  - `.env.example` con la variable nueva.
+- **Tests:**
+  - `node:test`: `inventory-contract` (vocabulario igual al CONTEXT y a `vocabulary.py`, límites, las 4 rutas protegidas) y `inventory.service` (Bearer en las 5 operaciones, variable sin reserva, números, oficina del activo, `assigned_to: null` en un consumo, y todos los errores, incluidos 500/503 con `detail` y el `detail` que no es texto); dos reglas nuevas en `production-source`.
+  - Jest: `__tests__/utils/inventory.service.test.ts` (`parseQuantity` y validadores).
+- **Mutaciones**, todas detectadas y deshechas: sin Bearer; `quantity` como texto; `office` del formulario en vez del activo (en la entrada y, tras reforzar el test con un activo de Miami, en la salida); `insufficient_stock` sin `field`; reserva a `NEXT_PUBLIC_API_URL`.
+- **Validación** (línea base → F1): `build` correcto; `tsc` y `lint` sin errores; `node:test` 344 → 386; Jest 161 → 187.
+- **Brief literal versionado** en `docs/inventory-frontend-brief.md`, con una nota de equivalencias («BRIEFING.md» = `README.md` raíz + CONTEXT; `/backoffice/inventory/...` = `/inventory/...`), y enlazado desde `uis/backoffice/CLAUDE.md`.
+- **Diferencia con el brief, registrada:** el brief pide extraer el mensaje del cuerpo en cualquier 4xx/5xx; por decisión del usuario, los 422 muestran un texto propio en español por campo (el resto de 4xx/5xx con `detail` de texto lo muestran).
+
+---
+
 ## 2026-10-18 — Hito 5, F5: documentación de cierre y verificación final (hito hecho)
 
-**Estado: hecho y verificado, sin comitear** (el usuario revisa antes del commit), en `feature/inventory-orm`, sobre F4 (`f004944`). **El Hito 5 (F1–F5) está hecho.** Pendiente: commit de F5, push y PR, que hace el usuario.
+**Estado: hecho y verificado, sin comitear** (el usuario revisa antes del commit), en `feature/inventory-orm`, sobre F4 (`f004944`). **El Hito 5 (F1–F5) está hecho.** ~~Pendiente: commit de F5, push y PR, que hace el usuario.~~ *Corregido el 2026-10-19: comiteado, PR #21 integrada en `main` (merge `8e5448e`).*
 
 - **Documentación:**
   - `services/api/SPECS.md`: Parte F (§34–§40) con requisitos, decisiones D1–D11 y F2–F4, equivalencia con los nombres del enunciado, contrato, errores y esquema; referencias en la cabecera, §4 y §7.
