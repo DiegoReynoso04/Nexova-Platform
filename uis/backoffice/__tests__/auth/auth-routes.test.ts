@@ -54,6 +54,16 @@ describe('routeAccess', () => {
     expect(routeAccess('/', session)).toBe(expected);
   });
 
+  test.each(['/inventory', '/inventory/products', '/inventory/orders/inbound', '/inventory/orders/outbound', '/inventory/orders'])(
+    'the inventory page %s redirects to the login without a session and renders with one',
+    (path) => {
+      expect(isPublicPath(path)).toBe(false);
+      expect(isOpenPath(path)).toBe(false);
+      expect(routeAccess(path, 'anonymous')).toBe('redirect_login');
+      expect(routeAccess(path, 'authenticated')).toBe('render');
+    }
+  );
+
   test('an unknown or differently cased path is protected by default', () => {
     expect(routeAccess('/LOGIN', 'anonymous')).toBe('redirect_login');
     expect(routeAccess('/vista-nueva', 'anonymous')).toBe('redirect_login');

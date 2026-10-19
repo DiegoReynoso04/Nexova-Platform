@@ -56,6 +56,7 @@ import {
   type AssetSummary,
   type InboundOrder,
   type InventoryField,
+  API_MESSAGE_MAX_LENGTH,
   type InventoryOrder,
   type OutboundOrder,
 } from '@/types/inventory';
@@ -576,13 +577,33 @@ export function normalizeOrderList(input: unknown): InventoryOrder[] {
 
 const INVENTORY_FIELDS: readonly InventoryField[] = ['asset_id', 'quantity', 'supplier', 'exit_type', 'assigned_to', 'office'];
 
+/** Un error de un 422 del inventario tal como lo lee el frontend. */
+export interface InventoryValidationIssue {
+  /** `null` si `loc` no es un campo del formulario. */
+  field: InventoryField | null;
+  /** `msg` de la API utilizable (texto plano, sin prefijo, ≤ API_MESSAGE_MAX_LENGTH), o `null`. */
+  apiMessage: string | null;
+}
+
 /**
- * `detail` de un 422 del inventario → el campo de cada error (`null` si no es
- * del formulario). El `msg` de la API se descarta: el servicio elige un texto
- * propio en español por campo. Nunca lanza.
+ * `detail` de un 422 del inventario → campo y `msg` de cada error. A
+ * diferencia de `collectValidationErrors`, un error sin `msg` de texto se
+ * conserva (con `apiMessage: null`): su campo sigue siendo útil. El `msg` se
+ * descarta si no es texto, está vacío o supera API_MESSAGE_MAX_LENGTH. Nunca lanza.
  */
-export function normalizeInventoryValidationErrors(input: unknown): (InventoryField | null)[] {
-  return collectValidationErrors(input, (location) => (isOneOf(INVENTORY_FIELDS, location) ? location : null)).map(
-    (error) => error.field
-  );
+export function normalizeInventoryValidationErrors(input: unknown): InventoryValidationIssue[] {
+  if (!isObject(input) || !Array.isArray(input.detail)) return [];
+  const issues: InventoryValidationIssue[] = [];
+  for (const item of input.detail) {
+    if (!isObject(item) || !Array.isArray(item.loc)) continue;
+    const location = item.loc[0] === 'body' ? item.loc[1] : undefined;
+    const field = isOneOf(INVENTORY_FIELDS, location) ? location : null;
+    let apiMessage: string | null = null;
+    if (typeof item.msg === 'string') {
+      const text = (item.msg.startsWith(PYDANTIC_VALUE_ERROR_PREFIX) ? item.msg.slice(PYDANTIC_VALUE_ERROR_PREFIX.length) : item.msg).trim();
+      if (text !== '' && text.length <= API_MESSAGE_MAX_LENGTH) apiMessage = text;
+    }
+    issues.push({ field, apiMessage });
+  }
+  return issues;
 }

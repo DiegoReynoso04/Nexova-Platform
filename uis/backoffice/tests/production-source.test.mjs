@@ -104,6 +104,74 @@ describe('código de producción', () => {
     }
   });
 
+  test('incluye la página de activos del inventario y su navegación (F2)', () => {
+    for (const file of [
+      'app/inventory/layout.tsx',
+      'app/inventory/page.tsx',
+      'app/inventory/products/page.tsx',
+      'components/inventory/asset-list-view.tsx',
+      'components/inventory/asset-table.tsx',
+      'components/inventory/inventory-error.tsx',
+      'components/inventory/inventory-nav.tsx',
+      'components/inventory/stock-level-badge.tsx',
+      'hooks/use-inventory-assets.ts',
+      'lib/inventory-error-copy.ts',
+      'lib/stock-level.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('las páginas del inventario son Server Components; sus vistas, Client Components que solo usan hooks', () => {
+    for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('app/inventory/'))) {
+      assert.doesNotMatch(codeWithoutComments(file), /^'use client';/, `${file} debe ser Server Component`);
+    }
+    assert.match(codeWithoutComments('app/inventory/products/page.tsx'), /export const metadata/);
+    for (const file of PRODUCTION_FILES.filter((path) => /^components\/inventory\/.+-view\.tsx$/.test(path))) {
+      const code = codeWithoutComments(file);
+      assert.match(code, /^'use client';/, `${file} debe ser Client Component`);
+      assert.match(code, /from '@\/hooks\/use-inventory-/, `${file} sin su hook`);
+    }
+    for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('components/inventory/') || path.startsWith('app/inventory/'))) {
+      assert.doesNotMatch(codeWithoutComments(file), /services\/inventory\.service/, `${file} llama al servicio sin pasar por su hook`);
+    }
+  });
+
+  test('/inventory redirige a Activos y el layout lleva la subnavegación', () => {
+    const index = codeWithoutComments('app/inventory/page.tsx');
+    assert.match(index, /import \{ redirect \} from 'next\/navigation'/);
+    assert.match(index, /redirect\(INVENTORY_PRODUCTS_PATH\)/);
+    assert.match(codeWithoutComments('app/inventory/layout.tsx'), /<InventoryNav \/>/);
+    const nav = codeWithoutComments('components/inventory/inventory-nav.tsx');
+    for (const label of ['Activos', 'Entrada de activos', 'Salida de activos', 'Historial']) {
+      assert.match(nav, new RegExp(`label: '${label}'`), label);
+    }
+    assert.match(nav, /<NavLink /);
+  });
+
+  test('la cabecera lleva un solo enlace «Inventario», activo en todo /inventory', () => {
+    const header = codeWithoutComments('components/auth/account-nav.tsx');
+    assert.match(header, /<NavLink href=\{INVENTORY_PRODUCTS_PATH\} activePrefix=\{INVENTORY_PATH\}>\s*Inventario\s*<\/NavLink>/);
+    assert.equal((header.match(/INVENTORY_[A-Z_]+_PATH\}/g) ?? []).length, 1);
+    assert.doesNotMatch(header, /Entrada de activos|Salida de activos|Historial/);
+  });
+
+  test('cada fila de activos enlaza a registrar una entrada y una salida de ese activo', () => {
+    const table = codeWithoutComments('components/inventory/asset-table.tsx');
+    assert.match(table, /href=\{inboundOrderHref\(asset\.id\)\}[^>]*>\s*Registrar entrada/);
+    assert.match(table, /href=\{outboundOrderHref\(asset\.id\)\}[^>]*>\s*Registrar salida/);
+    for (const column of ['Nombre', 'SKU', 'Categoría', 'Oficina', 'Stock actual']) {
+      assert.match(table, new RegExp(`>${column}</th>`), column);
+    }
+    assert.match(table, /<StockLevelBadge currentStock=\{asset\.current_stock\} \/>/);
+  });
+
+  test('la UI del inventario usa el vocabulario del CONTEXT («activos», no «productos»)', () => {
+    for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('components/inventory/') || path.startsWith('app/inventory/'))) {
+      assert.doesNotMatch(codeWithoutComments(file), /\b[Pp]roductos?\b/, file);
+    }
+  });
+
   test('las vistas del gestor son Client Components y sus páginas, Server Components', () => {
     for (const file of ['components/incident-manager/incident-board-view.tsx', 'components/incident-manager/incident-form-view.tsx']) {
       assert.match(codeWithoutComments(file), /^'use client';/, file);

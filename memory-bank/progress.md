@@ -4,6 +4,44 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-20 — Frontend del inventario, F2: Activos (`/inventory/products`) y navegación
+
+**Estado: hecho y validado; comiteado tras la revisión del usuario**, en `feature/inventory-frontend`, sobre F1 (`0e0f133`) y el `style(api)` (`2dccef0`). Sin pruebas que escriban en Supabase: el usuario hace las del navegador.
+
+- **Antes, ya comiteado:**
+  - F1 + el brief literal (`docs/inventory-frontend-brief.md`), commit `0e0f133`;
+  - la unión de los imports de `typing` en `services/api/app/modules/inventory/router.py`, commit `2dccef0`. Las suites de `services/api` dan 409 y 612 antes y después; pytest cuenta un subtest menos, porque `test_no_session_is_created_at_module_level` abre uno por sentencia de nivel de módulo.
+- **Navegación:**
+  - `app/inventory/layout.tsx` con `components/inventory/inventory-nav.tsx` (Activos · Entrada de activos · Salida de activos · Historial, con `aria-current` vía `NavLink`);
+  - un solo enlace «Inventario» en la cabecera, marcado en todo `/inventory` (prop nueva `activePrefix` de `NavLink`);
+  - `app/inventory/page.tsx` redirige a `/inventory/products` con `redirect()` de Next 16 (Server Component).
+- **`/inventory/products`:**
+  - página Server Component → `asset-list-view.tsx` → `hooks/use-inventory-assets.ts` (reducer, sesión y hook);
+  - tabla Nombre / SKU / Categoría / Oficina / Stock actual (número + `StockLevelBadge` con color, icono y texto) y, en cada fila, «Registrar entrada» y «Registrar salida» con `?asset_id=`;
+  - cuatro estados (cargando, error con «Reintentar», vacío sin tabla, datos); `relative overflow-x-auto`.
+- **Errores:** los textos se movieron a `lib/inventory-error-copy.ts` (módulo puro y probado). Un `api_error` muestra el `detail` de la API bajo un título en español; el resto, textos fijos.
+- **`lib/stock-level.ts`:** 0 = Agotado; de 1 a 5 = Bajo; más de 5 = Suficiente (D6), documentado.
+- **Tests:**
+  - Jest: `stock-level` (0, 1, 5, 6…) y las rutas `/inventory/*` en `auth-routes`;
+  - `node:test`: `use-inventory.test.mjs` (los cuatro estados, reintento, carrera con abort y con un servicio que ignora la cancelación, desmontaje y los textos de error);
+  - `production-source`: estructura, Server/Client Components, redirección, subnavegación, un solo enlace en la cabecera, las acciones de cada fila y nada de «productos» en la UI.
+- **Mutaciones:**
+  - detectadas: umbrales de `stockLevel` (`<` y `0`); no descartar respuestas antiguas; no abortar la carga anterior; las dos acciones de la fila a la entrada; «Inventario» sin `activePrefix`; el error sin su `detail`; la vista sin `'use client'`;
+  - **no detectada, equivalente:** quitar la guarda `active` de `emit` (todos los que llaman ya comprueban `active`).
+- **Ajustes de la revisión visual del usuario:**
+  - el SKU nunca se parte (`whitespace-nowrap`);
+  - el número y el indicador del stock van en una línea en todas las filas;
+  - un solo título: el `h1` de la página, que pasa su id a la sección (`aria-labelledby`) como prop, porque una constante importada de un módulo `'use client'` en un Server Component no es el texto.
+- **Comprobado en el navegador** (con una cuenta de prueba local `ui-check-…@example.invalid`, creada en `/register` y guardada en `services/api/data/auth.json`; solo lecturas de Supabase):
+  - a 1280 px y a 375 px no hay scroll horizontal en la página (1265 = 1265 y 375 = 375);
+  - a 375 px la tabla se desplaza dentro de su contenedor (704 frente a 342) y la subnavegación cabe;
+  - el SKU ocupa una línea y la celda del stock mide lo mismo en las 6 filas;
+  - sin sesión, `/inventory/products` lleva a `/login`.
+- **422, opción 3 del usuario:** `InventoryFieldError.apiMessage` lleva el `msg` de la API (sin prefijo, texto no vacío de hasta 300 caracteres) para mostrarlo debajo del texto propio. Lo cubren 3 tests nuevos; las mutaciones (sin `apiMessage`, sin quitar el prefijo, sin límite) se detectan.
+- **Validación** (F1 → F2): `build` correcto, con `/inventory` y `/inventory/products`; `tsc` y `lint` sin errores; `node:test` 386 → 416; Jest 187 → 201.
+
+---
+
 ## 2026-10-19 — Frontend del inventario (`uis/backoffice`), F1: memory-bank, contrato, cliente y servicio
 
 **Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-frontend`, creada desde `origin/main` en `8e5448e` (merge de la PR #21). Plan aprobado por el usuario: F1 (integración, sin UI), F2 (Activos, subnavegación y `/inventory` → `/inventory/products`), F3 (Entrada), F4 (Salida), F5 (Historial) y F6 (cierre y restauración de la demo).
@@ -28,7 +66,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 - **Mutaciones**, todas detectadas y deshechas: sin Bearer; `quantity` como texto; `office` del formulario en vez del activo (en la entrada y, tras reforzar el test con un activo de Miami, en la salida); `insufficient_stock` sin `field`; reserva a `NEXT_PUBLIC_API_URL`.
 - **Validación** (línea base → F1): `build` correcto; `tsc` y `lint` sin errores; `node:test` 344 → 386; Jest 161 → 187.
 - **Brief literal versionado** en `docs/inventory-frontend-brief.md`, con una nota de equivalencias («BRIEFING.md» = `README.md` raíz + CONTEXT; `/backoffice/inventory/...` = `/inventory/...`), y enlazado desde `uis/backoffice/CLAUDE.md`.
-- **Diferencia con el brief, registrada:** el brief pide extraer el mensaje del cuerpo en cualquier 4xx/5xx; por decisión del usuario, los 422 muestran un texto propio en español por campo (el resto de 4xx/5xx con `detail` de texto lo muestran).
+- **422 (corregido el 2026-10-20, opción 3 del usuario):** junto a cada campo, un texto propio en español y, debajo, el `msg` de la API si es utilizable. Así se cumple también el «extrae el mensaje del cuerpo» del brief.
 
 ---
 

@@ -143,11 +143,42 @@ describe('normalizadores del inventario', () => {
     }
   });
 
-  test('422: solo el campo de cada error, nunca el msg de la API', () => {
-    const body = validationBody([['body', 'assigned_to'], LEAK], [['body', 'quantity'], 'x'], [['body'], 'y'], [['query', 'x'], 'z']);
-    assert.deepEqual(normalizeInventoryValidationErrors(body), ['assigned_to', 'quantity', null, null]);
+  test('422: el campo de cada error y su msg utilizable, sin el prefijo de Pydantic', () => {
+    const body = validationBody(
+      [['body', 'assigned_to'], "Value error, assigned_to is required when exit_type is 'allocation'"],
+      [['body', 'quantity'], '  Input should be greater than or equal to 1  '],
+      [['body'], 'y'],
+      [['query', 'x'], 'z']
+    );
+    assert.deepEqual(normalizeInventoryValidationErrors(body), [
+      { field: 'assigned_to', apiMessage: "assigned_to is required when exit_type is 'allocation'" },
+      { field: 'quantity', apiMessage: 'Input should be greater than or equal to 1' },
+      { field: null, apiMessage: 'y' },
+      { field: null, apiMessage: 'z' },
+    ]);
     assert.deepEqual(normalizeInventoryValidationErrors({}), []);
     assert.deepEqual(normalizeInventoryValidationErrors(null), []);
+  });
+
+  test('422: un msg que no es texto, vacío o de más de 300 caracteres se descarta; el campo se conserva', () => {
+    const body = {
+      code: 'validation_error',
+      detail: [
+        { loc: ['body', 'quantity'], msg: { nested: LEAK }, type: 'x' },
+        { loc: ['body', 'supplier'], msg: '   ', type: 'x' },
+        { loc: ['body', 'assigned_to'], msg: 'x'.repeat(301), type: 'x' },
+        { loc: ['body', 'exit_type'], type: 'x' },
+        { loc: ['body', 'office'], msg: 'y'.repeat(300), type: 'x' },
+        { msg: 'sin loc' },
+      ],
+    };
+    assert.deepEqual(normalizeInventoryValidationErrors(body), [
+      { field: 'quantity', apiMessage: null },
+      { field: 'supplier', apiMessage: null },
+      { field: 'assigned_to', apiMessage: null },
+      { field: 'exit_type', apiMessage: null },
+      { field: 'office', apiMessage: 'y'.repeat(300) },
+    ]);
   });
 });
 
@@ -329,17 +360,57 @@ describe('servicio del inventario: errores', () => {
     await assert.rejects(service.listAssets(), expectUiError({ kind: 'api_error', status: 400, code: null, detail: 'Bad things', field: null }));
   });
 
-  test('422: texto propio en español por campo, sin el msg de la API', async () => {
+  test('422: texto propio en español por campo y, debajo, el msg de la API (opción 3)', async () => {
     const { service } = serviceWith(() =>
-      jsonResponse(422, validationBody([['body', 'assigned_to'], LEAK], [['body', 'quantity'], LEAK], [['body', 'quantity'], LEAK]))
+      jsonResponse(
+        422,
+        validationBody(
+          [['body', 'assigned_to'], "Value error, assigned_to is required when exit_type is 'allocation'"],
+          [['body', 'quantity'], 'Input should be a valid integer'],
+          [['body', 'quantity'], 'Input should be greater than or equal to 1']
+        )
+      )
     );
     await assert.rejects(service.createOutboundOrder(outboundValues()), (error) => {
       const { uiError } = error;
       assert.equal(uiError.kind, 'validation');
       assert.equal(uiError.source, 'api');
-      assert.deepEqual(uiError.errors.map((item) => item.field), ['assigned_to', 'quantity']);
-      assert.match(uiError.errors[0].message, /^Indica a quién se asigna/);
-      assert.equal(JSON.stringify(uiError).includes(LEAK), false);
+      assert.deepEqual(uiError.errors, [
+        {
+          field: 'assigned_to',
+          message: 'Indica a quién se asigna el activo (máximo 200 caracteres).',
+          apiMessage: "assigned_to is required when exit_type is 'allocation'",
+        },
+        {
+          field: 'quantity',
+          message: 'Introduce una cantidad entera entre 1 y 2.147.483.647.',
+          apiMessage: 'Input should be a valid integer',
+        },
+      ]);
+      return true;
+    });
+  });
+
+  test('422 sin msg utilizable: solo el texto propio, sin apiMessage', async () => {
+    const { service } = serviceWith(() =>
+      jsonResponse(422, { code: 'validation_error', detail: [{ loc: ['body', 'supplier'], msg: { nested: LEAK }, type: 'x' }] })
+    );
+    await assert.rejects(service.createInboundOrder(inboundValues()), (error) => {
+      assert.deepEqual(error.uiError.errors, [{ field: 'supplier', message: 'Indica el proveedor (máximo 200 caracteres).' }]);
+      assert.equal(JSON.stringify(error.uiError).includes(LEAK), false);
+      return true;
+    });
+  });
+
+  test('422 con varios errores en un campo: se usa el primer msg utilizable', async () => {
+    const { service } = serviceWith(() =>
+      jsonResponse(
+        422,
+        validationBody([['body', 'quantity'], ''], [['body', 'quantity'], 'Input should be a valid integer'], [['body', 'quantity'], 'otro'])
+      )
+    );
+    await assert.rejects(service.createInboundOrder(inboundValues()), (error) => {
+      assert.deepEqual(error.uiError.errors.map((item) => item.apiMessage), ['Input should be a valid integer']);
       return true;
     });
   });

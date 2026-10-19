@@ -14,8 +14,8 @@
 //   `insufficient_stock` va al campo `quantity`.
 // - Sin cuerpo legible (no es JSON, otra forma o un `detail` que no es texto)
 //   → los textos fijos de siempre (`request_invalid` / `server_error`).
-// - 422 → un texto propio en español por campo, según `loc` (el `msg` de la
-//   API no se muestra).
+// - 422 → un texto propio en español por campo, según `loc`, y debajo el `msg`
+//   de la API si es utilizable (`apiMessage`; opción 3 del usuario).
 // - 401 → `session_expired` (el cliente ya borró el token).
 //
 // Validación en cliente (UX, antes de enviar; si no pasa, no hay petición):
@@ -216,13 +216,18 @@ function validationMessage(field: InventoryField | null, exitType: ExitType | nu
 async function failFromResponse(response: ApiResponse, exitType: ExitType | null): Promise<never> {
   const { status } = response;
   if (status === 422) {
-    const fields = (await readJsonOrNull(response, normalizeInventoryValidationErrors)) ?? [];
-    const unique = [...new Set(fields)];
-    throw fail(
-      unique.length > 0
-        ? { kind: 'validation', source: 'api', errors: unique.map((field) => ({ field, message: validationMessage(field, exitType) })) }
-        : { kind: 'request_invalid' }
-    );
+    const issues = (await readJsonOrNull(response, normalizeInventoryValidationErrors)) ?? [];
+    // Un error por campo, en el orden de la API; el `msg` es el primero utilizable de ese campo.
+    const byField = new Map<InventoryField | null, string | null>();
+    for (const issue of issues) {
+      if (!byField.has(issue.field) || byField.get(issue.field) === null) byField.set(issue.field, issue.apiMessage);
+    }
+    const errors: InventoryFieldError[] = [...byField].map(([field, apiMessage]) => {
+      const error: InventoryFieldError = { field, message: validationMessage(field, exitType) };
+      if (apiMessage !== null) error.apiMessage = apiMessage;
+      return error;
+    });
+    throw fail(errors.length > 0 ? { kind: 'validation', source: 'api', errors } : { kind: 'request_invalid' });
   }
   if (status >= 400) {
     // `normalizeApiErrorBody` solo deja `detail` si es texto: un objeto o una lista se descartan.

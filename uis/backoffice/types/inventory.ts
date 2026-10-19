@@ -98,13 +98,20 @@ export type InventoryField = 'asset_id' | 'quantity' | 'supplier' | 'exit_type' 
 
 /**
  * Un error de validación, del cliente o de un 422 de la API. `message` es
- * siempre un texto propio en español (nunca el `msg` de la API); `field` es
- * `null` si no corresponde a un campo del formulario.
+ * siempre un texto propio en español; `field` es `null` si no corresponde a un
+ * campo del formulario. En un 422, `apiMessage` es el `msg` de la API (sin el
+ * prefijo `Value error, `, solo si es texto no vacío de hasta 300 caracteres),
+ * que la UI muestra debajo, como texto secundario plano (decisión del usuario,
+ * opción 3: el brief pide mostrar el mensaje del cuerpo).
  */
 export interface InventoryFieldError {
   field: InventoryField | null;
   message: string;
+  apiMessage?: string;
 }
+
+/** Longitud máxima del `msg` de un 422 que se muestra; uno más largo se descarta. */
+export const API_MESSAGE_MAX_LENGTH = 300;
 
 /** Errores que la UI del inventario sabe presentar. */
 export type InventoryUiError =
