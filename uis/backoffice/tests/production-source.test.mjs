@@ -292,6 +292,72 @@ describe('código de producción', () => {
     assert.match(form, /<Button type="submit" isLoading=\{isSubmitting\}>/);
   });
 
+  test('incluye el historial del inventario y sus piezas (F5)', () => {
+    for (const file of [
+      'app/inventory/orders/page.tsx',
+      'components/inventory/order-history-view.tsx',
+      'components/inventory/order-table.tsx',
+      'components/inventory/order-type-badge.tsx',
+      'hooks/use-inventory-orders.ts',
+      'lib/order-format.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+    assert.match(codeWithoutComments('app/inventory/orders/page.tsx'), /export const metadata/);
+  });
+
+  test('historial: la vista solo usa su hook y nadie hace fetch', () => {
+    const view = codeWithoutComments('components/inventory/order-history-view.tsx');
+    assert.match(view, /^'use client';/);
+    assert.match(view, /from '@\/hooks\/use-inventory-orders'/);
+    assert.match(view, /<OrderTable orders=\{orders\} \/>/);
+    assert.match(view, /Todavía no hay entradas ni salidas\./);
+    assert.match(view, /<InventoryError error=\{load\.error\} \/>[\s\S]*Reintentar/);
+    for (const file of ['components/inventory/order-history-view.tsx', 'components/inventory/order-table.tsx', 'components/inventory/order-type-badge.tsx']) {
+      assert.doesNotMatch(codeWithoutComments(file), /\bfetch\b|lib\/(inventory-)?api-client|inventoryApiClient/, file);
+    }
+    // El hook solo toma de lib/api-client.ts el tipo de error de la cancelación (como los de F2–F4).
+    assert.doesNotMatch(codeWithoutComments('hooks/use-inventory-orders.ts'), /\bfetch\b|inventory-api-client|inventoryApiClient/);
+    assert.match(codeWithoutComments('hooks/use-inventory-orders.ts'), /import \{ InventoryServiceError, listOrders \} from '@\/services\/inventory\.service';/);
+  });
+
+  test('historial: las columnas del brief (nombre, cantidad, tipo, fecha y user_uuid)', () => {
+    const table = codeWithoutComments('components/inventory/order-table.tsx');
+    for (const column of ['Tipo', 'Activo', 'Cantidad', 'Oficina', 'Detalle', 'Fecha', 'Usuario']) {
+      assert.match(table, new RegExp(`>${column}</th>`), column);
+    }
+    assert.match(table, /<OrderTypeBadge type=\{order\.type\} \/>/);
+    assert.match(table, /\{order\.asset\.name\}/);
+    assert.match(table, /\{order\.asset\.sku\}/);
+    assert.match(table, /\{order\.quantity\}/);
+    assert.match(table, /\{orderDetail\(order\)\}/);
+    // La fecha legible, con el ISO completo en el atributo dateTime.
+    assert.match(table, /<time dateTime=\{order\.created_at\}>\{formatOrderDate\(order\.created_at\)\}<\/time>/);
+    assert.equal((table.match(/order\.created_at/g) ?? []).length, 2);
+    // El user_uuid completo, en monoespaciada y sin desbordar.
+    assert.match(table, /<td className="[^"]*\bfont-mono\b[^"]*\bbreak-all\b[^"]*">\{order\.user_uuid\}<\/td>/);
+    assert.match(table, /className="relative overflow-x-auto/);
+    const badge = codeWithoutComments('components/inventory/order-type-badge.tsx');
+    assert.match(badge, /<span aria-hidden="true">\{icon\}<\/span>\s*\{label\}/);
+    const classes = badge.match(/inbound: '([^']+)',\s*outbound: '([^']+)'/);
+    assert.ok(classes, 'colores por tipo');
+    assert.notEqual(classes[1], classes[2], 'entrada y salida con el mismo color');
+  });
+
+  test('historial: de solo lectura, sin acciones de editar ni borrar', () => {
+    for (const file of ['components/inventory/order-history-view.tsx', 'components/inventory/order-table.tsx', 'components/inventory/order-type-badge.tsx']) {
+      const code = codeWithoutComments(file);
+      assert.doesNotMatch(code, /\b(Editar|Borrar|Eliminar|Modificar)\b/i, file);
+      assert.doesNotMatch(code, /\b(delete|patch|put)\w*\(/i, file);
+      assert.doesNotMatch(code, /<(input|select|textarea|form)\b/, file);
+    }
+    const table = codeWithoutComments('components/inventory/order-table.tsx');
+    assert.doesNotMatch(table, /<Button\b|<button\b|<Link\b|<a\b|onClick/);
+    // El único botón de la vista es «Reintentar».
+    const view = codeWithoutComments('components/inventory/order-history-view.tsx');
+    assert.equal((view.match(/<Button\b/g) ?? []).length, 1);
+  });
+
   test('la UI del inventario usa el vocabulario del CONTEXT («activos», no «productos»)', () => {
     for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('components/inventory/') || path.startsWith('app/inventory/'))) {
       assert.doesNotMatch(codeWithoutComments(file), /\b[Pp]roductos?\b/, file);

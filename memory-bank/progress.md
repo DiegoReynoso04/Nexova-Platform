@@ -4,6 +4,41 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-20 — Frontend del inventario, F5: Historial (`/inventory/orders`)
+
+**Estado: hecho, verificado por el usuario y comiteado**, en `feature/inventory-frontend`, sobre F4 (`a591686`). El agente no ha escrito en Supabase ni ha creado cuentas.
+
+- **Verificación del usuario en el navegador, con Supabase real (2026-10-20), todo correcta:**
+  - 9 órdenes: las 7 del seed más su entrada de 3 y su salida de 1 de NXV-PER-001, arriba del todo;
+  - insignias Entrada/Salida distintas; activo con nombre y SKU; cantidad, oficina y detalle (proveedor / «Asignación → …» / «Consumo»); fecha legible en español y el `user_uuid` completo en todas;
+  - sin botones de editar ni borrar;
+  - con la API parada, error con «Reintentar»; al arrancarla, la tabla carga;
+  - sin sesión, `/inventory/orders` lleva a `/login`.
+
+- **Arquitectura:** `app/inventory/orders/page.tsx` (Server Component con metadata) → `components/inventory/order-history-view.tsx` (`'use client'`) → `hooks/use-inventory-orders.ts` (mismo patrón que `use-inventory-assets`: reducer, `ordersView`, sesión con abort y contador, y hook) → `listOrders`.
+- **Tabla (`order-table.tsx`), de solo lectura y en el orden de la API** (la más reciente primero). Las columnas:
+  - Tipo: `order-type-badge.tsx`, con icono, texto y color distintos (↓ Entrada en verde, ↑ Salida en azul);
+  - Activo: nombre y SKU;
+  - Cantidad y Oficina;
+  - Detalle: «Proveedor: …» en una entrada; «Asignación → …» o «Consumo» en una salida;
+  - Fecha: `Intl.DateTimeFormat('es-ES', { dateStyle: 'medium', timeStyle: 'short' })` en la zona del navegador, dentro de `<time dateTime>` con el ISO completo;
+  - Usuario: el `user_uuid` completo, en monoespaciada y con `break-all`.
+  - La clave de cada fila lleva el tipo, porque entradas y salidas tienen ids independientes.
+- **`lib/order-format.ts`:** `ORDER_TYPE_BADGES`, `formatOrderDate` (una fecha que no se puede interpretar se muestra tal cual) y `orderDetail`.
+- **Estados:** cargando; vacío («Todavía no hay entradas ni salidas.»); error con el `detail` de la API y «Reintentar»; datos, con el contador de órdenes (solo con datos: en el estado vacío no se muestra «0 órdenes»). Sin ninguna acción de editar ni borrar.
+- **Tests:**
+  - Jest: `__tests__/utils/order-format.test.ts`, en la cobertura (insignias distintas, fecha en `Europe/Madrid` y `America/New_York`, cambio de día, fecha no válida, los tres textos de Detalle);
+  - `node:test`: `tests/use-inventory-orders.test.mjs` (los cuatro estados, con el 503 a través del servicio y el cliente reales; reintento; un fallo tras datos; recarga con abort; servicio que ignora la cancelación; desmontaje);
+  - `production-source`: piezas; la vista solo usa su hook y nadie hace `fetch` (el hook solo toma `ApiAbortError` de `lib/api-client.ts`, como los de F2–F4); columnas del brief; `<time dateTime>`; `user_uuid` en monoespaciada con `break-all`; `relative overflow-x-auto`; colores distintos por tipo; ningún botón, enlace, formulario ni texto de editar o borrar en la tabla.
+- **Mutaciones (7, todas detectadas y deshechas):** sin `user_uuid`; la misma insignia (texto e icono, y color); la fecha en ISO bruto (tabla y formato); un botón «Borrar»; sin descartar la respuesta tardía.
+- **Comprobado en el navegador integrado** con un `fetch` falso dentro de la página (sin API real, sin Supabase y sin cuentas; el token falso se borró al terminar):
+  - tres órdenes en el orden recibido, con los tres tipos de Detalle y fechas locales (`Europe/Madrid`: 23:30Z → «20 oct 2026, 1:30»);
+  - estado vacío, error 503 con su `detail` y «Reintentar», que recupera los datos;
+  - a 375 px no hay scroll horizontal en la página (375 = 375) y la tabla se desplaza en su contenedor (896 frente a 342).
+- **Validación** (F4 → F5): `build` correcto, con `○ /inventory/orders`; `tsc` y `lint` sin errores; `node:test` 473 → 491; Jest 214 → 222.
+
+---
+
 ## 2026-10-20 — Frontend del inventario, F4: Salida de activos (`/inventory/orders/outbound`)
 
 **Estado: hecho, revisado por el usuario y comiteado**, en `feature/inventory-frontend`, sobre F3 (`064a569`). El agente no ha registrado salidas en Supabase ni ha creado cuentas.

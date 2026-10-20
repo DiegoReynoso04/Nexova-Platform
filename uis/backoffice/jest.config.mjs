@@ -28,6 +28,7 @@ const config = {
     'services/inventory.service.ts',
     'lib/stock-level.ts',
     'lib/stock-check.ts',
+    'lib/order-format.ts',
   ],
 };
 
