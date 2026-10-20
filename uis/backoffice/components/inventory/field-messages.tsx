@@ -8,12 +8,14 @@ export interface FieldMessagesProps {
   /** Id que el campo enlaza con `aria-describedby`. */
   id: string;
   messages: readonly FieldMessage[];
+  /** Se anuncia al aparecer (`role="alert"`): p. ej., el 400 de stock insuficiente junto a Cantidad. */
+  alert?: boolean;
 }
 
-export function FieldMessages({ id, messages }: FieldMessagesProps) {
+export function FieldMessages({ id, messages, alert = false }: FieldMessagesProps) {
   if (messages.length === 0) return null;
   return (
-    <div id={id} className="flex flex-col gap-0.5">
+    <div id={id} role={alert ? 'alert' : undefined} className="flex flex-col gap-0.5">
       {messages.map((item, index) => (
         <div key={index}>
           <p className="text-xs font-medium text-danger-ink">{item.message}</p>

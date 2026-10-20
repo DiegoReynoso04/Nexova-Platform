@@ -4,6 +4,48 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-20 — Frontend del inventario, F4: Salida de activos (`/inventory/orders/outbound`)
+
+**Estado: hecho, revisado por el usuario y comiteado**, en `feature/inventory-frontend`, sobre F3 (`064a569`). El agente no ha registrado salidas en Supabase ni ha creado cuentas.
+
+- **Prueba del usuario en el navegador, con Supabase real (2026-10-20), todo correcta**, desde «Registrar salida» de la fila de Ratón ergonómico (`?asset_id=3`):
+  - activo preseleccionado; Stock actual «3 · Bajo» visible antes de la cantidad; Oficina «Valencia» en solo lectura (el ajuste de F3);
+  - al cambiar a NXV-IT-001 el stock pasa a 13 y al volver, a 3;
+  - una asignación sin «Asignado a» da el error en ese campo, sin envío;
+  - un consumo de 5: advertencia visible; al enviar, el 400 «Insufficient stock for asset 'Ratón ergonómico'. Available: 3, requested: 5.» bajo Cantidad;
+  - un consumo de 1: «Salida registrada: 1 × Ratón ergonómico (NXV-PER-001)»; el ratón sigue elegido y el stock pasa a 2.
+  - **Conclusión sobre F3:** el activo que se perdía tras la entrada no era un fallo; aquella página no llevaba `?asset_id=`.
+  - La demo de Supabase sigue fuera del neto del seed (ahora con esta salida); se restaura en F6.
+
+- **Página:** `app/inventory/orders/outbound/page.tsx`, Server Component asíncrono que lee `?asset_id=` como la entrada; `next typegen` regenera la ruta tipada nueva.
+- **Hook (`hooks/use-outbound-form.ts`):**
+  - el reducer guarda el activo elegido y el stock (`idle` / `loading` con el valor anterior / `known` / `error`), además del envío y `formKey`;
+  - `selectAsset` lee `GET /inventory/products/{id}`, aborta la lectura anterior y descarta las respuestas tardías (contador; vale también con A → B → A y con un servicio que ignora la cancelación);
+  - `submit(values, nextAssetId)`: un envío a la vez; tras el éxito el formulario se monta limpio con el activo de la URL (`formInitialAssetId`) y se vuelve a leer su stock; tras un 400 `insufficient_stock` se vuelve a leer el del activo elegido, sin vaciar el valor que se muestra;
+  - funciones puras: `knownStock`, `quantityEnabled`, `outboundFormValues` («Asignado a» vacío salvo con `allocation`) y `outboundConfirmation` («Salida registrada: N × nombre (SKU)»).
+- **Formulario (`components/inventory/outbound-form.tsx`), en este orden:**
+  1. Activo (`AssetSelect` compartido);
+  2. Stock actual (`ReadOnlyField`: «Consultando stock…» con spinner, o el número con `StockLevelBadge`; si falla, «No disponible» y el aviso «No se pudo consultar el stock…»);
+  3. Oficina (`ReadOnlyField`);
+  4. Tipo de salida (radios «Asignación» / «Consumo», que envían `allocation` / `consumption`);
+  5. Asignado a (solo con una asignación);
+  6. Cantidad: deshabilitada hasta conocer el stock (o hasta que falle su lectura); la advertencia de cantidad mayor que el stock va en un contenedor `aria-live="polite"` y no bloquea el envío; el 400 de stock va debajo con el `detail` de la API y `role="alert"` (prop nueva `alert` de `FieldMessages`).
+  - Con un consumo, los errores de `assigned_to` (que no se ve) van al aviso general.
+- **`lib/stock-check.ts`:** `exceedsStock(quantity, stock)`, probado con Jest (`__tests__/utils/stock-check.test.ts`, en la cobertura de `jest.config.mjs`).
+- **Tests:**
+  - `tests/inventory-outbound.test.mjs` (19): Cantidad y stock; lectura al elegir; A → B con abort; servicio que ignora la cancelación (A → B y A → B → A); fallo de la lectura; sin activo; advertencia sin bloqueo; «Asignado a» en los valores y en el body (`null` en un consumo); validación sin petición; 400 junto a Cantidad y nueva lectura; 422 de `assigned_to`; 404 en el aviso general; éxito con y sin activo en la URL; doble envío; desmontaje;
+  - `production-source`: piezas, la vista solo usa hooks y elige el activo de la URL también tras el éxito, selector compartido sin `<option>` propios, orden de los campos, Stock y Oficina en solo lectura, Cantidad ligada a `quantityEnabled`, `aria-live`, `role="alert"` en el 400, la advertencia fuera de `handleSubmit` y «Asignado a» solo con `allocation`.
+- **Mutaciones (13, todas detectadas y deshechas):** sin abortar la lectura anterior; sin descartar la respuesta tardía (detectada tras añadir el test A → B → A, porque la guarda del reducer la tapaba con A ≠ B); la advertencia bloquea el envío; el 400 fuera de Cantidad (servicio) y sin `role="alert"`; `assigned_to` en un consumo (body y valores); sin volver a leer el stock tras el éxito y tras el 400; Cantidad habilitada sin stock (regla y formulario); sin el activo de la URL tras el éxito.
+- **Comprobado en el navegador integrado** con un `fetch` falso dentro de la página (sesión, activos, stock y salidas simulados; sin API real, sin Supabase y sin cuentas; el token falso se borró al terminar):
+  - preselección y stock (8, «Suficiente»); al cambiar de activo, «Consultando stock…» con Cantidad deshabilitada;
+  - stock 0 con cantidad 3: advertencia visible y envío permitido; el 400 aparece bajo Cantidad con `role="alert"` y sin aviso general, y el stock se vuelve a leer («Actualizando…»);
+  - salida correcta con asignación: confirmación, formulario limpio con el activo de la URL y stock leído de nuevo (8 → 6);
+  - lectura fallida: «No disponible», el aviso y Cantidad habilitada;
+  - a 375 px no hay scroll horizontal (375 = 375).
+- **Validación** (F3 → F4): `build` correcto, con `ƒ /inventory/orders/outbound`; `tsc` y `lint` sin errores; `node:test` 445 → 473; Jest 201 → 214.
+
+---
+
 ## 2026-10-20 — Frontend del inventario, F3: Entrada de activos (`/inventory/orders/inbound`)
 
 **Estado: hecho, revisado por el usuario y comiteado**, en `feature/inventory-frontend`, sobre F2 (`72bd839`). El agente no ha registrado ninguna entrada en Supabase ni ha creado cuentas.

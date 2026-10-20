@@ -231,6 +231,67 @@ describe('código de producción', () => {
     assert.match(view, /initialAssetId=\{formInitialAssetId\(preselection\)\}/);
   });
 
+  test('incluye la salida de activos y sus piezas (F4)', () => {
+    for (const file of [
+      'app/inventory/orders/outbound/page.tsx',
+      'components/inventory/outbound-form-view.tsx',
+      'components/inventory/outbound-form.tsx',
+      'hooks/use-outbound-form.ts',
+      'lib/stock-check.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('salida: la vista solo usa sus hooks y elige el activo de la URL, también tras el éxito', () => {
+    const view = codeWithoutComments('components/inventory/outbound-form-view.tsx');
+    assert.match(view, /from '@\/hooks\/use-outbound-form'/);
+    assert.match(view, /from '@\/hooks\/use-inventory-assets'/);
+    assert.match(view, /const initialAssetId = formInitialAssetId\(preselection\);/);
+    assert.match(view, /if \(initialAssetId !== null\) selectAsset\(initialAssetId\);/);
+    assert.match(view, /submitOutbound\(values, initialAssetId\)/);
+    assert.match(view, /<OutboundForm\s+key=\{formKey\}/);
+    const hook = codeWithoutComments('hooks/use-outbound-form.ts');
+    assert.match(hook, /from '@\/services\/inventory\.service'/);
+    assert.doesNotMatch(hook, /\bfetch\b|inventory-api-client|inventoryApiClient/);
+  });
+
+  test('salida: selector compartido, Stock actual antes que Cantidad y la oficina en solo lectura', () => {
+    const form = codeWithoutComments('components/inventory/outbound-form.tsx');
+    assert.match(form, /<AssetSelect\s+id="outbound-asset"/);
+    assert.doesNotMatch(form, /<option\b/);
+    const order = ['id="outbound-asset"', 'id="outbound-stock"', 'id="outbound-office"', 'Tipo de salida *', 'id="outbound-assigned-to"', 'id="outbound-quantity"'];
+    const positions = order.map((marker) => form.indexOf(marker));
+    assert.ok(positions.every((position) => position >= 0), String(positions));
+    assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'orden de los campos');
+    assert.match(form, /<ReadOnlyField\s+id="outbound-stock"\s+label="Stock actual"/);
+    assert.match(
+      form,
+      /<ReadOnlyField\s+id="outbound-office"\s+label="Oficina"\s+value=\{selected\?\.office \?\? null\}\s+placeholder="Se toma del activo elegido"/
+    );
+    assert.doesNotMatch(form, /<input\s+id="outbound-(office|stock)"/);
+    // Se envía la oficina del activo elegido.
+    assert.match(form, /outboundFormValues\(selected === null \? null : \{ id: selected\.id, office: selected\.office \}/);
+  });
+
+  test('salida: Cantidad espera al stock, advertencia sin bloqueo y el 400 de stock bajo Cantidad', () => {
+    const form = codeWithoutComments('components/inventory/outbound-form.tsx');
+    assert.match(form, /disabled=\{isSubmitting \|\| !quantityEnabled\(stock\)\}/);
+    assert.match(form, /<div id="outbound-quantity-warning" aria-live="polite">/);
+    assert.match(form, /Consultando stock…/);
+    assert.match(form, /No se pudo consultar el stock/);
+    assert.match(form, /<FieldMessages id="outbound-quantity-messages" messages=\{quantityMessages\} alert=\{error\?\.kind === 'api_error'\} \/>/);
+    assert.match(codeWithoutComments('components/inventory/field-messages.tsx'), /role=\{alert \? 'alert' : undefined\}/);
+    // La advertencia nunca decide si se envía.
+    const submit = form.slice(form.indexOf('function handleSubmit'), form.indexOf('const summaryRef'));
+    assert.doesNotMatch(submit, /showWarning|exceedsStock|currentStock/);
+    // «Asignado a» solo existe con una asignación.
+    assert.match(form, /\{exitType === 'allocation' && \(\s*<div className="flex flex-col gap-1">\s*<label htmlFor="outbound-assigned-to"/);
+    assert.match(form, /value: 'allocation', label: 'Asignación'/);
+    assert.match(form, /value: 'consumption', label: 'Consumo'/);
+    assert.match(form, /<Button type="submit" isLoading=\{isSubmitting\}>/);
+  });
+
   test('la UI del inventario usa el vocabulario del CONTEXT («activos», no «productos»)', () => {
     for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('components/inventory/') || path.startsWith('app/inventory/'))) {
       assert.doesNotMatch(codeWithoutComments(file), /\b[Pp]roductos?\b/, file);

@@ -27,6 +27,7 @@ const config = {
     // Inventario (Hito 5): cantidad y validadores de los formularios.
     'services/inventory.service.ts',
     'lib/stock-level.ts',
+    'lib/stock-check.ts',
   ],
 };
 
