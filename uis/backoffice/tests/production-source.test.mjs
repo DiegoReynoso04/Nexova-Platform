@@ -97,10 +97,13 @@ describe('código de producción', () => {
     assert.doesNotMatch(service, /\bapiClient\b/);
     // Ningún otro módulo nombra las rutas de la API: el servicio lo centraliza.
     // lib/inventory-routes.ts se excluye: las páginas del brief se llaman igual
-    // que las rutas de la API, pero son rutas de navegación, no peticiones.
+    // que las rutas de la API, pero son rutas de navegación, no peticiones. Por
+    // lo mismo se ignora el argumento de `PageProps<'…'>`/`LayoutProps<'…'>`:
+    // es el tipo de ruta que genera Next para las props de una página, no una URL.
     const allowed = ['services/inventory.service.ts', 'lib/inventory-routes.ts'];
     for (const file of PRODUCTION_FILES.filter((path) => !allowed.includes(path))) {
-      assert.doesNotMatch(codeWithoutComments(file), /['`]\/inventory\/(products|orders)['`/]/, file);
+      const code = codeWithoutComments(file).replace(/\b(PageProps|LayoutProps)<'[^']*'>/g, '$1<>');
+      assert.doesNotMatch(code, /['`]\/inventory\/(products|orders)['`/]/, file);
     }
   });
 
@@ -164,6 +167,68 @@ describe('código de producción', () => {
       assert.match(table, new RegExp(`>${column}</th>`), column);
     }
     assert.match(table, /<StockLevelBadge currentStock=\{asset\.current_stock\} \/>/);
+  });
+
+  test('incluye la entrada de activos y sus piezas (F3)', () => {
+    for (const file of [
+      'app/inventory/orders/inbound/page.tsx',
+      'components/inventory/asset-select.tsx',
+      'components/inventory/field-messages.tsx',
+      'components/inventory/inbound-form-view.tsx',
+      'components/inventory/inbound-form.tsx',
+      'components/inventory/read-only-field.tsx',
+      'hooks/use-inbound-form.ts',
+      'lib/asset-preselection.ts',
+      'lib/inventory-form-errors.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('el selector de activo muestra «nombre — SKU (oficina)», nunca el id', () => {
+    const select = codeWithoutComments('components/inventory/asset-select.tsx');
+    assert.match(select, /<option key=\{asset\.id\} value=\{String\(asset\.id\)\}>\s*\{assetOptionLabel\(asset\)\}\s*<\/option>/);
+    // Ningún texto visible de una opción menciona un id.
+    const options = [...select.matchAll(/<option\b[^>]*>([^<]*)<\/option>/g)];
+    assert.ok(options.length >= 4, 'opciones del selector');
+    for (const [, text] of options) assert.doesNotMatch(text, /\bid\b/i, text);
+    const preselection = codeWithoutComments('lib/asset-preselection.ts');
+    const label = preselection.slice(preselection.indexOf('export function assetOptionLabel'));
+    assert.match(label, /^export function assetOptionLabel\(asset: Pick<Asset, 'name' \| 'sku' \| 'office'>\): string \{\s*return `\$\{asset\.name\} — \$\{asset\.sku\} \(\$\{asset\.office\}\)`;/);
+  });
+
+  test('la vista de entrada solo usa sus hooks; ni fetch ni cliente HTTP en las piezas del inventario', () => {
+    const view = codeWithoutComments('components/inventory/inbound-form-view.tsx');
+    assert.match(view, /from '@\/hooks\/use-inbound-form'/);
+    assert.match(view, /from '@\/hooks\/use-inventory-assets'/);
+    for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('components/inventory/') || path.startsWith('app/inventory/'))) {
+      const code = codeWithoutComments(file);
+      assert.doesNotMatch(code, /\bfetch\b/, `${file} hace HTTP`);
+      assert.doesNotMatch(code, /lib\/(inventory-)?api-client/, `${file} usa el cliente HTTP`);
+    }
+    const hook = codeWithoutComments('hooks/use-inbound-form.ts');
+    assert.match(hook, /from '@\/services\/inventory\.service'/);
+    assert.doesNotMatch(hook, /\bfetch\b|inventory-api-client|inventoryApiClient/);
+  });
+
+  test('entrada: oficina del activo en solo lectura, botón con carga y formulario limpio con formKey', () => {
+    const form = codeWithoutComments('components/inventory/inbound-form.tsx');
+    // La oficina es un valor de solo lectura (<output>), no un control editable.
+    assert.match(
+      form,
+      /<ReadOnlyField\s+id="inbound-office"\s+label="Oficina"\s+value=\{selected\?\.office \?\? null\}\s+placeholder="Se toma del activo elegido"\s+help="La oficina receptora es la del activo[^"]*"/
+    );
+    assert.doesNotMatch(form, /id="inbound-office"[^>]*onChange|<input\s+id="inbound-office"/);
+    const readOnly = codeWithoutComments('components/inventory/read-only-field.tsx');
+    assert.match(readOnly, /<label htmlFor=\{id\}/);
+    assert.match(readOnly, /<output id=\{id\}/);
+    assert.doesNotMatch(readOnly, /<input|<select|<textarea|\bborder\b|onChange/);
+    assert.match(form, /asset: selected === null \? null : \{ id: selected\.id, office: selected\.office \}/);
+    assert.match(form, /<Button type="submit" isLoading=\{isSubmitting\}>/);
+    const view = codeWithoutComments('components/inventory/inbound-form-view.tsx');
+    assert.match(view, /<InboundForm\s+key=\{`\$\{formKey\}-\$\{preselection\.status\}`\}/);
+    // Tras el éxito, el formulario limpio conserva el activo de la URL.
+    assert.match(view, /initialAssetId=\{formInitialAssetId\(preselection\)\}/);
   });
 
   test('la UI del inventario usa el vocabulario del CONTEXT («activos», no «productos»)', () => {

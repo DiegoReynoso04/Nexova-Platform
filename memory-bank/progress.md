@@ -4,6 +4,34 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-20 — Frontend del inventario, F3: Entrada de activos (`/inventory/orders/inbound`)
+
+**Estado: hecho, revisado por el usuario y comiteado**, en `feature/inventory-frontend`, sobre F2 (`72bd839`). El agente no ha registrado ninguna entrada en Supabase ni ha creado cuentas.
+
+- **Demo de Supabase fuera del neto del seed:** la prueba real del usuario dejó una entrada de 3 × NXV-PER-001. Se restaura en F6 (TRUNCATE + `seed-inventory`, con confirmación del usuario).
+- **Verificación en el navegador del usuario (2026-10-20):**
+  - sin enviar: el selector muestra las 6 opciones «nombre — SKU (oficina)», sin ids; la Oficina cambia con el activo; la preselección funciona desde la fila de Activos; con `?asset_id=999` aparece el aviso, sin preselección; el formulario vacío da errores por campo y ninguna petición;
+  - entrada real «Entrada registrada: 3 × Ratón ergonómico (NXV-PER-001)»: en Activos, 3 y «Bajo». Cantidad y Proveedor se vaciaron, pero el activo volvió a «Elige un activo…».
+- **Investigación del activo perdido:**
+  - el enlace de la fila es correcto (`inboundOrderHref(asset.id)` → `?asset_id=N`; comprobado en los `href`);
+  - en el navegador integrado, con un `fetch` falso dentro de la página (sin API, sin Supabase y sin cuentas): desde «Registrar entrada» de la fila (`?asset_id=2`), el activo **se mantiene** tras la entrada; desde la subnavegación (sin parámetro), vuelve a «Elige un activo…», que es el síntoma observado;
+  - el agente no pudo ver la URL del navegador del usuario (el log de Next no guarda las URLs), y la causa más probable es que la página no llevaba `?asset_id=`;
+  - aun así, el comportamiento queda fijado: `formInitialAssetId(preselección)` en `lib/asset-preselection.ts` (también la usará F4), un test que lo comprueba tras una entrada correcta, una regla estática en la vista y dos mutaciones detectadas.
+- **Oficina de solo lectura:** `components/inventory/read-only-field.tsx` es un `<output>` asociado a la etiqueta, con fondo atenuado y sin borde de campo. Se mantienen la ayuda y «Se toma del activo elegido» cuando no hay activo, y lo usará F4 (Stock actual y Oficina). La regla estática exige `ReadOnlyField` y ni `<input>` ni borde; detecta las mutaciones «otra vez input» y «con borde».
+
+- **Página:** `app/inventory/orders/inbound/page.tsx`, Server Component asíncrono (`PageProps<'/inventory/orders/inbound'>` de Next 16: `searchParams` es una promesa, así que la ruta es dinámica). Lee `?asset_id=` con `parseAssetIdParam` y renderiza `inbound-form-view.tsx`.
+- **Piezas:**
+  - `lib/asset-preselection.ts`: lectura de `?asset_id=` (solo un entero positivo en dígitos; cualquier otra cosa cuenta como pedido inválido), `resolvePreselection` (none / pending / found / missing) y `assetOptionLabel` («nombre — SKU (oficina)», sin id);
+  - `lib/inventory-form-errors.ts`: reparto de un error entre los campos y el aviso general (422 y validación en cliente por campo, con el `msg` de la API debajo; `api_error` con campo del formulario solo junto al campo; el resto, aviso general). Lo reutilizará la salida (F4);
+  - `hooks/use-inbound-form.ts`: reducer (`formKey + 1` tras el éxito), sesión sin React (un envío a la vez; el segundo se ignora; abort al desmontar) y hook; `inboundConfirmation` → «Entrada registrada: N × nombre (SKU)»;
+  - `components/inventory/asset-select.tsx` (cargando, error con «Reintentar», vacío y datos; aviso visible si el activo del enlace no existe), `field-messages.tsx` e `inbound-form.tsx` (oficina del activo en solo lectura, `inputMode="numeric"`, botón con spinner y deshabilitado durante el envío, foco al aviso general tras un fallo).
+- **Tests:** `tests/inventory-inbound.test.mjs` (14: parámetro, preselección, opción sin id, reparto de errores, éxito y `formKey`, body con números y la oficina del activo, validación sin petición, 400/404/500/503 con `detail`, 422 con `apiMessage`, red/timeout/respuesta ilegible, doble envío y desmontaje). `production-source`, 4 reglas F3: piezas presentes; el selector nunca muestra el id; la vista solo usa sus hooks y ninguna pieza del inventario hace `fetch` ni importa un cliente HTTP; oficina en solo lectura, botón con `isLoading` y `key` con `formKey`.
+- **Regla estática ajustada:** «el inventario usa su propio cliente» prohibía cualquier literal `/inventory/(products|orders)` fuera del servicio y fallaba con `PageProps<'/inventory/orders/inbound'>`, el tipo de ruta que genera Next para las props de la página (no una URL de la API). Ahora ignora solo el argumento de `PageProps<'…'>`/`LayoutProps<'…'>`; una URL de la API en una página se sigue detectando (mutación 7).
+- **Mutaciones (12, todas detectadas y deshechas):** el selector muestra el id (opción y etiqueta); oficina editable y oficina enviada que no es la del activo; `quantity` como texto; sin limpiar tras el éxito (reducer y `key`); error sin su `detail` (servicio y texto); doble envío (sesión y botón sin `isLoading`); una URL de la API en la página.
+- **Validación** (F2 → F3, con los ajustes): `build` correcto, con `ƒ /inventory/orders/inbound`; `tsc` y `lint` sin errores; `node:test` 416 → 445; Jest 201 (sin cambios).
+
+---
+
 ## 2026-10-20 — Frontend del inventario, F2: Activos (`/inventory/products`) y navegación
 
 **Estado: hecho y validado; comiteado tras la revisión del usuario**, en `feature/inventory-frontend`, sobre F1 (`0e0f133`) y el `style(api)` (`2dccef0`). Sin pruebas que escriban en Supabase: el usuario hace las del navegador.
