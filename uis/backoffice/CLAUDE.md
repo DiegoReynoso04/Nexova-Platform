@@ -84,7 +84,7 @@ Fuentes de verdad, por orden:
 
 - Requisitos: el brief literal del frontend del inventario, [`docs/inventory-frontend-brief.md`](../../docs/inventory-frontend-brief.md) (con la nota de equivalencias: su «BRIEFING.md» son el `README.md` raíz y el CONTEXT, y sus rutas `/backoffice/inventory/...` son `/inventory/...`), y [`docs/context-nexova-gestion-inventario-hito-5.md`](../../docs/context-nexova-gestion-inventario-hito-5.md) (entidades, campos, vocabulario y reglas). El briefing de empresa es el [`README.md`](../../README.md) raíz.
 - Contrato HTTP: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte F (§37–§38) y `services/api/app/modules/inventory/schemas.py`. Mismas reglas que `/incidents` para no inventar campos ni endpoints.
-- Guía de revisión de la API: [`docs/inventory-review.md`](../../docs/inventory-review.md).
+- Guía de revisión de la API: [`docs/inventory-review.md`](../../docs/inventory-review.md); guía de revisión del frontend (arranque, recorrido de las 4 páginas, trazabilidad con el brief, decisiones D1–D10 y lo no verificado): [`docs/inventory-frontend-review.md`](../../docs/inventory-frontend-review.md).
 
 Reglas específicas (lo no citado sigue las de `/incidents`: frontera de confianza, capas, sin `console.*` ni persistencia en el navegador):
 
@@ -94,13 +94,22 @@ Reglas específicas (lo no citado sigue las de `/incidents`: frontera de confian
 - **Integración:** `services/inventory.service.ts` es el único módulo que llama a `/inventory`, a través de `lib/inventory-api-client.ts`: el mismo `createApiClient` de `lib/api-client.ts` con otra base URL. Por eso siguen valiendo el único `fetch`, el `Authorization: Bearer` en toda petición y el 401 → sesión caducada. Tipos en `types/inventory.ts`; `unknown` solo en `services/normalizers.ts`.
 - **Vocabulario en el frontend (excepción, como en `/suppliers`):** `types/inventory.ts` define categorías, oficinas, tipos de salida, `QUANTITY_MAX` y `TEXT_MAX_LENGTH`. `tests/inventory-contract.test.mjs` exige que coincidan con el CONTEXT y con `services/api/app/modules/inventory/vocabulary.py`. Los valores (`hardware`, `Valencia`, `allocation`…) se muestran tal como los devuelve la API. Títulos y etiquetas usan los términos del CONTEXT: «Activos» (no «productos»), «Entrada de activos», «Salida de activos», «Asignación», «Consumo», «Oficina», «Proveedor», «Asignado a», «Stock actual».
 - **Formularios:**
-  - el selector muestra «nombre — SKU (oficina)», nunca un id;
-  - la **oficina** es la del activo elegido, en solo lectura, y es la que se envía;
+  - el selector es `components/inventory/asset-select.tsx`, compartido: muestra «nombre — SKU (oficina)» (`assetOptionLabel`), nunca un id;
+  - la **oficina** es la del activo elegido y es la que se envía. Se muestra como **valor de solo lectura** (`components/inventory/read-only-field.tsx`: un `<output>` asociado a su etiqueta, con fondo atenuado y sin borde de campo), nunca como un `<input>`;
   - `asset_id` y `quantity` se envían como **números** (la API usa enteros estrictos);
-  - el activo puede llegar preseleccionado con `?asset_id=` desde Activos;
+  - el activo puede llegar preseleccionado con `?asset_id=` desde Activos (`lib/asset-preselection.ts`); si no existe, aviso visible y selector vacío;
   - validación en cliente antes de enviar (activo, cantidad entera de 1 a `QUANTITY_MAX`, proveedor, tipo de salida y «Asignado a» con una asignación): si no pasa, no hay petición;
-  - tras el éxito, confirmación y formulario limpio (`key = formKey`).
-- **Salida de activos:** al elegir un activo se lee su `current_stock` (`GET /inventory/products/{id}`, cancelando la lectura anterior) y se muestra. **Cantidad** queda deshabilitada hasta conocer el stock; si la lectura falla, se habilita con el aviso «No se pudo consultar el stock». Una cantidad mayor que el stock muestra una advertencia que **no bloquea** el envío (la API es la autoridad). «Asignado a» solo es visible y obligatorio con una asignación (con un consumo se envía `null`). Tras una salida correcta se vuelve a leer el stock.
+  - un envío a la vez (el segundo se ignora), con el botón deshabilitado y spinner;
+  - tras el éxito, confirmación («Entrada registrada: N × nombre (SKU)» / «Salida registrada: …») y formulario limpio (`key = formKey`) **con el activo del enlace** (`formInitialAssetId`); sin `?asset_id=`, el selector vuelve a estar vacío;
+  - el reparto de errores entre los campos y el aviso general está en `lib/inventory-form-errors.ts`.
+- **Salida de activos:**
+  - orden de los campos: Activo, **Stock actual** (solo lectura, antes de la cantidad), Oficina (solo lectura), Tipo de salida («Asignación» / «Consumo», que envían `allocation` / `consumption`), Asignado a y Cantidad;
+  - el activo elegido y su stock viven en `hooks/use-outbound-form.ts`: al elegirlo se lee su `current_stock` (`GET /inventory/products/{id}`), abortando la lectura anterior y descartando las respuestas tardías (contador; también con A → B → A);
+  - **Cantidad** queda deshabilitada hasta conocer el stock (`quantityEnabled`); si la lectura falla, se habilita con el aviso «No se pudo consultar el stock»;
+  - una cantidad mayor que el stock (`lib/stock-check.ts` → `exceedsStock`) muestra una advertencia en un contenedor `aria-live` que **no bloquea** el envío (la API es la autoridad);
+  - «Asignado a» solo es visible y obligatorio con una asignación (con un consumo se envía `null`; si llegase un error de ese campo, va al aviso general);
+  - el 400 `insufficient_stock` va bajo Cantidad con el `detail` de la API y `role="alert"` (`FieldMessages` con `alert`);
+  - tras una salida correcta se vuelve a leer el stock del activo con el que se monta el formulario, y tras un 400 de stock, el del activo elegido (sin vaciar el valor mostrado).
 - **Errores (excepción acotada a `/inventory` a la regla de textos fijos):**
   - **4xx (salvo 401 y 422) o 5xx con un cuerpo `{detail, code}` legible:** un título en español y el `detail` de la API, como **texto plano**, en un elemento visible. `insufficient_stock` va **junto al campo Cantidad**. Si `detail` no es un texto (objeto, lista, vacío), se descarta y se usa el texto fijo.
   - **Sin cuerpo legible** (red, timeout, respuesta que no es JSON o fuera de contrato): los textos fijos en español del backoffice, sin código HTTP ni detalles técnicos.
@@ -108,8 +117,14 @@ Reglas específicas (lo no citado sigue las de `/incidents`: frontera de confian
   - **401:** el flujo de sesión caducada de siempre.
   - Lo cubre `tests/inventory.service.test.mjs` (500 y 503 con `detail` → visible; 500 sin JSON y `detail` de tipo objeto → texto fijo).
 - **Nivel de stock:** 0 = «Agotado», de 1 a 5 = «Bajo», más de 5 = «Suficiente», con texto o icono además del color; umbrales en una función pura documentada.
-- **Historial:** solo lectura (sin editar ni borrar). Cada fila: nombre del activo, cantidad, tipo (entrada o salida, con etiqueta e icono distintos), fecha en formato local legible y `user_uuid`.
-- **Arquitectura:** cada página es un Server Component (metadata) que renderiza una vista `'use client'` de `components/inventory/`, que solo interactúa con su hook de `hooks/` (reducer puro + sesión sin React + hook, como `/incident-manager`) → `services/inventory.service.ts` → `lib/inventory-api-client.ts`.
+- **Historial:** solo lectura (sin botones, enlaces, formularios ni textos de editar o borrar), en el orden de la API (la más reciente primero). Columnas: Tipo (`order-type-badge.tsx`: «↓ Entrada» y «↑ Salida», con icono, texto y color distintos), Activo (nombre y SKU), Cantidad, Oficina, Detalle («Proveedor: …», «Asignación → …» o «Consumo»), Fecha (`Intl.DateTimeFormat('es-ES')` en la zona del navegador, dentro de `<time dateTime>` con el ISO completo) y Usuario (el `user_uuid` completo, en monoespaciada y con `break-all`). Formato en `lib/order-format.ts`.
+- **Arquitectura:** cada página es un Server Component (metadata) que renderiza una vista `'use client'` de `components/inventory/`, que solo interactúa con su hook de `hooks/` (reducer puro + sesión sin React + hook, como `/incident-manager`) → `services/inventory.service.ts` → `lib/inventory-api-client.ts`:
+  - Activos: `asset-list-view.tsx` → `use-inventory-assets.ts` (también da la lista del selector);
+  - Entrada: `inbound-form-view.tsx` → `use-inbound-form.ts` + `use-inventory-assets.ts`;
+  - Salida: `outbound-form-view.tsx` → `use-outbound-form.ts` + `use-inventory-assets.ts`;
+  - Historial: `order-history-view.tsx` → `use-inventory-orders.ts`.
+  - Las páginas de Entrada y Salida son asíncronas: leen `?asset_id=` de `searchParams` (una promesa en Next 16, `PageProps<'/…'>`) y son dinámicas. Una ruta nueva necesita `npx next typegen` antes de `tsc`.
+- **Tests:** `tests/inventory-*.test.mjs`, `tests/use-inventory*.test.mjs` y las reglas del inventario de `tests/production-source.test.mjs` (una ruta `/inventory/...` solo en el servicio y en `lib/inventory-routes.ts`; el argumento de `PageProps<'…'>`/`LayoutProps<'…'>` no cuenta). Jest: `__tests__/utils/{inventory.service,stock-level,stock-check,order-format}.test.ts`. Los componentes se validan con `tsc`, `lint`, `build` y el navegador.
 
 ## Autenticación (AUTH-02)
 

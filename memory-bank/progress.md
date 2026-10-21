@@ -4,6 +4,38 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-21 — Frontend del inventario, F6: documentación y verificación final
+
+**Estado: documentación hecha y verificada, sin comitear** (espera el «ok» del usuario), en `feature/inventory-frontend`, sobre F5 (`0fa0da3`). **Pendiente, con confirmación del usuario:** restaurar la demo de Supabase y borrar la cuenta de prueba. El agente no ha borrado ni escrito nada en Supabase ni en `services/api/data/auth.json`.
+
+- **Documentación:**
+  - `docs/inventory-frontend-review.md` (nuevo), con el estilo de `docs/inventory-review.md`: qué se construyó, arranque en PowerShell (API, `.env.local` con las dos variables, reinicio de `npm run dev`), suites y totales, recorrido manual de las 4 páginas, trazabilidad «Qué vamos a evaluar» → implementación → test → navegador, decisiones D1–D10 con sus ajustes y lo que no está verificado;
+  - `uis/backoffice/README.md`: sección `/inventory/*`, `NEXT_PUBLIC_INVENTORY_API_URL`, estructura, validación y enlace a la guía;
+  - `uis/backoffice/CLAUDE.md`: versión final de la sección «Inventario» (selector compartido, `ReadOnlyField`, `formInitialAssetId`, orden de los campos de la salida, stock reactivo, historial, arquitectura por página, `next typegen` y tests);
+  - `AGENTS.md` §4: bloque «Inventario — frontend»;
+  - `memory-bank/techContext.md`: la fila de la UI del inventario pasa a hecha, sección «Inventario: frontend del backoffice» con las decisiones permanentes y la nota de la demo corregida (ya no está en el neto del seed); `memory-bank/projectbrief.md`: el inventario con su interfaz.
+- **Base de comparación:** `origin/main` en `8e5448e` (no hay rama `main` local). Commits de la rama: `0e0f133` (F1), `2dccef0` (`style(api)`), `72bd839` (F2), `064a569` (F3), `a591686` (F4) y `0fa0da3` (F5).
+- **Verificación final (2026-10-21):**
+
+  | Comprobación | Resultado |
+  |---|---|
+  | `uis/backoffice`: `tsc` / `lint` | sin errores |
+  | `uis/backoffice`: `build` | correcto: `○ /inventory`, `○ /inventory/products`, `○ /inventory/orders`, `ƒ /inventory/orders/inbound`, `ƒ /inventory/orders/outbound` |
+  | `uis/backoffice`: `node:test` | 491/491 (344 antes del frontend del inventario) |
+  | `uis/backoffice`: Jest | 222/222, 13 suites (161 antes) |
+  | `services/api`: `unittest` | 409 OK |
+  | `services/api`: `pytest` | 612 passed, 3023 subtests; 1 aviso de dependencias (Starlette: `httpx` con `TestClient`), ajeno a la rama |
+  | `git diff origin/main..HEAD --stat` | 60 archivos, +5172 / −19; idéntico con y sin `--ignore-cr-at-eol` |
+  | Secretos (`git log -p origin/main..HEAD` y `git diff origin/main` con la guía nueva) | no encontrados: project-ref, usuario, contraseña, host del pooler, `DATABASE_URL`, `JWT_SECRET_KEY`, `*.pooler.supabase.com`, `postgresql://` con credenciales (0) y tokens `eyJ…` |
+  | Archivos prohibidos en los commits de la rama | ninguno (`.env`, `.env.local`, `.vscode/`, `coverage/`, `data/`, `node_modules/`, `.next/`); solo `uis/backoffice/.env.example`, documentación sin secretos (`http://localhost:8000`) |
+  | Enlaces relativos y anclas de los documentos tocados | 84 comprobados, 0 problemas |
+  | Finales de línea | LF en todos los archivos tocados |
+
+- **Demo de Supabase (lectura, 2026-10-21):** 6 activos, 5 entradas y 5 salidas (10 órdenes); stock 13/0/**1**/7/15/0. Frente al seed (13/0/0/7/15/0, 4 + 3 órdenes), NXV-PER-001 tiene una entrada de 3 y **dos** salidas de 1: una más que las 9 órdenes que vio el usuario en F5, no registrada por el agente.
+- **Cuenta de prueba** `ui-check-3533b06b@example.invalid` (rol `user`, activa): sigue en TinyDB. El agente no conoce su contraseña; la propuesta para borrarla con `DELETE /users/{id}` espera la decisión del usuario.
+
+---
+
 ## 2026-10-20 — Frontend del inventario, F5: Historial (`/inventory/orders`)
 
 **Estado: hecho, verificado por el usuario y comiteado**, en `feature/inventory-frontend`, sobre F4 (`a591686`). El agente no ha escrito en Supabase ni ha creado cuentas.
