@@ -268,7 +268,7 @@ Detalle en `progress.md` (entradas del 2026-10-10). Decisiones técnicas permane
 - **Seed `seed-inventory`:** códigos `0`; `1` configuración, falta `--email`, usuario inexistente o inactivo, o datos rechazados por la API; `2` base no disponible (también el TinyDB de usuarios). Está en `PRINT_ALLOWED` de `test_architecture.py`.
 - **OpenAPI:** cada ruta documenta con `responses=` sus errores reales (schema `ErrorResponse` `{detail, code}` y ejemplos construidos con los errores de `core/errors.py`). Un error nuevo de una ruta se añade allí y en `OpenApiErrorsTests`.
 - **FastAPI 0.141:** `app.routes` guarda los routers incluidos como `_IncludedRouter`. Para recorrer las rutas de un router hay que usar `router.routes` (o `/openapi.json`).
-- **Datos de la demo en Supabase:** cargados el 2026-10-18 con el seed (ids 1..6, stock 13/0/0/7/15/0, 7 órdenes). Desde el 2026-10-20 **no están en el neto del seed**: las pruebas del frontend añadieron una entrada de 3 y una salida de 1 de NXV-PER-001. Se restauran (`TRUNCATE assets, asset_entries, asset_exits RESTART IDENTITY CASCADE` + `seed-inventory`) solo con la confirmación del usuario. No borrar nada sin decírselo.
+- **Datos de la demo en Supabase:** cargados el 2026-10-18 con el seed (ids 1..6, stock 13/0/0/7/15/0, 7 órdenes). Las pruebas del frontend las sacaron del neto del seed (2026-10-20) y se restauraron el 2026-10-21, con la confirmación del usuario (`TRUNCATE assets, asset_entries, asset_exits RESTART IDENTITY CASCADE` + `seed-inventory`): ids 1–6, stock 13/0/0/7/15/0, 7 órdenes. Cualquier restauración futura, solo con su confirmación. No borrar nada sin decírselo.
 
 ### Inventario: frontend del backoffice
 

@@ -128,7 +128,14 @@ Fuente de los puntos: el brief literal ([`inventory-frontend-brief.md`](./invent
 | D7 | Vocabulario del CONTEXT en títulos y etiquetas; valores tal como los da la API; historial con etiqueta e icono por tipo y fecha local | Hecho. Tipo de salida con radios «Asignación» / «Consumo», que envían `allocation` / `consumption` |
 | D8 | Sin dependencias nuevas; `node:test` y Jest; sin renderizador de React | Hecho |
 | D9 | Rama desde `origin/main` (`8e5448e`); memory-bank sincronizado con la PR #21; fases revisadas; sin coautoría | Hecho: F1 `0e0f133`, F2 `72bd839` (más `2dccef0`, un `style(api)`), F3 `064a569`, F4 `a591686`, F5 `0fa0da3` |
-| D10 | Pruebas manuales contra el Supabase del usuario; restaurar la demo al terminar; nunca borrar sin decirlo | Las pruebas reales las hizo el usuario; el agente probó en el navegador integrado con un `fetch` falso, sin tocar la API ni Supabase. La restauración de la demo queda para el cierre, con confirmación del usuario |
+| D10 | Pruebas manuales contra el Supabase del usuario; restaurar la demo al terminar; nunca borrar sin decirlo | Las pruebas reales las hizo el usuario; el agente probó en el navegador integrado con un `fetch` falso, sin tocar la API ni Supabase. Demo restaurada el 2026-10-21 con su confirmación (ver «Estado de la demo») |
+
+## Estado de la demo y limpieza (2026-10-21)
+
+Tras las pruebas del usuario (una entrada de 3 y dos salidas de 1 de NXV-PER-001; stock 13/0/1/7/15/0, 10 órdenes), y con su confirmación:
+
+- **Demo de Supabase de nuevo en el neto del seed:** `TRUNCATE assets, asset_entries, asset_exits RESTART IDENTITY CASCADE` + `uv run --env-file .env seed-inventory --email <usuario de la demo>`. Comprobado en solo lectura: ids 1–6, stock **13/0/0/7/15/0**, 4 entradas y 3 salidas (**7 órdenes**).
+- **Cuenta de prueba borrada:** la cuenta local `ui-check-…@example.invalid`, que el agente creó en F2 para comprobar el diseño, se borró con `DELETE /users/{id}` y su propio token (204; repetido, 401). Ya no está en `services/api/data/auth.json`, que no se editó a mano.
 
 ## Lo que no está verificado
 

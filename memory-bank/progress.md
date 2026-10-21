@@ -6,7 +6,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-10-21 — Frontend del inventario, F6: documentación y verificación final
 
-**Estado: documentación hecha y verificada, sin comitear** (espera el «ok» del usuario), en `feature/inventory-frontend`, sobre F5 (`0fa0da3`). **Pendiente, con confirmación del usuario:** restaurar la demo de Supabase y borrar la cuenta de prueba. El agente no ha borrado ni escrito nada en Supabase ni en `services/api/data/auth.json`.
+**Estado: hecho.** Documentación comiteada en `09e53ef`, sobre F5 (`0fa0da3`), en `feature/inventory-frontend`. Después, con la confirmación del usuario, se restauró la demo y se borró la cuenta de prueba (ver «Limpieza» abajo); la rama se sube y se abre la PR contra `main`.
 
 - **Documentación:**
   - `docs/inventory-frontend-review.md` (nuevo), con el estilo de `docs/inventory-review.md`: qué se construyó, arranque en PowerShell (API, `.env.local` con las dos variables, reinicio de `npm run dev`), suites y totales, recorrido manual de las 4 páginas, trazabilidad «Qué vamos a evaluar» → implementación → test → navegador, decisiones D1–D10 con sus ajustes y lo que no está verificado;
@@ -31,8 +31,10 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   | Enlaces relativos y anclas de los documentos tocados | 84 comprobados, 0 problemas |
   | Finales de línea | LF en todos los archivos tocados |
 
-- **Demo de Supabase (lectura, 2026-10-21):** 6 activos, 5 entradas y 5 salidas (10 órdenes); stock 13/0/**1**/7/15/0. Frente al seed (13/0/0/7/15/0, 4 + 3 órdenes), NXV-PER-001 tiene una entrada de 3 y **dos** salidas de 1: una más que las 9 órdenes que vio el usuario en F5, no registrada por el agente.
-- **Cuenta de prueba** `ui-check-3533b06b@example.invalid` (rol `user`, activa): sigue en TinyDB. El agente no conoce su contraseña; la propuesta para borrarla con `DELETE /users/{id}` espera la decisión del usuario.
+- **Demo de Supabase antes de la limpieza (lectura, 2026-10-21):** 6 activos, 5 entradas y 5 salidas (10 órdenes); stock 13/0/1/7/15/0. NXV-PER-001 tenía una entrada de 3 y dos salidas de 1, todas registradas por el usuario en sus pruebas (la segunda salida, después de verificar F5).
+- **Limpieza (2026-10-21, autorizada por el usuario):**
+  - **Demo de Supabase restaurada al neto del seed:** `TRUNCATE assets, asset_entries, asset_exits RESTART IDENTITY CASCADE` (antes 6/5/5, después 0/0/0) y `uv run --env-file .env seed-inventory --email diegoreynoso746@gmail.com` (código 0: 6 activos, 4 entradas y 3 salidas insertadas, a nombre de `45e456e9-…`). Comprobado en solo lectura: ids 1–6, stock 13/0/0/7/15/0, 4 entradas y 3 salidas (7 órdenes). *Corrige la nota de `techContext.md` de que la demo no estaba en el neto del seed.*
+  - **Cuenta de prueba `ui-check-3533b06b@example.invalid` borrada** (variante B del usuario): `DELETE /users/03418547-…` con un token propio de esa cuenta, firmado en local con `JWT_SECRET_KEY` y de 2 minutos (nunca impreso), contra la API local → 204; repetido → 401. En `services/api/data/auth.json` ya no están ni el email, ni el id, ni su perfil (8 usuarios). El JSON no se editó a mano.
 
 ---
 
