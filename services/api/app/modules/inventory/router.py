@@ -13,9 +13,7 @@ Los `responses=` solo documentan en OpenAPI los errores reales de cada ruta
 documenta FastAPI.
 """
 
-from typing import Annotated
-
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from sqlmodel import Session

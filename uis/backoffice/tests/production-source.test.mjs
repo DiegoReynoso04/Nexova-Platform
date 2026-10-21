@@ -1,5 +1,5 @@
 // Reglas estáticas sobre el código de producción del backoffice (incidentes,
-// proveedores y gestor de incidencias; uis/backoffice/CLAUDE.md): `unknown` solo en services/normalizers.ts, nunca
+// proveedores, gestor de incidencias e inventario; uis/backoffice/CLAUDE.md): `unknown` solo en services/normalizers.ts, nunca
 // `any` ni aserciones de tipo, y ninguna API que lea el archivo, persista datos
 // o conserve errores originales. Se analiza el código sin comentarios.
 
@@ -74,6 +74,293 @@ describe('código de producción', () => {
       'types/incident-manager.ts',
     ]) {
       assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('incluye la integración del inventario (Hito 5)', () => {
+    for (const file of [
+      'lib/inventory-api-client.ts',
+      'lib/inventory-routes.ts',
+      'services/inventory.service.ts',
+      'types/inventory.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('el inventario usa su propio cliente, sin reserva a NEXT_PUBLIC_API_URL', () => {
+    const client = codeWithoutComments('lib/inventory-api-client.ts');
+    assert.match(client, /process\.env\.NEXT_PUBLIC_INVENTORY_API_URL/);
+    assert.doesNotMatch(client, /NEXT_PUBLIC_API_URL/);
+    const service = codeWithoutComments('services/inventory.service.ts');
+    assert.match(service, /inventoryApiClient/);
+    assert.doesNotMatch(service, /\bapiClient\b/);
+    // Ningún otro módulo nombra las rutas de la API: el servicio lo centraliza.
+    // lib/inventory-routes.ts se excluye: las páginas del brief se llaman igual
+    // que las rutas de la API, pero son rutas de navegación, no peticiones. Por
+    // lo mismo se ignora el argumento de `PageProps<'…'>`/`LayoutProps<'…'>`:
+    // es el tipo de ruta que genera Next para las props de una página, no una URL.
+    const allowed = ['services/inventory.service.ts', 'lib/inventory-routes.ts'];
+    for (const file of PRODUCTION_FILES.filter((path) => !allowed.includes(path))) {
+      const code = codeWithoutComments(file).replace(/\b(PageProps|LayoutProps)<'[^']*'>/g, '$1<>');
+      assert.doesNotMatch(code, /['`]\/inventory\/(products|orders)['`/]/, file);
+    }
+  });
+
+  test('incluye la página de activos del inventario y su navegación (F2)', () => {
+    for (const file of [
+      'app/inventory/layout.tsx',
+      'app/inventory/page.tsx',
+      'app/inventory/products/page.tsx',
+      'components/inventory/asset-list-view.tsx',
+      'components/inventory/asset-table.tsx',
+      'components/inventory/inventory-error.tsx',
+      'components/inventory/inventory-nav.tsx',
+      'components/inventory/stock-level-badge.tsx',
+      'hooks/use-inventory-assets.ts',
+      'lib/inventory-error-copy.ts',
+      'lib/stock-level.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('las páginas del inventario son Server Components; sus vistas, Client Components que solo usan hooks', () => {
+    for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('app/inventory/'))) {
+      assert.doesNotMatch(codeWithoutComments(file), /^'use client';/, `${file} debe ser Server Component`);
+    }
+    assert.match(codeWithoutComments('app/inventory/products/page.tsx'), /export const metadata/);
+    for (const file of PRODUCTION_FILES.filter((path) => /^components\/inventory\/.+-view\.tsx$/.test(path))) {
+      const code = codeWithoutComments(file);
+      assert.match(code, /^'use client';/, `${file} debe ser Client Component`);
+      assert.match(code, /from '@\/hooks\/use-inventory-/, `${file} sin su hook`);
+    }
+    for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('components/inventory/') || path.startsWith('app/inventory/'))) {
+      assert.doesNotMatch(codeWithoutComments(file), /services\/inventory\.service/, `${file} llama al servicio sin pasar por su hook`);
+    }
+  });
+
+  test('/inventory redirige a Activos y el layout lleva la subnavegación', () => {
+    const index = codeWithoutComments('app/inventory/page.tsx');
+    assert.match(index, /import \{ redirect \} from 'next\/navigation'/);
+    assert.match(index, /redirect\(INVENTORY_PRODUCTS_PATH\)/);
+    assert.match(codeWithoutComments('app/inventory/layout.tsx'), /<InventoryNav \/>/);
+    const nav = codeWithoutComments('components/inventory/inventory-nav.tsx');
+    for (const label of ['Activos', 'Entrada de activos', 'Salida de activos', 'Historial']) {
+      assert.match(nav, new RegExp(`label: '${label}'`), label);
+    }
+    assert.match(nav, /<NavLink /);
+  });
+
+  test('la cabecera lleva un solo enlace «Inventario», activo en todo /inventory', () => {
+    const header = codeWithoutComments('components/auth/account-nav.tsx');
+    assert.match(header, /<NavLink href=\{INVENTORY_PRODUCTS_PATH\} activePrefix=\{INVENTORY_PATH\}>\s*Inventario\s*<\/NavLink>/);
+    assert.equal((header.match(/INVENTORY_[A-Z_]+_PATH\}/g) ?? []).length, 1);
+    assert.doesNotMatch(header, /Entrada de activos|Salida de activos|Historial/);
+  });
+
+  test('cada fila de activos enlaza a registrar una entrada y una salida de ese activo', () => {
+    const table = codeWithoutComments('components/inventory/asset-table.tsx');
+    assert.match(table, /href=\{inboundOrderHref\(asset\.id\)\}[^>]*>\s*Registrar entrada/);
+    assert.match(table, /href=\{outboundOrderHref\(asset\.id\)\}[^>]*>\s*Registrar salida/);
+    for (const column of ['Nombre', 'SKU', 'Categoría', 'Oficina', 'Stock actual']) {
+      assert.match(table, new RegExp(`>${column}</th>`), column);
+    }
+    assert.match(table, /<StockLevelBadge currentStock=\{asset\.current_stock\} \/>/);
+  });
+
+  test('incluye la entrada de activos y sus piezas (F3)', () => {
+    for (const file of [
+      'app/inventory/orders/inbound/page.tsx',
+      'components/inventory/asset-select.tsx',
+      'components/inventory/field-messages.tsx',
+      'components/inventory/inbound-form-view.tsx',
+      'components/inventory/inbound-form.tsx',
+      'components/inventory/read-only-field.tsx',
+      'hooks/use-inbound-form.ts',
+      'lib/asset-preselection.ts',
+      'lib/inventory-form-errors.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('el selector de activo muestra «nombre — SKU (oficina)», nunca el id', () => {
+    const select = codeWithoutComments('components/inventory/asset-select.tsx');
+    assert.match(select, /<option key=\{asset\.id\} value=\{String\(asset\.id\)\}>\s*\{assetOptionLabel\(asset\)\}\s*<\/option>/);
+    // Ningún texto visible de una opción menciona un id.
+    const options = [...select.matchAll(/<option\b[^>]*>([^<]*)<\/option>/g)];
+    assert.ok(options.length >= 4, 'opciones del selector');
+    for (const [, text] of options) assert.doesNotMatch(text, /\bid\b/i, text);
+    const preselection = codeWithoutComments('lib/asset-preselection.ts');
+    const label = preselection.slice(preselection.indexOf('export function assetOptionLabel'));
+    assert.match(label, /^export function assetOptionLabel\(asset: Pick<Asset, 'name' \| 'sku' \| 'office'>\): string \{\s*return `\$\{asset\.name\} — \$\{asset\.sku\} \(\$\{asset\.office\}\)`;/);
+  });
+
+  test('la vista de entrada solo usa sus hooks; ni fetch ni cliente HTTP en las piezas del inventario', () => {
+    const view = codeWithoutComments('components/inventory/inbound-form-view.tsx');
+    assert.match(view, /from '@\/hooks\/use-inbound-form'/);
+    assert.match(view, /from '@\/hooks\/use-inventory-assets'/);
+    for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('components/inventory/') || path.startsWith('app/inventory/'))) {
+      const code = codeWithoutComments(file);
+      assert.doesNotMatch(code, /\bfetch\b/, `${file} hace HTTP`);
+      assert.doesNotMatch(code, /lib\/(inventory-)?api-client/, `${file} usa el cliente HTTP`);
+    }
+    const hook = codeWithoutComments('hooks/use-inbound-form.ts');
+    assert.match(hook, /from '@\/services\/inventory\.service'/);
+    assert.doesNotMatch(hook, /\bfetch\b|inventory-api-client|inventoryApiClient/);
+  });
+
+  test('entrada: oficina del activo en solo lectura, botón con carga y formulario limpio con formKey', () => {
+    const form = codeWithoutComments('components/inventory/inbound-form.tsx');
+    // La oficina es un valor de solo lectura (<output>), no un control editable.
+    assert.match(
+      form,
+      /<ReadOnlyField\s+id="inbound-office"\s+label="Oficina"\s+value=\{selected\?\.office \?\? null\}\s+placeholder="Se toma del activo elegido"\s+help="La oficina receptora es la del activo[^"]*"/
+    );
+    assert.doesNotMatch(form, /id="inbound-office"[^>]*onChange|<input\s+id="inbound-office"/);
+    const readOnly = codeWithoutComments('components/inventory/read-only-field.tsx');
+    assert.match(readOnly, /<label htmlFor=\{id\}/);
+    assert.match(readOnly, /<output id=\{id\}/);
+    assert.doesNotMatch(readOnly, /<input|<select|<textarea|\bborder\b|onChange/);
+    assert.match(form, /asset: selected === null \? null : \{ id: selected\.id, office: selected\.office \}/);
+    assert.match(form, /<Button type="submit" isLoading=\{isSubmitting\}>/);
+    const view = codeWithoutComments('components/inventory/inbound-form-view.tsx');
+    assert.match(view, /<InboundForm\s+key=\{`\$\{formKey\}-\$\{preselection\.status\}`\}/);
+    // Tras el éxito, el formulario limpio conserva el activo de la URL.
+    assert.match(view, /initialAssetId=\{formInitialAssetId\(preselection\)\}/);
+  });
+
+  test('incluye la salida de activos y sus piezas (F4)', () => {
+    for (const file of [
+      'app/inventory/orders/outbound/page.tsx',
+      'components/inventory/outbound-form-view.tsx',
+      'components/inventory/outbound-form.tsx',
+      'hooks/use-outbound-form.ts',
+      'lib/stock-check.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+  });
+
+  test('salida: la vista solo usa sus hooks y elige el activo de la URL, también tras el éxito', () => {
+    const view = codeWithoutComments('components/inventory/outbound-form-view.tsx');
+    assert.match(view, /from '@\/hooks\/use-outbound-form'/);
+    assert.match(view, /from '@\/hooks\/use-inventory-assets'/);
+    assert.match(view, /const initialAssetId = formInitialAssetId\(preselection\);/);
+    assert.match(view, /if \(initialAssetId !== null\) selectAsset\(initialAssetId\);/);
+    assert.match(view, /submitOutbound\(values, initialAssetId\)/);
+    assert.match(view, /<OutboundForm\s+key=\{formKey\}/);
+    const hook = codeWithoutComments('hooks/use-outbound-form.ts');
+    assert.match(hook, /from '@\/services\/inventory\.service'/);
+    assert.doesNotMatch(hook, /\bfetch\b|inventory-api-client|inventoryApiClient/);
+  });
+
+  test('salida: selector compartido, Stock actual antes que Cantidad y la oficina en solo lectura', () => {
+    const form = codeWithoutComments('components/inventory/outbound-form.tsx');
+    assert.match(form, /<AssetSelect\s+id="outbound-asset"/);
+    assert.doesNotMatch(form, /<option\b/);
+    const order = ['id="outbound-asset"', 'id="outbound-stock"', 'id="outbound-office"', 'Tipo de salida *', 'id="outbound-assigned-to"', 'id="outbound-quantity"'];
+    const positions = order.map((marker) => form.indexOf(marker));
+    assert.ok(positions.every((position) => position >= 0), String(positions));
+    assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'orden de los campos');
+    assert.match(form, /<ReadOnlyField\s+id="outbound-stock"\s+label="Stock actual"/);
+    assert.match(
+      form,
+      /<ReadOnlyField\s+id="outbound-office"\s+label="Oficina"\s+value=\{selected\?\.office \?\? null\}\s+placeholder="Se toma del activo elegido"/
+    );
+    assert.doesNotMatch(form, /<input\s+id="outbound-(office|stock)"/);
+    // Se envía la oficina del activo elegido.
+    assert.match(form, /outboundFormValues\(selected === null \? null : \{ id: selected\.id, office: selected\.office \}/);
+  });
+
+  test('salida: Cantidad espera al stock, advertencia sin bloqueo y el 400 de stock bajo Cantidad', () => {
+    const form = codeWithoutComments('components/inventory/outbound-form.tsx');
+    assert.match(form, /disabled=\{isSubmitting \|\| !quantityEnabled\(stock\)\}/);
+    assert.match(form, /<div id="outbound-quantity-warning" aria-live="polite">/);
+    assert.match(form, /Consultando stock…/);
+    assert.match(form, /No se pudo consultar el stock/);
+    assert.match(form, /<FieldMessages id="outbound-quantity-messages" messages=\{quantityMessages\} alert=\{error\?\.kind === 'api_error'\} \/>/);
+    assert.match(codeWithoutComments('components/inventory/field-messages.tsx'), /role=\{alert \? 'alert' : undefined\}/);
+    // La advertencia nunca decide si se envía.
+    const submit = form.slice(form.indexOf('function handleSubmit'), form.indexOf('const summaryRef'));
+    assert.doesNotMatch(submit, /showWarning|exceedsStock|currentStock/);
+    // «Asignado a» solo existe con una asignación.
+    assert.match(form, /\{exitType === 'allocation' && \(\s*<div className="flex flex-col gap-1">\s*<label htmlFor="outbound-assigned-to"/);
+    assert.match(form, /value: 'allocation', label: 'Asignación'/);
+    assert.match(form, /value: 'consumption', label: 'Consumo'/);
+    assert.match(form, /<Button type="submit" isLoading=\{isSubmitting\}>/);
+  });
+
+  test('incluye el historial del inventario y sus piezas (F5)', () => {
+    for (const file of [
+      'app/inventory/orders/page.tsx',
+      'components/inventory/order-history-view.tsx',
+      'components/inventory/order-table.tsx',
+      'components/inventory/order-type-badge.tsx',
+      'hooks/use-inventory-orders.ts',
+      'lib/order-format.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+    assert.match(codeWithoutComments('app/inventory/orders/page.tsx'), /export const metadata/);
+  });
+
+  test('historial: la vista solo usa su hook y nadie hace fetch', () => {
+    const view = codeWithoutComments('components/inventory/order-history-view.tsx');
+    assert.match(view, /^'use client';/);
+    assert.match(view, /from '@\/hooks\/use-inventory-orders'/);
+    assert.match(view, /<OrderTable orders=\{orders\} \/>/);
+    assert.match(view, /Todavía no hay entradas ni salidas\./);
+    assert.match(view, /<InventoryError error=\{load\.error\} \/>[\s\S]*Reintentar/);
+    for (const file of ['components/inventory/order-history-view.tsx', 'components/inventory/order-table.tsx', 'components/inventory/order-type-badge.tsx']) {
+      assert.doesNotMatch(codeWithoutComments(file), /\bfetch\b|lib\/(inventory-)?api-client|inventoryApiClient/, file);
+    }
+    // El hook solo toma de lib/api-client.ts el tipo de error de la cancelación (como los de F2–F4).
+    assert.doesNotMatch(codeWithoutComments('hooks/use-inventory-orders.ts'), /\bfetch\b|inventory-api-client|inventoryApiClient/);
+    assert.match(codeWithoutComments('hooks/use-inventory-orders.ts'), /import \{ InventoryServiceError, listOrders \} from '@\/services\/inventory\.service';/);
+  });
+
+  test('historial: las columnas del brief (nombre, cantidad, tipo, fecha y user_uuid)', () => {
+    const table = codeWithoutComments('components/inventory/order-table.tsx');
+    for (const column of ['Tipo', 'Activo', 'Cantidad', 'Oficina', 'Detalle', 'Fecha', 'Usuario']) {
+      assert.match(table, new RegExp(`>${column}</th>`), column);
+    }
+    assert.match(table, /<OrderTypeBadge type=\{order\.type\} \/>/);
+    assert.match(table, /\{order\.asset\.name\}/);
+    assert.match(table, /\{order\.asset\.sku\}/);
+    assert.match(table, /\{order\.quantity\}/);
+    assert.match(table, /\{orderDetail\(order\)\}/);
+    // La fecha legible, con el ISO completo en el atributo dateTime.
+    assert.match(table, /<time dateTime=\{order\.created_at\}>\{formatOrderDate\(order\.created_at\)\}<\/time>/);
+    assert.equal((table.match(/order\.created_at/g) ?? []).length, 2);
+    // El user_uuid completo, en monoespaciada y sin desbordar.
+    assert.match(table, /<td className="[^"]*\bfont-mono\b[^"]*\bbreak-all\b[^"]*">\{order\.user_uuid\}<\/td>/);
+    assert.match(table, /className="relative overflow-x-auto/);
+    const badge = codeWithoutComments('components/inventory/order-type-badge.tsx');
+    assert.match(badge, /<span aria-hidden="true">\{icon\}<\/span>\s*\{label\}/);
+    const classes = badge.match(/inbound: '([^']+)',\s*outbound: '([^']+)'/);
+    assert.ok(classes, 'colores por tipo');
+    assert.notEqual(classes[1], classes[2], 'entrada y salida con el mismo color');
+  });
+
+  test('historial: de solo lectura, sin acciones de editar ni borrar', () => {
+    for (const file of ['components/inventory/order-history-view.tsx', 'components/inventory/order-table.tsx', 'components/inventory/order-type-badge.tsx']) {
+      const code = codeWithoutComments(file);
+      assert.doesNotMatch(code, /\b(Editar|Borrar|Eliminar|Modificar)\b/i, file);
+      assert.doesNotMatch(code, /\b(delete|patch|put)\w*\(/i, file);
+      assert.doesNotMatch(code, /<(input|select|textarea|form)\b/, file);
+    }
+    const table = codeWithoutComments('components/inventory/order-table.tsx');
+    assert.doesNotMatch(table, /<Button\b|<button\b|<Link\b|<a\b|onClick/);
+    // El único botón de la vista es «Reintentar».
+    const view = codeWithoutComments('components/inventory/order-history-view.tsx');
+    assert.equal((view.match(/<Button\b/g) ?? []).length, 1);
+  });
+
+  test('la UI del inventario usa el vocabulario del CONTEXT («activos», no «productos»)', () => {
+    for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('components/inventory/') || path.startsWith('app/inventory/'))) {
+      assert.doesNotMatch(codeWithoutComments(file), /\b[Pp]roductos?\b/, file);
     }
   });
 

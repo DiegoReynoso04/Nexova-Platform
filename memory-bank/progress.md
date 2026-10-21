@@ -4,9 +4,214 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-21 — Frontend del inventario, F6: documentación y verificación final
+
+**Estado: hecho.** Documentación comiteada en `09e53ef`, sobre F5 (`0fa0da3`), en `feature/inventory-frontend`. Después, con la confirmación del usuario, se restauró la demo y se borró la cuenta de prueba (ver «Limpieza» abajo); la rama se sube y se abre la PR contra `main`.
+
+- **Documentación:**
+  - `docs/inventory-frontend-review.md` (nuevo), con el estilo de `docs/inventory-review.md`: qué se construyó, arranque en PowerShell (API, `.env.local` con las dos variables, reinicio de `npm run dev`), suites y totales, recorrido manual de las 4 páginas, trazabilidad «Qué vamos a evaluar» → implementación → test → navegador, decisiones D1–D10 con sus ajustes y lo que no está verificado;
+  - `uis/backoffice/README.md`: sección `/inventory/*`, `NEXT_PUBLIC_INVENTORY_API_URL`, estructura, validación y enlace a la guía;
+  - `uis/backoffice/CLAUDE.md`: versión final de la sección «Inventario» (selector compartido, `ReadOnlyField`, `formInitialAssetId`, orden de los campos de la salida, stock reactivo, historial, arquitectura por página, `next typegen` y tests);
+  - `AGENTS.md` §4: bloque «Inventario — frontend»;
+  - `memory-bank/techContext.md`: la fila de la UI del inventario pasa a hecha, sección «Inventario: frontend del backoffice» con las decisiones permanentes y la nota de la demo corregida (ya no está en el neto del seed); `memory-bank/projectbrief.md`: el inventario con su interfaz.
+- **Base de comparación:** `origin/main` en `8e5448e` (no hay rama `main` local). Commits de la rama: `0e0f133` (F1), `2dccef0` (`style(api)`), `72bd839` (F2), `064a569` (F3), `a591686` (F4) y `0fa0da3` (F5).
+- **Verificación final (2026-10-21):**
+
+  | Comprobación | Resultado |
+  |---|---|
+  | `uis/backoffice`: `tsc` / `lint` | sin errores |
+  | `uis/backoffice`: `build` | correcto: `○ /inventory`, `○ /inventory/products`, `○ /inventory/orders`, `ƒ /inventory/orders/inbound`, `ƒ /inventory/orders/outbound` |
+  | `uis/backoffice`: `node:test` | 491/491 (344 antes del frontend del inventario) |
+  | `uis/backoffice`: Jest | 222/222, 13 suites (161 antes) |
+  | `services/api`: `unittest` | 409 OK |
+  | `services/api`: `pytest` | 612 passed, 3023 subtests; 1 aviso de dependencias (Starlette: `httpx` con `TestClient`), ajeno a la rama |
+  | `git diff origin/main..HEAD --stat` | 60 archivos, +5172 / −19; idéntico con y sin `--ignore-cr-at-eol` |
+  | Secretos (`git log -p origin/main..HEAD` y `git diff origin/main` con la guía nueva) | no encontrados: project-ref, usuario, contraseña, host del pooler, `DATABASE_URL`, `JWT_SECRET_KEY`, `*.pooler.supabase.com`, `postgresql://` con credenciales (0) y tokens `eyJ…` |
+  | Archivos prohibidos en los commits de la rama | ninguno (`.env`, `.env.local`, `.vscode/`, `coverage/`, `data/`, `node_modules/`, `.next/`); solo `uis/backoffice/.env.example`, documentación sin secretos (`http://localhost:8000`) |
+  | Enlaces relativos y anclas de los documentos tocados | 84 comprobados, 0 problemas |
+  | Finales de línea | LF en todos los archivos tocados |
+
+- **Demo de Supabase antes de la limpieza (lectura, 2026-10-21):** 6 activos, 5 entradas y 5 salidas (10 órdenes); stock 13/0/1/7/15/0. NXV-PER-001 tenía una entrada de 3 y dos salidas de 1, todas registradas por el usuario en sus pruebas (la segunda salida, después de verificar F5).
+- **Limpieza (2026-10-21, autorizada por el usuario):**
+  - **Demo de Supabase restaurada al neto del seed:** `TRUNCATE assets, asset_entries, asset_exits RESTART IDENTITY CASCADE` (antes 6/5/5, después 0/0/0) y `uv run --env-file .env seed-inventory --email diegoreynoso746@gmail.com` (código 0: 6 activos, 4 entradas y 3 salidas insertadas, a nombre de `45e456e9-…`). Comprobado en solo lectura: ids 1–6, stock 13/0/0/7/15/0, 4 entradas y 3 salidas (7 órdenes). *Corrige la nota de `techContext.md` de que la demo no estaba en el neto del seed.*
+  - **Cuenta de prueba `ui-check-3533b06b@example.invalid` borrada** (variante B del usuario): `DELETE /users/03418547-…` con un token propio de esa cuenta, firmado en local con `JWT_SECRET_KEY` y de 2 minutos (nunca impreso), contra la API local → 204; repetido → 401. En `services/api/data/auth.json` ya no están ni el email, ni el id, ni su perfil (8 usuarios). El JSON no se editó a mano.
+
+---
+
+## 2026-10-20 — Frontend del inventario, F5: Historial (`/inventory/orders`)
+
+**Estado: hecho, verificado por el usuario y comiteado**, en `feature/inventory-frontend`, sobre F4 (`a591686`). El agente no ha escrito en Supabase ni ha creado cuentas.
+
+- **Verificación del usuario en el navegador, con Supabase real (2026-10-20), todo correcta:**
+  - 9 órdenes: las 7 del seed más su entrada de 3 y su salida de 1 de NXV-PER-001, arriba del todo;
+  - insignias Entrada/Salida distintas; activo con nombre y SKU; cantidad, oficina y detalle (proveedor / «Asignación → …» / «Consumo»); fecha legible en español y el `user_uuid` completo en todas;
+  - sin botones de editar ni borrar;
+  - con la API parada, error con «Reintentar»; al arrancarla, la tabla carga;
+  - sin sesión, `/inventory/orders` lleva a `/login`.
+
+- **Arquitectura:** `app/inventory/orders/page.tsx` (Server Component con metadata) → `components/inventory/order-history-view.tsx` (`'use client'`) → `hooks/use-inventory-orders.ts` (mismo patrón que `use-inventory-assets`: reducer, `ordersView`, sesión con abort y contador, y hook) → `listOrders`.
+- **Tabla (`order-table.tsx`), de solo lectura y en el orden de la API** (la más reciente primero). Las columnas:
+  - Tipo: `order-type-badge.tsx`, con icono, texto y color distintos (↓ Entrada en verde, ↑ Salida en azul);
+  - Activo: nombre y SKU;
+  - Cantidad y Oficina;
+  - Detalle: «Proveedor: …» en una entrada; «Asignación → …» o «Consumo» en una salida;
+  - Fecha: `Intl.DateTimeFormat('es-ES', { dateStyle: 'medium', timeStyle: 'short' })` en la zona del navegador, dentro de `<time dateTime>` con el ISO completo;
+  - Usuario: el `user_uuid` completo, en monoespaciada y con `break-all`.
+  - La clave de cada fila lleva el tipo, porque entradas y salidas tienen ids independientes.
+- **`lib/order-format.ts`:** `ORDER_TYPE_BADGES`, `formatOrderDate` (una fecha que no se puede interpretar se muestra tal cual) y `orderDetail`.
+- **Estados:** cargando; vacío («Todavía no hay entradas ni salidas.»); error con el `detail` de la API y «Reintentar»; datos, con el contador de órdenes (solo con datos: en el estado vacío no se muestra «0 órdenes»). Sin ninguna acción de editar ni borrar.
+- **Tests:**
+  - Jest: `__tests__/utils/order-format.test.ts`, en la cobertura (insignias distintas, fecha en `Europe/Madrid` y `America/New_York`, cambio de día, fecha no válida, los tres textos de Detalle);
+  - `node:test`: `tests/use-inventory-orders.test.mjs` (los cuatro estados, con el 503 a través del servicio y el cliente reales; reintento; un fallo tras datos; recarga con abort; servicio que ignora la cancelación; desmontaje);
+  - `production-source`: piezas; la vista solo usa su hook y nadie hace `fetch` (el hook solo toma `ApiAbortError` de `lib/api-client.ts`, como los de F2–F4); columnas del brief; `<time dateTime>`; `user_uuid` en monoespaciada con `break-all`; `relative overflow-x-auto`; colores distintos por tipo; ningún botón, enlace, formulario ni texto de editar o borrar en la tabla.
+- **Mutaciones (7, todas detectadas y deshechas):** sin `user_uuid`; la misma insignia (texto e icono, y color); la fecha en ISO bruto (tabla y formato); un botón «Borrar»; sin descartar la respuesta tardía.
+- **Comprobado en el navegador integrado** con un `fetch` falso dentro de la página (sin API real, sin Supabase y sin cuentas; el token falso se borró al terminar):
+  - tres órdenes en el orden recibido, con los tres tipos de Detalle y fechas locales (`Europe/Madrid`: 23:30Z → «20 oct 2026, 1:30»);
+  - estado vacío, error 503 con su `detail` y «Reintentar», que recupera los datos;
+  - a 375 px no hay scroll horizontal en la página (375 = 375) y la tabla se desplaza en su contenedor (896 frente a 342).
+- **Validación** (F4 → F5): `build` correcto, con `○ /inventory/orders`; `tsc` y `lint` sin errores; `node:test` 473 → 491; Jest 214 → 222.
+
+---
+
+## 2026-10-20 — Frontend del inventario, F4: Salida de activos (`/inventory/orders/outbound`)
+
+**Estado: hecho, revisado por el usuario y comiteado**, en `feature/inventory-frontend`, sobre F3 (`064a569`). El agente no ha registrado salidas en Supabase ni ha creado cuentas.
+
+- **Prueba del usuario en el navegador, con Supabase real (2026-10-20), todo correcta**, desde «Registrar salida» de la fila de Ratón ergonómico (`?asset_id=3`):
+  - activo preseleccionado; Stock actual «3 · Bajo» visible antes de la cantidad; Oficina «Valencia» en solo lectura (el ajuste de F3);
+  - al cambiar a NXV-IT-001 el stock pasa a 13 y al volver, a 3;
+  - una asignación sin «Asignado a» da el error en ese campo, sin envío;
+  - un consumo de 5: advertencia visible; al enviar, el 400 «Insufficient stock for asset 'Ratón ergonómico'. Available: 3, requested: 5.» bajo Cantidad;
+  - un consumo de 1: «Salida registrada: 1 × Ratón ergonómico (NXV-PER-001)»; el ratón sigue elegido y el stock pasa a 2.
+  - **Conclusión sobre F3:** el activo que se perdía tras la entrada no era un fallo; aquella página no llevaba `?asset_id=`.
+  - La demo de Supabase sigue fuera del neto del seed (ahora con esta salida); se restaura en F6.
+
+- **Página:** `app/inventory/orders/outbound/page.tsx`, Server Component asíncrono que lee `?asset_id=` como la entrada; `next typegen` regenera la ruta tipada nueva.
+- **Hook (`hooks/use-outbound-form.ts`):**
+  - el reducer guarda el activo elegido y el stock (`idle` / `loading` con el valor anterior / `known` / `error`), además del envío y `formKey`;
+  - `selectAsset` lee `GET /inventory/products/{id}`, aborta la lectura anterior y descarta las respuestas tardías (contador; vale también con A → B → A y con un servicio que ignora la cancelación);
+  - `submit(values, nextAssetId)`: un envío a la vez; tras el éxito el formulario se monta limpio con el activo de la URL (`formInitialAssetId`) y se vuelve a leer su stock; tras un 400 `insufficient_stock` se vuelve a leer el del activo elegido, sin vaciar el valor que se muestra;
+  - funciones puras: `knownStock`, `quantityEnabled`, `outboundFormValues` («Asignado a» vacío salvo con `allocation`) y `outboundConfirmation` («Salida registrada: N × nombre (SKU)»).
+- **Formulario (`components/inventory/outbound-form.tsx`), en este orden:**
+  1. Activo (`AssetSelect` compartido);
+  2. Stock actual (`ReadOnlyField`: «Consultando stock…» con spinner, o el número con `StockLevelBadge`; si falla, «No disponible» y el aviso «No se pudo consultar el stock…»);
+  3. Oficina (`ReadOnlyField`);
+  4. Tipo de salida (radios «Asignación» / «Consumo», que envían `allocation` / `consumption`);
+  5. Asignado a (solo con una asignación);
+  6. Cantidad: deshabilitada hasta conocer el stock (o hasta que falle su lectura); la advertencia de cantidad mayor que el stock va en un contenedor `aria-live="polite"` y no bloquea el envío; el 400 de stock va debajo con el `detail` de la API y `role="alert"` (prop nueva `alert` de `FieldMessages`).
+  - Con un consumo, los errores de `assigned_to` (que no se ve) van al aviso general.
+- **`lib/stock-check.ts`:** `exceedsStock(quantity, stock)`, probado con Jest (`__tests__/utils/stock-check.test.ts`, en la cobertura de `jest.config.mjs`).
+- **Tests:**
+  - `tests/inventory-outbound.test.mjs` (19): Cantidad y stock; lectura al elegir; A → B con abort; servicio que ignora la cancelación (A → B y A → B → A); fallo de la lectura; sin activo; advertencia sin bloqueo; «Asignado a» en los valores y en el body (`null` en un consumo); validación sin petición; 400 junto a Cantidad y nueva lectura; 422 de `assigned_to`; 404 en el aviso general; éxito con y sin activo en la URL; doble envío; desmontaje;
+  - `production-source`: piezas, la vista solo usa hooks y elige el activo de la URL también tras el éxito, selector compartido sin `<option>` propios, orden de los campos, Stock y Oficina en solo lectura, Cantidad ligada a `quantityEnabled`, `aria-live`, `role="alert"` en el 400, la advertencia fuera de `handleSubmit` y «Asignado a» solo con `allocation`.
+- **Mutaciones (13, todas detectadas y deshechas):** sin abortar la lectura anterior; sin descartar la respuesta tardía (detectada tras añadir el test A → B → A, porque la guarda del reducer la tapaba con A ≠ B); la advertencia bloquea el envío; el 400 fuera de Cantidad (servicio) y sin `role="alert"`; `assigned_to` en un consumo (body y valores); sin volver a leer el stock tras el éxito y tras el 400; Cantidad habilitada sin stock (regla y formulario); sin el activo de la URL tras el éxito.
+- **Comprobado en el navegador integrado** con un `fetch` falso dentro de la página (sesión, activos, stock y salidas simulados; sin API real, sin Supabase y sin cuentas; el token falso se borró al terminar):
+  - preselección y stock (8, «Suficiente»); al cambiar de activo, «Consultando stock…» con Cantidad deshabilitada;
+  - stock 0 con cantidad 3: advertencia visible y envío permitido; el 400 aparece bajo Cantidad con `role="alert"` y sin aviso general, y el stock se vuelve a leer («Actualizando…»);
+  - salida correcta con asignación: confirmación, formulario limpio con el activo de la URL y stock leído de nuevo (8 → 6);
+  - lectura fallida: «No disponible», el aviso y Cantidad habilitada;
+  - a 375 px no hay scroll horizontal (375 = 375).
+- **Validación** (F3 → F4): `build` correcto, con `ƒ /inventory/orders/outbound`; `tsc` y `lint` sin errores; `node:test` 445 → 473; Jest 201 → 214.
+
+---
+
+## 2026-10-20 — Frontend del inventario, F3: Entrada de activos (`/inventory/orders/inbound`)
+
+**Estado: hecho, revisado por el usuario y comiteado**, en `feature/inventory-frontend`, sobre F2 (`72bd839`). El agente no ha registrado ninguna entrada en Supabase ni ha creado cuentas.
+
+- **Demo de Supabase fuera del neto del seed:** la prueba real del usuario dejó una entrada de 3 × NXV-PER-001. Se restaura en F6 (TRUNCATE + `seed-inventory`, con confirmación del usuario).
+- **Verificación en el navegador del usuario (2026-10-20):**
+  - sin enviar: el selector muestra las 6 opciones «nombre — SKU (oficina)», sin ids; la Oficina cambia con el activo; la preselección funciona desde la fila de Activos; con `?asset_id=999` aparece el aviso, sin preselección; el formulario vacío da errores por campo y ninguna petición;
+  - entrada real «Entrada registrada: 3 × Ratón ergonómico (NXV-PER-001)»: en Activos, 3 y «Bajo». Cantidad y Proveedor se vaciaron, pero el activo volvió a «Elige un activo…».
+- **Investigación del activo perdido:**
+  - el enlace de la fila es correcto (`inboundOrderHref(asset.id)` → `?asset_id=N`; comprobado en los `href`);
+  - en el navegador integrado, con un `fetch` falso dentro de la página (sin API, sin Supabase y sin cuentas): desde «Registrar entrada» de la fila (`?asset_id=2`), el activo **se mantiene** tras la entrada; desde la subnavegación (sin parámetro), vuelve a «Elige un activo…», que es el síntoma observado;
+  - el agente no pudo ver la URL del navegador del usuario (el log de Next no guarda las URLs), y la causa más probable es que la página no llevaba `?asset_id=`;
+  - aun así, el comportamiento queda fijado: `formInitialAssetId(preselección)` en `lib/asset-preselection.ts` (también la usará F4), un test que lo comprueba tras una entrada correcta, una regla estática en la vista y dos mutaciones detectadas.
+- **Oficina de solo lectura:** `components/inventory/read-only-field.tsx` es un `<output>` asociado a la etiqueta, con fondo atenuado y sin borde de campo. Se mantienen la ayuda y «Se toma del activo elegido» cuando no hay activo, y lo usará F4 (Stock actual y Oficina). La regla estática exige `ReadOnlyField` y ni `<input>` ni borde; detecta las mutaciones «otra vez input» y «con borde».
+
+- **Página:** `app/inventory/orders/inbound/page.tsx`, Server Component asíncrono (`PageProps<'/inventory/orders/inbound'>` de Next 16: `searchParams` es una promesa, así que la ruta es dinámica). Lee `?asset_id=` con `parseAssetIdParam` y renderiza `inbound-form-view.tsx`.
+- **Piezas:**
+  - `lib/asset-preselection.ts`: lectura de `?asset_id=` (solo un entero positivo en dígitos; cualquier otra cosa cuenta como pedido inválido), `resolvePreselection` (none / pending / found / missing) y `assetOptionLabel` («nombre — SKU (oficina)», sin id);
+  - `lib/inventory-form-errors.ts`: reparto de un error entre los campos y el aviso general (422 y validación en cliente por campo, con el `msg` de la API debajo; `api_error` con campo del formulario solo junto al campo; el resto, aviso general). Lo reutilizará la salida (F4);
+  - `hooks/use-inbound-form.ts`: reducer (`formKey + 1` tras el éxito), sesión sin React (un envío a la vez; el segundo se ignora; abort al desmontar) y hook; `inboundConfirmation` → «Entrada registrada: N × nombre (SKU)»;
+  - `components/inventory/asset-select.tsx` (cargando, error con «Reintentar», vacío y datos; aviso visible si el activo del enlace no existe), `field-messages.tsx` e `inbound-form.tsx` (oficina del activo en solo lectura, `inputMode="numeric"`, botón con spinner y deshabilitado durante el envío, foco al aviso general tras un fallo).
+- **Tests:** `tests/inventory-inbound.test.mjs` (14: parámetro, preselección, opción sin id, reparto de errores, éxito y `formKey`, body con números y la oficina del activo, validación sin petición, 400/404/500/503 con `detail`, 422 con `apiMessage`, red/timeout/respuesta ilegible, doble envío y desmontaje). `production-source`, 4 reglas F3: piezas presentes; el selector nunca muestra el id; la vista solo usa sus hooks y ninguna pieza del inventario hace `fetch` ni importa un cliente HTTP; oficina en solo lectura, botón con `isLoading` y `key` con `formKey`.
+- **Regla estática ajustada:** «el inventario usa su propio cliente» prohibía cualquier literal `/inventory/(products|orders)` fuera del servicio y fallaba con `PageProps<'/inventory/orders/inbound'>`, el tipo de ruta que genera Next para las props de la página (no una URL de la API). Ahora ignora solo el argumento de `PageProps<'…'>`/`LayoutProps<'…'>`; una URL de la API en una página se sigue detectando (mutación 7).
+- **Mutaciones (12, todas detectadas y deshechas):** el selector muestra el id (opción y etiqueta); oficina editable y oficina enviada que no es la del activo; `quantity` como texto; sin limpiar tras el éxito (reducer y `key`); error sin su `detail` (servicio y texto); doble envío (sesión y botón sin `isLoading`); una URL de la API en la página.
+- **Validación** (F2 → F3, con los ajustes): `build` correcto, con `ƒ /inventory/orders/inbound`; `tsc` y `lint` sin errores; `node:test` 416 → 445; Jest 201 (sin cambios).
+
+---
+
+## 2026-10-20 — Frontend del inventario, F2: Activos (`/inventory/products`) y navegación
+
+**Estado: hecho y validado; comiteado tras la revisión del usuario**, en `feature/inventory-frontend`, sobre F1 (`0e0f133`) y el `style(api)` (`2dccef0`). Sin pruebas que escriban en Supabase: el usuario hace las del navegador.
+
+- **Antes, ya comiteado:**
+  - F1 + el brief literal (`docs/inventory-frontend-brief.md`), commit `0e0f133`;
+  - la unión de los imports de `typing` en `services/api/app/modules/inventory/router.py`, commit `2dccef0`. Las suites de `services/api` dan 409 y 612 antes y después; pytest cuenta un subtest menos, porque `test_no_session_is_created_at_module_level` abre uno por sentencia de nivel de módulo.
+- **Navegación:**
+  - `app/inventory/layout.tsx` con `components/inventory/inventory-nav.tsx` (Activos · Entrada de activos · Salida de activos · Historial, con `aria-current` vía `NavLink`);
+  - un solo enlace «Inventario» en la cabecera, marcado en todo `/inventory` (prop nueva `activePrefix` de `NavLink`);
+  - `app/inventory/page.tsx` redirige a `/inventory/products` con `redirect()` de Next 16 (Server Component).
+- **`/inventory/products`:**
+  - página Server Component → `asset-list-view.tsx` → `hooks/use-inventory-assets.ts` (reducer, sesión y hook);
+  - tabla Nombre / SKU / Categoría / Oficina / Stock actual (número + `StockLevelBadge` con color, icono y texto) y, en cada fila, «Registrar entrada» y «Registrar salida» con `?asset_id=`;
+  - cuatro estados (cargando, error con «Reintentar», vacío sin tabla, datos); `relative overflow-x-auto`.
+- **Errores:** los textos se movieron a `lib/inventory-error-copy.ts` (módulo puro y probado). Un `api_error` muestra el `detail` de la API bajo un título en español; el resto, textos fijos.
+- **`lib/stock-level.ts`:** 0 = Agotado; de 1 a 5 = Bajo; más de 5 = Suficiente (D6), documentado.
+- **Tests:**
+  - Jest: `stock-level` (0, 1, 5, 6…) y las rutas `/inventory/*` en `auth-routes`;
+  - `node:test`: `use-inventory.test.mjs` (los cuatro estados, reintento, carrera con abort y con un servicio que ignora la cancelación, desmontaje y los textos de error);
+  - `production-source`: estructura, Server/Client Components, redirección, subnavegación, un solo enlace en la cabecera, las acciones de cada fila y nada de «productos» en la UI.
+- **Mutaciones:**
+  - detectadas: umbrales de `stockLevel` (`<` y `0`); no descartar respuestas antiguas; no abortar la carga anterior; las dos acciones de la fila a la entrada; «Inventario» sin `activePrefix`; el error sin su `detail`; la vista sin `'use client'`;
+  - **no detectada, equivalente:** quitar la guarda `active` de `emit` (todos los que llaman ya comprueban `active`).
+- **Ajustes de la revisión visual del usuario:**
+  - el SKU nunca se parte (`whitespace-nowrap`);
+  - el número y el indicador del stock van en una línea en todas las filas;
+  - un solo título: el `h1` de la página, que pasa su id a la sección (`aria-labelledby`) como prop, porque una constante importada de un módulo `'use client'` en un Server Component no es el texto.
+- **Comprobado en el navegador** (con una cuenta de prueba local `ui-check-…@example.invalid`, creada en `/register` y guardada en `services/api/data/auth.json`; solo lecturas de Supabase):
+  - a 1280 px y a 375 px no hay scroll horizontal en la página (1265 = 1265 y 375 = 375);
+  - a 375 px la tabla se desplaza dentro de su contenedor (704 frente a 342) y la subnavegación cabe;
+  - el SKU ocupa una línea y la celda del stock mide lo mismo en las 6 filas;
+  - sin sesión, `/inventory/products` lleva a `/login`.
+- **422, opción 3 del usuario:** `InventoryFieldError.apiMessage` lleva el `msg` de la API (sin prefijo, texto no vacío de hasta 300 caracteres) para mostrarlo debajo del texto propio. Lo cubren 3 tests nuevos; las mutaciones (sin `apiMessage`, sin quitar el prefijo, sin límite) se detectan.
+- **Validación** (F1 → F2): `build` correcto, con `/inventory` y `/inventory/products`; `tsc` y `lint` sin errores; `node:test` 386 → 416; Jest 187 → 201.
+
+---
+
+## 2026-10-19 — Frontend del inventario (`uis/backoffice`), F1: memory-bank, contrato, cliente y servicio
+
+**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-frontend`, creada desde `origin/main` en `8e5448e` (merge de la PR #21). Plan aprobado por el usuario: F1 (integración, sin UI), F2 (Activos, subnavegación y `/inventory` → `/inventory/products`), F3 (Entrada), F4 (Salida), F5 (Historial) y F6 (cierre y restauración de la demo).
+
+- **Memory-bank:** sincronizado con el merge de la PR #21 (`8e5448e`, 2026-10-19). El inventario ya no figura como «pendiente de PR» ni en una rama sin integrar; `origin/main` se verificó en `8e5448e` (también la PR #20, `ef1e083`).
+- **`uis/backoffice/CLAUDE.md`:** quinta pieza (`/inventory/*`, autorizada por el usuario) y su sección:
+  - páginas y navegación (un enlace «Inventario» en la cabecera y una subnavegación en `app/inventory/layout.tsx`);
+  - `NEXT_PUBLIC_INVENTORY_API_URL` sin reserva;
+  - vocabulario y etiquetas del CONTEXT;
+  - formularios (oficina del activo, números, `?asset_id=`, cantidad bloqueada hasta conocer el stock, advertencia que no bloquea);
+  - la excepción de errores acotada a `/inventory`: el `detail` de texto de los 4xx/5xx se muestra; sin cuerpo legible, textos fijos; 422 con texto propio por campo; 401 como siempre.
+- **Código** (sin UI todavía):
+  - `types/inventory.ts`: contrato y vocabulario.
+  - `services/normalizers.ts`: activos, órdenes discriminadas por `type`, campos de los 422.
+  - `lib/inventory-api-client.ts`: el mismo `createApiClient` con la base URL de `NEXT_PUBLIC_INVENTORY_API_URL`.
+  - `lib/api-client.ts`: `ApiConfigError` nombra la variable del cliente (mensaje que la UI no muestra).
+  - `services/inventory.service.ts` y `lib/inventory-routes.ts`.
+  - `.env.example` con la variable nueva.
+- **Tests:**
+  - `node:test`: `inventory-contract` (vocabulario igual al CONTEXT y a `vocabulary.py`, límites, las 4 rutas protegidas) y `inventory.service` (Bearer en las 5 operaciones, variable sin reserva, números, oficina del activo, `assigned_to: null` en un consumo, y todos los errores, incluidos 500/503 con `detail` y el `detail` que no es texto); dos reglas nuevas en `production-source`.
+  - Jest: `__tests__/utils/inventory.service.test.ts` (`parseQuantity` y validadores).
+- **Mutaciones**, todas detectadas y deshechas: sin Bearer; `quantity` como texto; `office` del formulario en vez del activo (en la entrada y, tras reforzar el test con un activo de Miami, en la salida); `insufficient_stock` sin `field`; reserva a `NEXT_PUBLIC_API_URL`.
+- **Validación** (línea base → F1): `build` correcto; `tsc` y `lint` sin errores; `node:test` 344 → 386; Jest 161 → 187.
+- **Brief literal versionado** en `docs/inventory-frontend-brief.md`, con una nota de equivalencias («BRIEFING.md» = `README.md` raíz + CONTEXT; `/backoffice/inventory/...` = `/inventory/...`), y enlazado desde `uis/backoffice/CLAUDE.md`.
+- **422 (corregido el 2026-10-20, opción 3 del usuario):** junto a cada campo, un texto propio en español y, debajo, el `msg` de la API si es utilizable. Así se cumple también el «extrae el mensaje del cuerpo» del brief.
+
+---
+
 ## 2026-10-18 — Hito 5, F5: documentación de cierre y verificación final (hito hecho)
 
-**Estado: hecho y verificado, sin comitear** (el usuario revisa antes del commit), en `feature/inventory-orm`, sobre F4 (`f004944`). **El Hito 5 (F1–F5) está hecho.** Pendiente: commit de F5, push y PR, que hace el usuario.
+**Estado: hecho y verificado, sin comitear** (el usuario revisa antes del commit), en `feature/inventory-orm`, sobre F4 (`f004944`). **El Hito 5 (F1–F5) está hecho.** ~~Pendiente: commit de F5, push y PR, que hace el usuario.~~ *Corregido el 2026-10-19: comiteado, PR #21 integrada en `main` (merge `8e5448e`).*
 
 - **Documentación:**
   - `services/api/SPECS.md`: Parte F (§34–§40) con requisitos, decisiones D1–D11 y F2–F4, equivalencia con los nombres del enunciado, contrato, errores y esquema; referencias en la cabecera, §4 y §7.

@@ -7,12 +7,22 @@ import type { ReactNode } from 'react';
 export interface NavLinkProps {
   href: string;
   children: ReactNode;
+  /**
+   * Marca el enlace como actual en cualquier ruta bajo este prefijo (p. ej.
+   * «Inventario» en las cuatro páginas de `/inventory`). Por defecto, solo en `href`.
+   */
+  activePrefix?: string;
+}
+
+function isUnder(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
 // Enlace de navegación que marca la página actual con aria-current (y con un
 // subrayado, para no depender solo del color). usePathname exige cliente.
-export function NavLink({ href, children }: NavLinkProps) {
-  const isCurrent = usePathname() === href;
+export function NavLink({ href, children, activePrefix }: NavLinkProps) {
+  const pathname = usePathname();
+  const isCurrent = activePrefix === undefined ? pathname === href : isUnder(pathname, activePrefix);
   return (
     <Link
       href={href}

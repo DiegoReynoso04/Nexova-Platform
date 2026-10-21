@@ -1,6 +1,6 @@
 # Backoffice
 
-Panel administrativo interno de **Nexova Solutions**. Tiene cuatro vistas de negocio: la portada con la ficha de la empresa, el **análisis de incidentes de soporte** (`/incidents`), el **directorio de proveedores** (`/suppliers`) y el **gestor centralizado de incidencias** (`/incident-manager`, `/incident-manager/new`), todas protegidas por sesión (AUTH-02): `/login`, `/register` y `/account/profile`.
+Panel administrativo interno de **Nexova Solutions**. Tiene cinco piezas de negocio: la portada con la ficha de la empresa, el **análisis de incidentes de soporte** (`/incidents`), el **directorio de proveedores** (`/suppliers`), el **gestor centralizado de incidencias** (`/incident-manager`, `/incident-manager/new`) y el **inventario de equipos y materiales** (`/inventory/*`), todas protegidas por sesión (AUTH-02): `/login`, `/register` y `/account/profile`.
 
 ## Vistas
 
@@ -42,6 +42,18 @@ Registro estructurado de incidencias técnicas y operativas de Nexova. Requisito
 - Necesita la API en marcha; para ver datos históricos, el seed del CSV (`scripts/seed_incidents.py`, ver [`services/api/README.md`](../../services/api/README.md)).
 - Guía de revisión de todo el proyecto (API, seed, UI, suites y trazabilidad): [`docs/centralized-incident-manager-review.md`](../../docs/centralized-incident-manager-review.md).
 
+### `/inventory/*` — inventario de equipos y materiales
+
+Interfaz del inventario del Hito 5 para el personal de operaciones: consultar el stock, registrar entregas y salidas y revisar el historial. Brief: [`docs/inventory-frontend-brief.md`](../../docs/inventory-frontend-brief.md); contexto: [`docs/context-nexova-gestion-inventario-hito-5.md`](../../docs/context-nexova-gestion-inventario-hito-5.md); contrato: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte F. Se abre desde **«Inventario»** en la cabecera; una subnavegación lleva a las cuatro páginas (`/inventory` redirige a Activos).
+
+- **`/inventory/products` (Activos)**: `GET /inventory/products`. Nombre, SKU, categoría, oficina y Stock actual con su nivel (0 «Agotado», de 1 a 5 «Bajo», más de 5 «Suficiente»; color, icono y texto). Cada fila enlaza a registrar una entrada o una salida de ese activo (`?asset_id=`).
+- **`/inventory/orders/inbound` (Entrada de activos)**: `POST /inventory/orders/inbound`. Selector «nombre — SKU (oficina)», Oficina del activo en solo lectura, Cantidad y Proveedor. Validación en cliente sin petición; tras el éxito, «Entrada registrada: N × nombre (SKU)» y formulario limpio con el activo del enlace.
+- **`/inventory/orders/outbound` (Salida de activos)**: `POST /inventory/orders/outbound`. Al elegir un activo se lee su stock (`GET /inventory/products/{id}`) y se muestra antes de la cantidad; Cantidad espera a conocerlo. Asignación (con «Asignado a») o Consumo. Una cantidad mayor que el stock avisa sin bloquear; el 400 de stock insuficiente aparece bajo Cantidad con el mensaje de la API. Tras el envío, el stock se vuelve a leer.
+- **`/inventory/orders` (Historial)**: `GET /inventory/orders`, de solo lectura, la más reciente primero: tipo (Entrada/Salida), activo, cantidad, oficina, detalle, fecha local y `user_uuid`.
+- **Errores:** un 4xx/5xx con `detail` muestra ese mensaje de la API bajo un título en español; los 422, un texto propio por campo con el mensaje de la API debajo; red, timeout o respuesta ilegible, textos fijos con «Reintentar».
+- Necesita la API en marcha con `DATABASE_URL` y, para ver datos, el seed (`uv run --env-file .env seed-inventory --email <usuario>`; ver [`services/api/README.md`](../../services/api/README.md#inventario-hito-5)).
+- **Prueba manual** (las 4 páginas, paso a paso) y trazabilidad con el brief: [`docs/inventory-frontend-review.md`](../../docs/inventory-frontend-review.md).
+
 ### Autenticación — `/login`, `/register`, `/account/profile` (AUTH-02)
 
 Contexto: [`docs/auth-frontend.md`](../../docs/auth-frontend.md); contrato: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte C.
@@ -65,15 +77,15 @@ Contexto: [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md); co
 
 ## Stack técnico
 
-Mismo stack que [`uis/talent-pipeline-tracker`](../talent-pipeline-tracker/README.md), decisión registrada en [`memory-bank/techContext.md`](../../memory-bank/techContext.md): Next.js 16 (App Router), React 19, TypeScript estricto, Tailwind CSS v4 (`@import "tailwindcss"` en `app/globals.css`, sin `tailwind.config.ts`). Sin librerías de estado externas y sin dependencias añadidas para `/incidents`, `/suppliers` ni `/incident-manager`.
+Mismo stack que [`uis/talent-pipeline-tracker`](../talent-pipeline-tracker/README.md), decisión registrada en [`memory-bank/techContext.md`](../../memory-bank/techContext.md): Next.js 16 (App Router), React 19, TypeScript estricto, Tailwind CSS v4 (`@import "tailwindcss"` en `app/globals.css`, sin `tailwind.config.ts`). Sin librerías de estado externas y sin dependencias añadidas para `/incidents`, `/suppliers`, `/incident-manager` ni `/inventory`.
 
 ## Puesta en marcha
 
-Requisitos: Node.js 20 o superior para la app; **Node.js 24** para ejecutar los tests (`node --test` con TypeScript sin dependencias). Para `/incidents`, `/suppliers` y `/incident-manager`, además, la API de `services/api` en marcha (ver su README); para ver proveedores, el seeder ejecutado (`cd services/api && uv run seed`).
+Requisitos: Node.js 20 o superior para la app; **Node.js 24** para ejecutar los tests (`node --test` con TypeScript sin dependencias). Para `/incidents`, `/suppliers`, `/incident-manager` y `/inventory`, además, la API de `services/api` en marcha (ver su README); para ver proveedores, el seeder ejecutado (`cd services/api && uv run seed`); para el inventario, `DATABASE_URL` y `seed-inventory`.
 
 ```bash
 npm install
-cp .env.example .env.local   # NEXT_PUBLIC_API_URL=http://localhost:8000 (.env.local está ignorado por git)
+cp .env.example .env.local   # NEXT_PUBLIC_API_URL y NEXT_PUBLIC_INVENTORY_API_URL=http://localhost:8000 (.env.local está ignorado por git)
 npm run dev                  # servidor de desarrollo en http://localhost:3000
 npm run build                # build de producción
 npm run start                # sirve el build
@@ -82,6 +94,9 @@ npm run start                # sirve el build
 | Variable | Valor local | Uso |
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | URL base de `services/api`. Se incorpora al JavaScript **en tiempo de build** (`NEXT_PUBLIC_*`). Si falta, `/incidents` y `/suppliers` muestran un error de configuración al usarlas; el build no falla |
+| `NEXT_PUBLIC_INVENTORY_API_URL` | `http://localhost:8000` | URL base de la API del inventario (solo el host; el servicio añade `/inventory/...`). La pide el brief. **Sin reserva** a `NEXT_PUBLIC_API_URL`: si falta, las páginas del inventario muestran un error de configuración; el build no falla |
+
+Las variables `NEXT_PUBLIC_*` se leen al arrancar `npm run dev`: tras cambiar `.env.local`, hay que pararlo y volver a lanzarlo.
 
 `.env.example` es solo documentación: Next.js no lo carga (solo lee `.env`, `.env.local`, `.env.$(NODE_ENV)` y `.env.$(NODE_ENV).local`).
 
@@ -100,9 +115,9 @@ npm run build
 node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/support/resolve-alias.mjs --test --test-timeout=10000 "tests/*.test.mjs"
 ```
 
-Los tests (`tests/*.test.mjs`) usan el runner nativo de Node 24, sin dependencias: normalizadores, cliente HTTP, servicios de incidentes, proveedores, gestor de incidencias y autenticación, estado/sesión de los hooks (cancelación, carreras, exportación, recarga tras cambios, sesión, login/registro y perfil), token en `localStorage`, cabecera Bearer y 401, protección de rutas, vocabulario y renovaciones de proveedores contra el CONTEXT, vocabulario, etiquetas de sede y transiciones del gestor contra su CONTEXT, envío/listado/reversión optimista/resumen del gestor, y una revisión estática del código de producción. Esa revisión comprueba: sin `any`; `unknown` solo en `services/normalizers.ts`; `fetch`, `JSON.stringify` y `Authorization` solo en `lib/api-client.ts`; `localStorage` solo en `lib/auth-token.ts`; sin lectura del archivo; sin borrado de proveedores; existen `app/error.tsx`, `app/global-error.tsx` y `app/not-found.tsx`, que no leen el error y enlazan a inicio; y ningún texto de la UI muestra detalles técnicos. `tests/support/resolve-alias.mjs` resuelve el alias `@/` para Node sin tocar `tsconfig.json`. El aviso `MODULE_TYPELESS_PACKAGE_JSON` se silencia porque `package.json` no declara `"type"`.
+Los tests (`tests/*.test.mjs`) usan el runner nativo de Node 24, sin dependencias: normalizadores, cliente HTTP, servicios de incidentes, proveedores, gestor de incidencias y autenticación, estado/sesión de los hooks (cancelación, carreras, exportación, recarga tras cambios, sesión, login/registro y perfil), token en `localStorage`, cabecera Bearer y 401, protección de rutas, vocabulario y renovaciones de proveedores contra el CONTEXT, vocabulario, etiquetas de sede y transiciones del gestor contra su CONTEXT, envío/listado/reversión optimista/resumen del gestor, y una revisión estática del código de producción. Esa revisión comprueba: sin `any`; `unknown` solo en `services/normalizers.ts`; `fetch`, `JSON.stringify` y `Authorization` solo en `lib/api-client.ts`; `localStorage` solo en `lib/auth-token.ts`; sin lectura del archivo; sin borrado de proveedores; existen `app/error.tsx`, `app/global-error.tsx` y `app/not-found.tsx`, que no leen el error y enlazan a inicio; y ningún texto de la UI muestra detalles técnicos. Del inventario cubren: el vocabulario contra el CONTEXT y el backend; el servicio (Bearer, números y oficina del activo en el body, y todos los errores); los hooks de Activos, Entrada, Salida (stock reactivo, carreras, advertencia sin bloqueo, nueva lectura del stock) e Historial; y reglas estáticas (sin `fetch` en los componentes, selector sin id, Oficina y Stock en solo lectura, columnas del historial y ninguna acción de editar ni borrar). `tests/support/resolve-alias.mjs` resuelve el alias `@/` para Node sin tocar `tsconfig.json`. El aviso `MODULE_TYPELESS_PACKAGE_JSON` se silencia porque `package.json` no declara `"type"`.
 
-**Jest (AUTH-088 y FE-019):** `npm run test:jest` ejecuta con cobertura los tests de `__tests__/**/*.test.ts`. `__tests__/auth/` cubre la lógica TypeScript de autenticación: token en `localStorage`, protección de rutas, servicio de auth, normalizadores de auth y estado de la sesión. `__tests__/utils/` cubre los límites de las utilidades del frontend: renovaciones de proveedores, tarifa, validación de los formularios de proveedores y del gestor, y textos de error. La configuración está en `jest.config.mjs` (entorno `node`, alias `@/` y ts-jest en CommonJS). Jest no recoge `tests/*.test.mjs`, que siguen con `node:test`. Plan, cobertura medida y por qué no hay generación ni decodificado de tokens ni hash en TypeScript: [`services/api/TESTING.md`](../../services/api/TESTING.md) §10 y §12.
+**Jest (AUTH-088 y FE-019):** `npm run test:jest` ejecuta con cobertura los tests de `__tests__/**/*.test.ts`. `__tests__/auth/` cubre la lógica TypeScript de autenticación: token en `localStorage`, protección de rutas, servicio de auth, normalizadores de auth y estado de la sesión. `__tests__/utils/` cubre los límites de las utilidades del frontend: renovaciones de proveedores, tarifa, validación de los formularios de proveedores, del gestor y del inventario, textos de error, nivel de stock, advertencia de la salida y formato del historial. La configuración está en `jest.config.mjs` (entorno `node`, alias `@/` y ts-jest en CommonJS). Jest no recoge `tests/*.test.mjs`, que siguen con `node:test`. Plan, cobertura medida y por qué no hay generación ni decodificado de tokens ni hash en TypeScript: [`services/api/TESTING.md`](../../services/api/TESTING.md) §10 y §12.
 
 La unión con React (montaje/desmontaje), la descarga real y los flujos de autenticación (login, registro, perfil, redirecciones, logout) se validan manualmente en el navegador.
 
@@ -122,6 +137,11 @@ app/
 ├── suppliers/page.tsx          # /suppliers: Server Component (metadata) que renderiza el directorio
 ├── incident-manager/page.tsx   # /incident-manager: resumen + listado del gestor de incidencias
 ├── incident-manager/new/page.tsx # /incident-manager/new: formulario de registro
+├── inventory/                  # layout con la subnavegación; /inventory → /inventory/products
+│   ├── products/page.tsx       # Activos
+│   ├── orders/page.tsx         # Historial
+│   ├── orders/inbound/page.tsx # Entrada de activos (lee ?asset_id=)
+│   └── orders/outbound/page.tsx # Salida de activos (lee ?asset_id=)
 └── globals.css                 # Tailwind v4 + paleta y tokens semánticos compartidos con talent-pipeline-tracker
 
 components/
@@ -129,7 +149,8 @@ components/
 ├── auth/                       # sesión, guard, navegación de cuenta, login, registro, perfil y contraseñas
 ├── incidents/                  # vista cliente (incident-analysis-view) + componentes presentacionales
 ├── suppliers/                  # vista cliente (supplier-directory-view) + filtros, tabla, formulario, badges
-└── incident-manager/           # vistas cliente (board, form) + resumen, filtros, tabla, formulario, errores
+├── incident-manager/           # vistas cliente (board, form) + resumen, filtros, tabla, formulario, errores
+└── inventory/                  # vistas cliente (activos, entrada, salida, historial) + selector, tablas, insignias, valores de solo lectura
 
 hooks/use-incident-analysis.ts  # estado de /incidents: reducer + sesión (cancelación, carreras, exportación)
 hooks/use-supplier-directory.ts # estado de /suppliers: reducer + sesión (filtros, alta, tarifa, estado, carreras)
@@ -139,11 +160,16 @@ hooks/use-incident-form.ts      # envío del formulario del gestor (formKey para
 hooks/use-auth-session.ts       # sesión: token de localStorage + validación con GET /auth/me
 hooks/use-auth-form.ts          # envío de /login, /register y los formularios de contraseña
 hooks/use-profile.ts            # /account/profile: GET /auth/me + PUT /profiles/me
+hooks/use-inventory-assets.ts   # Activos (también el selector de los formularios)
+hooks/use-inbound-form.ts       # envío de la entrada (formKey)
+hooks/use-outbound-form.ts      # activo elegido, stock reactivo y envío de la salida
+hooks/use-inventory-orders.ts   # Historial
 services/
 ├── incidents.service.ts        # frontera HTTP de incidentes (prevalidación UX, mapeo de errores, export)
 ├── suppliers.service.ts        # frontera HTTP de proveedores (campos requeridos, body, 422 por campo)
 ├── incident-manager.service.ts # frontera HTTP del gestor (validación en cliente, 400 → textos propios por campo)
 ├── auth.service.ts             # login, registro, usuario actual, perfil y contraseñas (services/api Partes C y D)
+├── inventory.service.ts        # único módulo que llama a /inventory (validación, body, errores)
 └── normalizers.ts              # única frontera con `unknown` de red
 lib/
 ├── api-client.ts               # cliente HTTP genérico (timeout, errores tipados, Bearer y 401, sin credentials)
@@ -151,11 +177,16 @@ lib/
 ├── auth-routes.ts              # rutas públicas/abiertas y decisión del guard
 ├── supplier-renewal.ts         # renovaciones en los próximos 60 días (presentación)
 ├── incident-manager-routes.ts  # rutas del gestor de incidencias
+├── inventory-api-client.ts     # el mismo cliente con NEXT_PUBLIC_INVENTORY_API_URL
+├── inventory-routes.ts         # rutas del inventario y enlaces con ?asset_id=
+├── stock-level.ts, stock-check.ts, order-format.ts # nivel de stock, advertencia de la salida y formato del historial
+├── asset-preselection.ts, inventory-form-errors.ts, inventory-error-copy.ts # preselección, reparto de errores y textos
 └── company.ts                  # datos de Nexova, cada campo citado desde contexts/CONTEXT.md
 types/incidents.ts              # contrato que recibe el frontend (incidentes)
 types/suppliers.ts              # contrato y vocabulario del directorio de proveedores
 types/incident-manager.ts       # contrato, vocabulario, etiquetas de sede y transiciones del gestor
 types/auth.ts                   # contrato de autenticación y perfil
+types/inventory.ts              # contrato y vocabulario del inventario
 tests/                          # tests node --test (.mjs) + support/
 
 .env.example                    # variables de entorno documentadas (sin secretos)
@@ -163,6 +194,7 @@ tests/                          # tests node --test (.mjs) + support/
 
 ## Documentación relacionada
 
-- [`CLAUDE.md`](./CLAUDE.md) — restricciones vigentes para este subproyecto, incluidas las de `/incidents`.
+- [`CLAUDE.md`](./CLAUDE.md) — restricciones vigentes para este subproyecto, incluidas las de `/incidents` y `/inventory`.
+- [`docs/inventory-frontend-review.md`](../../docs/inventory-frontend-review.md) — guía de revisión del inventario: arranque, recorrido de las 4 páginas, trazabilidad con el brief y lo que no está verificado.
 - [`memory-bank/techContext.md`](../../memory-bank/techContext.md) — por qué este proyecto usa Next.js en vez del HTML estático de `uis/website`, y decisiones técnicas de `/incidents`.
 - [`memory-bank/projectbrief.md`](../../memory-bank/projectbrief.md) — resumen versionado del briefing de Nexova (el original, `contexts/CONTEXT.md`, es local y no viaja con el repositorio).
