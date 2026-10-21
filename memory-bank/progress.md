@@ -4,9 +4,21 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-21 — Memory-bank: estado del frontend del inventario
+
+**Estado: hecho.** Sin impacto técnico: solo `memory-bank/`, para reflejar el merge de la PR #22.
+
+- **Verificado** (`git fetch origin`): `origin/main` en `410da71`, el merge de la PR #22 (`feature/inventory-frontend`, 2026-10-21, padres `8e5448e` y `0199caf`); `0199caf` está en `origin/main`.
+- **Corregido:**
+  - `techContext.md`: la fila «Inventario de equipos y materiales (UI)» (ya no «F6 pendiente de commit; sin PR todavía», sino F6 en `09e53ef`, limpieza en `0199caf` y merge `410da71`); la sección «Inventario: frontend del backoffice» (añade F6 y el merge); «Estado real en `main`» (cabecera verificada el 2026-10-21 en `410da71` y una línea de actualización con lo que integra la PR #22).
+  - `projectbrief.md`: la fila del inventario, de «sin PR todavía» a integrada con la PR #22 (sin cambiar datos de negocio).
+  - `progress.md`: la entrada de F6 (la subida y la PR estaban en futuro) y la de F1 («sin comitear»), corregidas en sitio; punto «Inventario (Hito 5)» en «Próximos pasos conocidos»; y, en esa misma sección, la línea de `uis/backoffice` («tiene `/incidents` y `/suppliers`»), que ahora lista las piezas de «Alcance actual» de su `CLAUDE.md`: `/`, `/incidents`, `/suppliers`, `/incident-manager` (PR #17), `/inventory/*` (PR #22) y la autenticación (AUTH-02/AUTH-03).
+
+---
+
 ## 2026-10-21 — Frontend del inventario, F6: documentación y verificación final
 
-**Estado: hecho.** Documentación comiteada en `09e53ef`, sobre F5 (`0fa0da3`), en `feature/inventory-frontend`. Después, con la confirmación del usuario, se restauró la demo y se borró la cuenta de prueba (ver «Limpieza» abajo); la rama se sube y se abre la PR contra `main`.
+**Estado: hecho.** Documentación comiteada en `09e53ef`, sobre F5 (`0fa0da3`), en `feature/inventory-frontend`. Después, con la confirmación del usuario, se restauró la demo y se borró la cuenta de prueba (ver «Limpieza» abajo). ~~La rama se sube y se abre la PR contra `main`.~~ *Corregido el 2026-10-21: la rama se subió y se integró en `main` con la PR #22 (merge `410da71`, 2026-10-21), con F1–F6 y la limpieza (`0199caf`).*
 
 - **Documentación:**
   - `docs/inventory-frontend-review.md` (nuevo), con el estilo de `docs/inventory-review.md`: qué se construyó, arranque en PowerShell (API, `.env.local` con las dos variables, reinicio de `npm run dev`), suites y totales, recorrido manual de las 4 páginas, trazabilidad «Qué vamos a evaluar» → implementación → test → navegador, decisiones D1–D10 con sus ajustes y lo que no está verificado;
@@ -183,7 +195,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-10-19 — Frontend del inventario (`uis/backoffice`), F1: memory-bank, contrato, cliente y servicio
 
-**Estado: hecho y validado, sin comitear** (el usuario revisa cada fase), en `feature/inventory-frontend`, creada desde `origin/main` en `8e5448e` (merge de la PR #21). Plan aprobado por el usuario: F1 (integración, sin UI), F2 (Activos, subnavegación y `/inventory` → `/inventory/products`), F3 (Entrada), F4 (Salida), F5 (Historial) y F6 (cierre y restauración de la demo).
+**Estado: hecho y validado** (el usuario revisa cada fase). ~~Sin comitear.~~ *Corregido el 2026-10-21: comiteado en `0e0f133` e integrado en `main` con la PR #22 (merge `410da71`).* En `feature/inventory-frontend`, creada desde `origin/main` en `8e5448e` (merge de la PR #21). Plan aprobado por el usuario: F1 (integración, sin UI), F2 (Activos, subnavegación y `/inventory` → `/inventory/products`), F3 (Entrada), F4 (Salida), F5 (Historial) y F6 (cierre y restauración de la demo).
 
 - **Memory-bank:** sincronizado con el merge de la PR #21 (`8e5448e`, 2026-10-19). El inventario ya no figura como «pendiente de PR» ni en una rama sin integrar; `origin/main` se verificó en `8e5448e` (también la PR #20, `ef1e083`).
 - **`uis/backoffice/CLAUDE.md`:** quinta pieza (`/inventory/*`, autorizada por el usuario) y su sección:
@@ -1762,10 +1774,14 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
     - T5: se acerca más a un refactor;
     - el `BrokenPipeError` de `analyze.py`: sin test fiable en Windows;
     - el riesgo de duplicación del seed: es consistencia de datos.
+- **Inventario (Hito 5):**
+  - API integrada en `main` con la PR #21 (merge `8e5448e`, 2026-10-19); guía en `docs/inventory-review.md`.
+  - Frontend (`uis/backoffice` → `/inventory/*`) integrado en `main` con la PR #22 (merge `410da71`, 2026-10-21); guía en `docs/inventory-frontend-review.md`. La demo de Supabase está en el neto del seed (restaurada el 2026-10-21).
+  - Pendientes: la revisión por el tech lead o la CTO de D1–D11 y de las decisiones de F2–F4 de la API (`services/api/SPECS.md` §35) y de D1–D10 y sus ajustes del frontend (`docs/inventory-frontend-review.md`, «Decisiones y ajustes»); y lo que recogen las secciones «Lo que no está verificado» de `docs/inventory-review.md` y de `docs/inventory-frontend-review.md`.
 - **Gestor centralizado de incidencias:** hecho en F1–F6 en `feature/centralized-incident-manager` (commits `164a183`, `959a65b`, `ef040f5`, `d7ce215`, `7ce4101`, `ca0bf00` y el arreglo móvil `ee944ae`). Integrado en `main` con la PR #17 (merge `6dfa013`, 2026-10-08). Guía de revisión: `docs/centralized-incident-manager-review.md`. Pendientes: la revisión de P4-1…P4-13 (decisiones del usuario) por el tech lead o la CTO, la aceptación con el CSV real y la verificación visual en móvil y con lector de pantalla.
 - **Backend general de Nexova:** `docs/ARCHITECTURE_PROPOSAL.md` está pendiente de revisión por el CTO. Si se aprueba, sus dominios (candidatos, vacantes, pipeline, matching) tendrán que decidir cómo convivir con el `services/api/` ya existente del procesador de incidentes (mismo servicio o no, prefijo `/api/v1` o no). Nada de eso se ha iniciado.
 - **Procesador de incidentes:** Fases 1, 2 y 3 (`/incidents` en `uis/backoffice`) hechas e integradas en `main` (PR #6). Existe un fixture sintético de aceptación que reproduce las cifras del contexto (entrada 2026-09-27, PR #7). Pendientes: el test de aceptación con el CSV real (las cifras 100/96/4 no están verificadas con datos reales) y la Fase 4 (integración). Antes de la Fase 4 o de un uso multiusuario real, revisar la deuda de `LastResultStore` (ver "Decisiones y problemas conocidos").
-- `uis/backoffice` es un punto de entrada — tiene `/incidents` y `/suppliers`; el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.
+- `uis/backoffice` es un punto de entrada — tiene, según «Alcance actual» de `uis/backoffice/CLAUDE.md`, la vista de entrada (`/`), `/incidents`, `/suppliers`, `/incident-manager` (PR #17) e `/inventory/*` (PR #22), todas protegidas por la autenticación (AUTH-02, con las vistas de contraseña de AUTH-03); el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.
 - **Directorio de proveedores:** hecho e integrado en `main` con el PR #9 (entrada 2026-09-29). Migración futura de TinyDB a Postgres cuando exista el ORM (decisión del tech lead) — `User`/`Profile` de AUTH-01 **no** migran: se quedan en TinyDB y Postgres solo guardará `user_uuid`.
 - **AUTH-01:** hecho e integrado en `main` con el PR #10 (entrada 2026-09-30). Su siguiente fase (que el frontend envíe el token y `PUT` en CORS) la cubrió AUTH-02.
 - **AUTH-03:** implementado en `feature/password-reset` (entradas 2026-10-05 y 2026-10-06), validado de extremo a extremo con email real y con H-1 de la auditoría corregido. Commits `cb9d0d5` y `2a1926a`, integrados en `main` con la PR #16 (merge `677e735`, 2026-10-07). La guía para revisarlo está en `docs/auth-password-reset.md`. El merge no aprueba las propuestas P3-1…P3-6 ni decide sobre M-1, M-2 y M-3, que siguen pendientes.
