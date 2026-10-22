@@ -1,0 +1,20 @@
+# Contexto de build: services/ (ver services/Dockerfile). Patrones relativos a
+# esa carpeta; "**/" los aplica también dentro de api/.
+
+# Exigidos por el brief (#infra-40).
+**/__pycache__
+**/*.pyc
+**/.env*
+**/tests
+**/*.log
+
+# Entorno local de Windows y datos reales: nunca dentro de la imagen.
+api/.venv
+api/data
+
+# Artefactos de tests, cobertura y build.
+**/.coverage
+**/.coverage.*
+**/.pytest_cache
+**/htmlcov
+**/*.egg-info

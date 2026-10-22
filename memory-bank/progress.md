@@ -4,9 +4,9 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
-## 2026-10-22 — #infra-40 (Docker para desarrollo y despliegue en el VPS): F0 y F1
+## 2026-10-22 — #infra-40 (Docker para desarrollo y despliegue en el VPS): F0, F1 y F2
 
-**Estado: en curso** (sin commit), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
+**Estado: en curso** (F0 y F1 comiteados en `6a49d6f`; F2 sin commit), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
 
 - **F0 — análisis, aprobado por el usuario con cambios:**
   - brief literal en `docs/infra-40-brief.md`, con una nota de equivalencias (`uis/website` es HTML estático, no Next.js; `/services` es `services/api`);
@@ -21,7 +21,15 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - **Para F2:** `requirements.txt` lleva hashes, así que `uv pip install -r` exige hash en cada requisito; los dos paquetes locales (`packages/shared` y `packages/incident-analyzer`) se instalan en un comando aparte, sin dependencias.
   - **Para F4:** comprobar que, con el bind mount, las `NEXT_PUBLIC_*` del entorno de Compose ganan al `uis/backoffice/.env.local` del host; si ganara `.env.local`, el navegador iría a `localhost:8000`.
   - **Para F5:** comprobar que `requirements.txt` sigue a `uv.lock` exportando al scratchpad y comparando con `diff`.
-- Impacto técnico: `.gitattributes`, `.env.example` y `requirements.txt` nuevos; `techContext.md` se actualizará al cerrar el ticket.
+- **F2 — imagen de la API (2026-10-23), con Docker Desktop ya en marcha:**
+  - **D1 confirmado:** `docker run --rm node:24-alpine busybox --list` sale con 0 (304 applets) y `grep httpd` con 1 (Alpine 3.24.1, Node v24.20.0).
+  - **`services/Dockerfile`:** `python:3.14.6-slim` (Debian 13, glibc 2.41; la misma versión del venv); `uv` 0.12.21 con `COPY --from=ghcr.io/astral-sh/uv:0.12.21` (la versión que generó `requirements.txt`; binario estático, sin pip ni red en esa capa); `uv pip install --system --no-cache --require-hashes -r requirements.txt`; los paquetes del monorepo por **`PYTHONPATH`** (`/packages/shared:/packages/incident-analyzer`), sin instalarlos, porque instalarlos pediría `setuptools` a PyPI (la imagen no lo trae) y en F4 una copia instalada taparía el bind mount de `packages/` (precedente: `pythonpath` de pytest en `pyproject.toml`); capas en orden de caché (dependencias, paquetes, código); `CMD` uvicorn con `--factory`, `--host 0.0.0.0`, `--port 8000`, `--workers 1` y `--reload`; `EXPOSE 8000`; sin ENV ni ARG con secretos.
+  - **El `.dockerignore` del contexto principal no se aplica al contexto adicional `packages`:** la primera imagen llevaba `__pycache__` y `.pyc` del host (también de CPython 3.10). Se corrige con una etapa `monorepo-packages` que copia los dos paquetes y borra la caché de bytecode; la imagen final solo copia el resultado.
+  - **`services/.dockerignore`:** lo del brief con `**/` (`__pycache__`, `*.pyc`, `.env*`, `tests`, `*.log`) más `api/.venv`, `api/data`, `.coverage*`, `.pytest_cache`, `htmlcov` y `*.egg-info`.
+  - **Verificado:** build correcto (28 paquetes con hashes); en `/app` y `/packages` no hay `.env*`, `tests`, `.venv`, `data`, `*.egg-info` ni `__pycache__`, y en toda la imagen ningún `.env*` ni `*.egg-info`; `nexova_shared`, `incident_analyzer` y `app.main` importables; `docker history --no-trunc` sin `secret`, `password`, `DATABASE_URL` ni `JWT`; con `--env-file .env`: `/health` 200, `/docs` 200, y los logs sin la URL, el usuario, la contraseña ni el host de la base, sin `JWT_SECRET_KEY` ni `RESEND_API_KEY`. Imagen de 337 MB.
+  - **Sin `.env`:** el `ConfigError` de `JWT_SECRET_KEY`, sin secretos en el traceback. **Con `--reload` el contenedor no termina:** el reloader (PID 1) sigue vivo esperando cambios y el contenedor queda en `running` con la API caída. Sin `--reload` sale con código 1.
+  - **Para F4:** un `healthcheck` sobre `/health` para que un arranque fallido se vea (`unhealthy`) aunque el reloader siga vivo; `--reload-dir /packages` además de `/app/api`, porque uvicorn solo vigila el directorio de trabajo. Ojo: `--reload-dir` **sustituye** al directorio vigilado por defecto, así que hay que pasar los dos (`--reload-dir /app/api --reload-dir /packages`) y comprobarlo en la línea «Will watch for changes in these directories» del log.
+- Impacto técnico: `.gitattributes`, `.env.example`, `requirements.txt`, `services/Dockerfile` y `services/.dockerignore` nuevos; `techContext.md` se actualizará al cerrar el ticket.
 ---
 
 ## 2026-10-21 — Memory-bank: estado del frontend del inventario
