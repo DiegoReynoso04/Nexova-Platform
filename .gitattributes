@@ -1,0 +1,11 @@
+# Fin de línea de lo que se ejecuta dentro de Linux (contenedores de Docker,
+# #infra-40). En Windows, con core.autocrlf=true, la copia de trabajo se
+# escribe con CRLF aunque el índice esté en LF, y un bind mount o un COPY llevan
+# esa copia al contenedor: un script con CRLF falla con "/bin/sh^M". Por eso se
+# fuerza LF en la copia de trabajo solo para estos archivos; el resto del repo
+# no cambia (ni "* text=auto" ni renormalización).
+#
+# Scripts de shell (p. ej. uis/start.sh, el CMD del contenedor de interfaces).
+*.sh text eol=lf
+# Dockerfiles (uis/Dockerfile, services/Dockerfile), leídos por el builder en Linux.
+Dockerfile text eol=lf

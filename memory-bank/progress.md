@@ -4,6 +4,26 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-22 — #infra-40 (Docker para desarrollo y despliegue en el VPS): F0 y F1
+
+**Estado: en curso** (sin commit), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
+
+- **F0 — análisis, aprobado por el usuario con cambios:**
+  - brief literal en `docs/infra-40-brief.md`, con una nota de equivalencias (`uis/website` es HTML estático, no Next.js; `/services` es `services/api`);
+  - comprobado: Docker 29.7.2 y Compose v5.5.0 (`additional_contexts` desde 2.17); `node:24-alpine` y `python:3.14-slim` existen (amd64 y arm64); las 28 dependencias de `uv.lock` sin el grupo dev se resuelven solo con wheels para Linux x86_64 y CPython 3.14 (también `psycopg2-binary` 2.9.13); en Next 16.3 los rewrites de `next.config` se cargan al arrancar `next dev` y, con `next start`, salen del `routes-manifest.json` de `next build`; recarga en Docker con `watchOptions.pollIntervalMs` (Turbopack) y `WATCHPACK_POLLING` (vigilante de Next);
+  - decisiones del usuario: D1 con un script `http` de Node para el website (la `busybox` de Alpine se compila sin `httpd`), D2 sin tocar CORS (`localhost:3001` sigue para el tracker fuera de Docker), D3 con build args en producción, D4–D7 como las propuso, y las fases F1–F7 del plan;
+  - pendiente: el motor de Docker Desktop no arranca en la máquina del usuario (el backend falla al crear `sailor-ingest.sock`), que lo arregla él; sin motor no se ha ejecutado `busybox --list` ni verificado el polling.
+- **F1 — base:**
+  - **Fin de línea:** el índice está entero en LF (449 `i/lf`, 22 `i/none`, 2 `i/-text`, 0 CRLF); el CRLF solo está en la copia de trabajo (258 `w/crlf`) por `core.autocrlf=true`. `.gitattributes` nuevo, solo con `*.sh text eol=lf` y `Dockerfile text eol=lf`; no hacía falta renormalizar (no existía ninguno). `.dockerignore` no entra: Docker quita el `\r` de cada patrón (`TrimSpace` en `moby/patternmatcher`). El `.env` con CRLF queda por verificar en F4.
+  - **`.env.example` en la raíz** (sin secretos): las 12 variables que lee la API, agrupadas como en `services/api/.env.example`, más `API_INTERNAL_URL=http://api:8000` (variable solo de servidor para el rewrite; sin `NEXT_PUBLIC_` para no incorporarse al JavaScript del navegador), `NEXT_PUBLIC_API_URL=/backend`, `NEXT_PUBLIC_INVENTORY_API_URL=/backend` y, comentada como el resto del trío de Resend, `PASSWORD_RESET_URL=http://localhost:3001/reset-password`. El aviso sobre los valores con `$` queda pendiente de verificar en F4. Comprobado: `.env` de la raíz ignorado (`.gitignore:6`), `.env.example` no (`.gitignore:11`), y ningún `.env` en el historial (`git log --all -- .env '**/.env'`: 0 commits).
+  - **`services/api/requirements.txt`:** `uv export --frozen --no-dev --no-emit-project --format requirements-txt -o requirements.txt` desde `services/api` (la cabecera de `uv` recoge el comando); 28 paquetes con hashes; sin `nexova-incident-analyzer` ni `nexova-shared` (no están en `uv.lock`). `uv.lock` y `pyproject.toml` sin cambios.
+  - **Corrección tras la revisión del usuario:** `PASSWORD_RESET_URL` estaba activa y `RESEND_API_KEY` y `EMAIL_FROM` comentadas; `config.py` exige las tres juntas o ninguna (`ConfigError`), así que con solo `JWT_SECRET_KEY` y `DATABASE_URL` la API no habría arrancado. Ahora va comentada, con el mismo valor. Comprobado cargando las variables activas del archivo en `Settings.from_env` (con valores ficticios en las dos obligatorias) más `require_auth()` y `require_database()`: sin error.
+  - **Para F2:** `requirements.txt` lleva hashes, así que `uv pip install -r` exige hash en cada requisito; los dos paquetes locales (`packages/shared` y `packages/incident-analyzer`) se instalan en un comando aparte, sin dependencias.
+  - **Para F4:** comprobar que, con el bind mount, las `NEXT_PUBLIC_*` del entorno de Compose ganan al `uis/backoffice/.env.local` del host; si ganara `.env.local`, el navegador iría a `localhost:8000`.
+  - **Para F5:** comprobar que `requirements.txt` sigue a `uv.lock` exportando al scratchpad y comparando con `diff`.
+- Impacto técnico: `.gitattributes`, `.env.example` y `requirements.txt` nuevos; `techContext.md` se actualizará al cerrar el ticket.
+---
+
 ## 2026-10-21 — Memory-bank: estado del frontend del inventario
 
 **Estado: hecho.** Sin impacto técnico: solo `memory-bank/`, para reflejar el merge de la PR #22.
