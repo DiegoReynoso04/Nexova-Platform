@@ -9,7 +9,7 @@ Guía de arranque del monorepo para quien llega nuevo. Resume lo imprescindible 
 | `uis/website` | Landing pública + formulario de registro de talento (Hito 1) | — (HTML estático, sin build) | **Ninguna**: es pública y no participa en el sistema de sesión | — (se publica en Netlify desde `netlify.toml`) |
 | `services/api` | API FastAPI de Nexova: autenticación (`/auth`, `/users`, `/profiles`), incidentes, proveedores e inventario (`/inventory`, Hito 5) | `8000` | Emite y exige el JWT | [`services/api/README.md`](../services/api/README.md) |
 | `uis/backoffice` | Panel interno: `/incidents`, `/suppliers`, cuenta | `3000` | Sesión obligatoria (salvo `/login` y `/register`) | [`uis/backoffice/README.md`](../uis/backoffice/README.md) |
-| `uis/talent-pipeline-tracker` | Gestión de candidaturas contra la API de 4Geeks | `3001` | Sesión obligatoria (salvo `/login` y `/register`), contra `services/api` | [`uis/talent-pipeline-tracker/README.md`](../uis/talent-pipeline-tracker/README.md) |
+| `uis/talent-pipeline-tracker` | Gestión de candidaturas contra la API de 4Geeks | `3002` | Sesión obligatoria (salvo `/login` y `/register`), contra `services/api` | [`uis/talent-pipeline-tracker/README.md`](../uis/talent-pipeline-tracker/README.md) |
 
 ## 2. Arranque (cada uno en su terminal)
 
@@ -45,7 +45,7 @@ Guía de arranque del monorepo para quien llega nuevo. Resume lo imprescindible 
    cd uis/talent-pipeline-tracker
    npm install
    # crear .env.local con las dos variables de la sección 3
-   npm run dev                 # http://localhost:3001
+   npm run dev                 # http://localhost:3002
    ```
 
 4. **Website:** abrir `uis/website/index.html` en el navegador (o servir la carpeta con cualquier servidor estático). No necesita la API.
@@ -61,7 +61,7 @@ La primera cuenta se crea desde `/register` en cualquiera de las dos apps (rol `
 | `services/api` | `JWT_SECRET_KEY` | secreto propio (≥ 32 caracteres) | Firma de los JWT. Obligatoria |
 | `services/api` | `ACCESS_TOKEN_EXPIRE_MINUTES` | p. ej. `30` | Validez del token. Obligatoria |
 | `services/api` | `DATABASE_URL` | URI del Transaction pooler de tu proyecto de Supabase (puerto 6543) | Base PostgreSQL del inventario (Hito 5). Obligatoria; lleva la contraseña de la base |
-| `services/api` | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Orígenes que pueden llamar a la API desde el navegador (sección 5) |
+| `services/api` | `CORS_ALLOWED_ORIGINS` | `http://localhost:3002` | Orígenes que pueden llamar a la API desde el navegador (sección 5) |
 | `services/api` | `RESEND_API_KEY` | tu API key de Resend | Envío del email de restablecimiento (AUTH-03). Opcional: va junto con las dos siguientes |
 | `services/api` | `EMAIL_FROM` | `Nexova <onboarding@resend.dev>` | Remitente de pruebas de Resend: solo entrega a la dirección de tu cuenta de Resend |
 | `services/api` | `PASSWORD_RESET_URL` | `http://localhost:3000/reset-password` | Página del enlace del email (`?token=…`) |
@@ -85,7 +85,7 @@ Las variables `NEXT_PUBLIC_*` se incorporan al build: tras cambiarlas hay que re
 
 ## 5. CORS
 
-El navegador solo deja que una app lea las respuestas de la API si su origen está en `CORS_ALLOWED_ORIGINS` (`services/api/.env`; por defecto en código solo `http://localhost:3000`). El tracker corre en `http://localhost:3001`, así que ese origen **debe** estar en la lista; `services/api/.env.example` ya lo incluye. Tras cambiar el `.env`, reiniciar la API.
+El navegador solo deja que una app lea las respuestas de la API si su origen está en `CORS_ALLOWED_ORIGINS` (`services/api/.env`; por defecto en código solo `http://localhost:3000`). El tracker corre en `http://localhost:3002`, así que ese origen **debe** estar en la lista; `services/api/.env.example` ya lo incluye. Tras cambiar el `.env`, reiniciar la API.
 
 Síntoma típico si falta: en el tracker, el login devuelve `200` en la pestaña de red pero la UI muestra "No se pudo conectar con el servidor" y no se guarda ningún token (el login es una petición CORS simple, sin preflight, y el navegador bloquea la lectura de la respuesta).
 

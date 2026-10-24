@@ -229,7 +229,7 @@ describe('flujo de login completo (regresión: login 200 sin token guardado)', (
     assert.equal(routeAccess('/login', session.status), 'redirect_home');
   });
 
-  test('respuesta bloqueada por el navegador (p. ej. CORS sin el origen 3001) → error de conexión y ningún token', async () => {
+  test('respuesta bloqueada por el navegador (p. ej. CORS sin el origen 3002) → error de conexión y ningún token', async () => {
     // Con CORS mal configurado el servidor procesa el login (200), pero fetch() se rechaza.
     globalThis.fetch = async (url, init) => {
       calls.push({ url, init });

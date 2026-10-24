@@ -681,8 +681,8 @@ NEXT_PUBLIC_AUTH_API_URL=http://localhost:8000                     # services/ap
 
 * Igual que §3.2: ninguna URL se escribe literal en el código y `lib/api-client.ts` falla al arrancar si falta cualquiera de las dos.
 * `apiClient` (4Geeks) no envía `Authorization`. `authApiClient` (services/api) la envía en sus rutas protegidas (`GET /auth/me`, `PUT /profiles/me`); login (`POST /auth/login`, formulario OAuth2 con `username` = email) y registro (`POST /users`) son públicos.
-* La app arranca en el puerto **3001** (`npm run dev`), un origen propio que `services/api` debe permitir en `CORS_ALLOWED_ORIGINS` (lo incluye su `.env.example`). Nunca se establece `credentials` en `fetch`.
-* El puerto 3001 y `NEXT_PUBLIC_AUTH_API_URL` son configuración local propuesta en AUTH-02, **pendiente de revisión** (`docs/auth-frontend.md` §3.3), no parte del contrato de la API de candidaturas.
+* La app arranca en el puerto **3002** (`npm run dev`; era el 3001 hasta #infra-40, que lo dejó al backoffice en Docker), un origen propio que `services/api` debe permitir en `CORS_ALLOWED_ORIGINS` (lo incluye su `.env.example`). Nunca se establece `credentials` en `fetch`.
+* El puerto 3002 y `NEXT_PUBLIC_AUTH_API_URL` son configuración local propuesta en AUTH-02, **pendiente de revisión** (`docs/auth-frontend.md` §3.3), no parte del contrato de la API de candidaturas.
 
 ### 9.2 Vistas y protección
 

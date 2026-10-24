@@ -101,7 +101,7 @@ Variables de entorno (la API **no** carga archivos `.env` por sí sola, no usa `
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | — (**obligatoria**) | Validez del token de acceso en minutos (entero > 0) |
 | `DATABASE_URL` | — (**obligatoria**) | Base PostgreSQL de Supabase del inventario (Hito 5): la URI del **Transaction pooler** (puerto 6543). Solo `postgresql://` o `postgresql+psycopg2://`. Lleva la contraseña de la base: nunca en el código ni en git. Ver [Crear la base en Supabase](#crear-la-base-en-supabase) |
 | `AUTH_DB_PATH` | `services/api/data/auth.json` | Archivo TinyDB de `User` y `Profile` (API y `create-admin`). `data/` está en `.gitignore` |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Orígenes permitidos, separados por comas. `*` se rechaza al arrancar. Con AUTH-02 el Talent Pipeline Tracker (puerto 3001) también llama a la API para login, registro y perfil: en local usar `http://localhost:3000,http://localhost:3001` (así viene en `.env.example`) |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Orígenes permitidos, separados por comas. `*` se rechaza al arrancar. Con AUTH-02 el Talent Pipeline Tracker (puerto 3002 desde #infra-40) también llama a la API para login, registro y perfil: en local usar `http://localhost:3000,http://localhost:3002` (así viene en `.env.example`) |
 | `SUPPLIERS_DB_PATH` | `services/api/data/suppliers.json` | Archivo TinyDB del directorio de proveedores (API y seeder). `data/` está en `.gitignore` |
 | `INCIDENTS_DB_PATH` | `services/api/data/incidents.json` | Archivo TinyDB del gestor centralizado de incidencias: tabla `incidents` y tabla `seed_keys` (solo el SHA-256 de la clave de origen de cada registro histórico cargado; nunca el `ticket_id` en claro). Lo usan el repositorio de `app/modules/incident_manager/` y `scripts/seed_incidents.py`. `data/` está en `.gitignore` |
 | `RESEND_API_KEY` | — (opcional) | API key de [Resend](https://resend.com/) para enviar el email de restablecimiento (AUTH-03). Nunca en el código ni en git. Sin ella (y sin las dos siguientes) la API arranca, pero no envía emails |
@@ -111,7 +111,7 @@ Variables de entorno (la API **no** carga archivos `.env` por sí sola, no usa `
 | `MAX_UPLOAD_BYTES` | `1048576` (1 MiB) | Límite técnico del **body HTTP completo** (CSV + cabeceras y delimitadores multipart), **no del CSV**: el CSV máximo es algo menor. Decisión de la API, no requisito del cliente. Detalle en `SPECS.md` §3.1 |
 
 ```powershell
-$env:CORS_ALLOWED_ORIGINS = "http://localhost:3000,http://localhost:3001"
+$env:CORS_ALLOWED_ORIGINS = "http://localhost:3000,http://localhost:3002"
 $env:SUPPLIERS_DB_PATH = "C:\ruta\absoluta\suppliers.json"   # bash: export SUPPLIERS_DB_PATH=/ruta/absoluta/suppliers.json
 ```
 

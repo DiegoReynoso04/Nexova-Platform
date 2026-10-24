@@ -69,6 +69,10 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
     - `docker compose run --rm -v ./scripts:/app/scripts:ro -v ./data/raw:/app/data/raw:ro -e PYTHONPATH=/app/api:/packages/shared:/packages/incident-analyzer api python /app/scripts/seed_incidents.py`
     - Comprobados solo con `--help`; `app.seed`, que no usa argparse, solo importándolo.
   - **Para F7:** la documentación (`docs/local-development.md`, los README, `AGENTS.md` §4 y `uis/backoffice/CLAUDE.md`) debe presentar Docker como el único modo de arranque, con los comandos de arriba.
+- **Tracker al puerto 3002 (2026-10-24, commit aparte de F4, aprobado por el usuario):** el 3001 es del backoffice en Docker y el tracker queda fuera de Docker.
+  - Cambiado: `uis/talent-pipeline-tracker/package.json` (`dev` y `start`), su README y su `SPECS.md` (con nota del cambio), `uis/README.md` y `README.es.md`, el texto de un test (`tests/auth.test.mjs`); `CORS_ALLOWED_ORIGINS` = solo `http://localhost:3002` en el `.env.example` de la raíz (el website no llama a la API y el backoffice va por su mismo origen) y `http://localhost:3000,http://localhost:3002` en `services/api/.env.example` y su README; `docs/local-development.md`, `docs/auth-password-reset.md` y `memory-bank/techContext.md`; en `docs/auth-frontend.md` se conservan P-1 y P-5 con una nota.
+  - Validación del tracker: `tsc` sin errores; `lint` con los 4 errores conocidos (`react-hooks/set-state-in-effect` en `use-notes`, `use-record-detail` y `use-records`); `node:test` 55/55. No se arrancó.
+  - **Pendiente de aprobación del usuario** (se escaparon de la lista): menciones del tracker en el 3001 en `AGENTS.md:51`, `memory-bank/techContext.md:36`, `:177` y `:188`, `uis/backoffice/README.md:103` y `docs/auth-password-reset.md:265`.
 - Impacto técnico: `.gitattributes`, `.env.example`, `requirements.txt`, `services/Dockerfile` y `services/.dockerignore`, `uis/Dockerfile`, `uis/.dockerignore`, `uis/start.sh` y `uis/serve-website.mjs` nuevos; `docker-compose.yml` nuevo; `uis/backoffice/next.config.ts` con el rewrite y el polling; `techContext.md` se actualizará al cerrar el ticket.
 ---
 

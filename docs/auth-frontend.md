@@ -64,6 +64,8 @@ Esta sección separa lo que exige el ticket, lo que se comprobó en el repositor
 | P-3 | **Validación inicial de sesión con `GET /auth/me`**, una vez por token, antes de mostrar una vista protegida; sin token o con 401 se va a `/login` | En el tracker es la única llamada protegida que puede detectar un token caducado (los datos de 4Geeks no usan el token); evita mostrar la vista protegida con una sesión inválida |
 | P-4 | **`null` al vaciar un campo del perfil:** `PUT /profiles/me` envía siempre `name`, `phone` y `address`, con `null` en los vacíos para borrar ese dato | Coincide con el contrato comprobado (§3.2); enviar `""` guardaría una cadena vacía |
 | P-5 | **CORS:** añadir `PUT` a los métodos y `http://localhost:3001` al `.env.example` de `services/api` (el valor por defecto en código sigue siendo solo `http://localhost:3000`) | Necesario para P-1 y para `PUT /profiles/me` desde el navegador |
+
+> **Nota (#infra-40):** el tracker pasó al puerto **3002** y el origen de CORS con él, porque el 3001 es ahora del backoffice dentro de Docker. P-1 y P-5 se conservan tal como se decidieron en AUTH-02.
 | P-6 | Tras login o registro se va a `/`; `/login` y `/register` con sesión válida redirigen a `/`. La cabecera muestra el email de la sesión junto a "Mi perfil" y "Cerrar sesión" | El ticket no fija el destino ni el contenido de la cabecera |
 | P-7 | Sin refresh tokens: al expirar el JWT, el 401 lleva a `/login` | Fuera del alcance del ticket (igual que en AUTH-01, `SPECS.md` §22) |
 

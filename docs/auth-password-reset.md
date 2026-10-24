@@ -195,7 +195,7 @@ Guía general (puertos, CORS, `.env.local` de los frontends): [`local-developmen
 |---|---|---|---|
 | API (FastAPI) | `services/api` | `uv run --env-file .env uvicorn app.main:create_app --factory --port 8000 --workers 1` | `http://localhost:8000` (Swagger en `/docs`) |
 | Backoffice | `uis/backoffice` | `npm run dev` | `http://localhost:3000` |
-| Talent Pipeline Tracker | `uis/talent-pipeline-tracker` | `npm run dev` | `http://localhost:3001` |
+| Talent Pipeline Tracker | `uis/talent-pipeline-tracker` | `npm run dev` | `http://localhost:3002` |
 
 **API.** El backend vive en `services/api` y usa su propio entorno virtual `services/api/.venv`, gestionado con `uv` (instalación inicial en [`services/api/README.md`](../services/api/README.md)). La aplicación se crea con la factory `create_app`: por eso el comando usa `app.main:create_app --factory` (**no** existe un objeto `app.main:app`). `--workers 1` es obligatorio (estado en memoria y TinyDB).
 
@@ -211,7 +211,7 @@ Guía general (puertos, CORS, `.env.local` de los frontends): [`local-developmen
 | `EMAIL_FROM` | Con `RESEND_API_KEY` | Remitente. Sin dominio propio: `onboarding@resend.dev` (§10) |
 | `PASSWORD_RESET_URL` | Con `RESEND_API_KEY` | Página de restablecimiento del frontend, p. ej. `http://localhost:3000/reset-password` |
 | `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` | No (30 por defecto) | Vigencia del enlace, entre 15 y 60 |
-| `CORS_ALLOWED_ORIGINS` | Recomendada | `http://localhost:3000,http://localhost:3001` para que los dos frontends puedan llamar a la API |
+| `CORS_ALLOWED_ORIGINS` | Recomendada | `http://localhost:3002` para el tracker (desde #infra-40, el backoffice llama a la API por su mismo origen) |
 
 **Frontends.** Necesitan su `.env.local` (tampoco se versiona): el backoffice `NEXT_PUBLIC_API_URL=http://localhost:8000`; el tracker `NEXT_PUBLIC_API_URL` (API de candidaturas de 4Geeks) y `NEXT_PUBLIC_AUTH_API_URL=http://localhost:8000`. Detalle en [`local-development.md`](./local-development.md) §3. Ningún secreto de la API va a los frontends.
 
@@ -255,7 +255,7 @@ Seguir la prueba de PowerShell de §7: crear o usar un usuario normal, obtener s
 
 Repetir 9.1–9.3 en los dos frontends:
 
-| Comprobación | Backoffice (`:3000`) | Tracker (`:3001`) |
+| Comprobación | Backoffice (`:3000`) | Tracker (`:3002`) |
 |---|---|---|
 | Enlace "¿Olvidaste tu contraseña?" en `/login` | ✓ | ✓ |
 | `/forgot-password` con mensaje genérico y formulario desactivado tras enviar | ✓ | ✓ |
