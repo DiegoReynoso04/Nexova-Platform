@@ -12,6 +12,11 @@
 # - cada app arranca en su propio grupo de procesos (`setsid`) y las señales
 #   van al grupo: si `next dev` muere de golpe, su `next-server` queda huérfano
 #   y, sin esto, mantendría vivo el contenedor.
+#
+# `next dev --webpack`: comprobado en #infra-40 (F4) que, en este contenedor,
+# Turbopack (el bundler por defecto) no aplica los cambios del código montado,
+# ni con sondeo ni con cambios hechos dentro del contenedor, mientras que webpack
+# con WATCHPACK_POLLING (lo pone docker-compose.yml) recarga en unos 2 s.
 
 set -u
 
@@ -20,7 +25,7 @@ cd "$(dirname "$0")"
 (exec setsid node serve-website.mjs) &
 website_pid=$!
 
-(cd backoffice && exec setsid node_modules/.bin/next dev --hostname 0.0.0.0 --port 3001) &
+(cd backoffice && exec setsid node_modules/.bin/next dev --webpack --hostname 0.0.0.0 --port 3001) &
 backoffice_pid=$!
 
 stopping=0

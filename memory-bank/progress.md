@@ -4,9 +4,9 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
-## 2026-10-22 — #infra-40 (Docker para desarrollo y despliegue en el VPS): F0, F1, F2 y F3
+## 2026-10-22 — #infra-40 (Docker para desarrollo y despliegue en el VPS): F0–F4
 
-**Estado: en curso** (F0 y F1 comiteados en `6a49d6f`, F2 en `daede5e`; F3 sin commit), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
+**Estado: en curso** (F0 y F1 en `6a49d6f`, F2 en `daede5e`, F3 en `0883f3d`; F4 sin commit), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
 
 - **F0 — análisis, aprobado por el usuario con cambios:**
   - brief literal en `docs/infra-40-brief.md`, con una nota de equivalencias (`uis/website` es HTML estático, no Next.js; `/services` es `services/api`);
@@ -38,7 +38,38 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - **Verificado:** build en 16 s con 591 paquetes; imagen de 884 MB sin `.env*`, `.next`, `coverage`, `talent-pipeline-tracker` ni binarios glibc o de Windows; `docker history` sin secretos. En una red temporal (`nexova-f3`, sin Compose): website 200/404 como se espera; backoffice `/login` 200; `/backend/health` 200 `{"status":"ok"}`, con la query string conservada y el 401 de la API intacto; `wget http://api:8000/health` desde la ui, y `api` resuelto por la DNS de Docker. `docker stop` en 1,2 s (código 0); TERM a `next dev`: sale con 1 en 2 s; KILL a `next dev` o al website: sale con 137 en 1–2 s. Contenedores y red de prueba borrados (las imágenes se quedan).
   - **Validación del backoffice en el host** sin `API_INTERNAL_URL`: `tsc` y `lint` sin errores, `build` correcto (rewrites vacíos en el `routes-manifest`), `node:test` 491/491 y Jest 222/222. Con `API_INTERNAL_URL=http://api:8000`, el build sale con 0 y el manifest lleva el rewrite; después se reconstruyó el `.next` del host sin la variable. El aviso de Turbopack «multiple lockfiles» es anterior: lo provoca el `package-lock.json` de la raíz (Hito 2).
   - **Para F4:** el contenedor `ui` no debe recibir el `.env` entero (en la prueba de F3 lo recibió, con los secretos de la API): solo `API_INTERNAL_URL`, las `NEXT_PUBLIC_*` y `WATCHPACK_POLLING`.
-- Impacto técnico: `.gitattributes`, `.env.example`, `requirements.txt`, `services/Dockerfile` y `services/.dockerignore`, `uis/Dockerfile`, `uis/.dockerignore`, `uis/start.sh` y `uis/serve-website.mjs` nuevos; `uis/backoffice/next.config.ts` con el rewrite y el polling; `techContext.md` se actualizará al cerrar el ticket.
+- **F4 — `docker-compose.yml` (2026-10-24):**
+  - **Decisiones del usuario (2026-10-24):** Docker es el **único** modo de arrancar la plataforma en desarrollo: un solo `.env` (el de la raíz) y un solo juego de puertos (3000 website, 3001 backoffice, 8000 API). `services/api/.env` y `uis/backoffice/.env.local` dejan de usarse para arrancar; son del usuario y no se borran ni se editan. `services/api/data` del host se monta en la API (en producción, un volumen con nombre). El tracker queda fuera de Docker y pasará al 3002, pendiente del ok del usuario a la lista de cambios.
+  - **Servicios:**
+    - `api`: contexto `./services` con `additional_contexts: packages`; bind mounts de `app/` y de los dos paquetes; `data/` del host; `--reload-dir /app/api --reload-dir /packages`, confirmado en el log («Will watch for changes in these directories: ['/app/api', '/packages']»); healthcheck con `urllib` a `localhost:8000/health` dentro de su contenedor (la imagen no trae curl ni wget); puerto 8000.
+    - `ui`: contexto `./uis`; bind mounts de `website/` y `backoffice/`; `node_modules` y `.next` en volúmenes anónimos; puertos 3000 y 3001; `depends_on: api: service_healthy`.
+    - Red `nexova-net` y proyecto `name: nexova`.
+  - **Variables:** `api` con `env_file: .env` obligatorio. `ui` solo con `API_INTERNAL_URL`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_INVENTORY_API_URL` y `WATCHPACK_POLLING`, interpoladas con `${VAR:?…}`. **Efecto:** sin `WATCHPACK_POLLING` en el `.env` falla cualquier comando `docker compose` (también `exec` y `ps`). El usuario añadió `WATCHPACK_POLLING=true` a su `.env` (presente; también está en `.env.example`).
+  - **Incidencia:** el primer `up` dejó la API `unhealthy` (y la ui sin arrancar, por el `depends_on`) porque el `.env` de la raíz se había vuelto a copiar desde `.env.example` (idéntico, sin secretos). El usuario lo restauró; los tres `$` que contiene están en comentarios.
+  - **Verificado:**
+    - `config --quiet` sale con 0 y `up --build -d` también, con la API `healthy`;
+    - los dos contenedores están en `nexova-net`;
+    - por nombre de servicio: `wget http://api:8000/health` desde la ui y `localhost:3001/backend/health` (en el log de la API, origen 172.19.0.3, la ui);
+    - en la ui solo están `API_INTERNAL_URL` y las `NEXT_PUBLIC_*`, sin ningún secreto ni otra variable de la API;
+    - la API ve los 8 usuarios del `auth.json` del host, y los JSON de `data/` no han cambiado durante las pruebas (SHA-256 iguales).
+  - **f) `.env.local` del host:** está montado en el contenedor y Next lo carga (`Environments: .env.local`), pero el JavaScript que se sirve al navegador lleva `"/backend"` y ninguna `localhost:8000` (la única aparición es un comentario de `lib/inventory-api-client.ts`). Gana el entorno de Compose, como documenta `environment-variables.md` («Environment Variable Load Order»: `process.env` antes que `.env.local`). Riesgo: una variable que Compose no defina sí se tomaría de ese `.env.local`.
+  - **g) Recarga en caliente:**
+    - website en 0,2 s (lee cada archivo en cada petición);
+    - API (`app/main.py`) en 1,1 s y `packages/shared` en ~1 s (`StatReload`, que ya sondea);
+    - **backoffice: no recarga con Turbopack** (el bundler por defecto de `next dev`), ni sin polling ni con `watchOptions.pollIntervalMs`, ni siquiera con un cambio hecho dentro del contenedor. En el host, sin Docker, sí (~2 s). En un contenedor de prueba, **`next dev --webpack` con `WATCHPACK_POLLING=true` recarga en ~2 s**, y sin polling no.
+    - **Decisión del usuario (2026-10-24):** `next dev --webpack` en `uis/start.sh`, y se quita `watchOptions` de `next.config.ts`, porque Watchpack lee `WATCHPACK_POLLING` por su cuenta. Comentarios de `start.sh`, `next.config.ts` y `docker-compose.yml` actualizados con lo comprobado. Con la ui reconstruida (`▲ Next.js 16.3.2 (webpack)`), el backoffice recarga en 2,4 s (0,5 s en una segunda pasada) y el website sigue al instante. Validación de `uis/backoffice` en el host tras el cambio de `next.config.ts`: `tsc` y `lint` sin errores, `build` correcto (rewrites vacíos sin `API_INTERNAL_URL`), `node:test` 491/491 y Jest 222/222.
+    - Los archivos de prueba se restauraron byte a byte (`git diff` vacío).
+  - **h) Desde cero:** `down --rmi local --volumes` y `up -d` sin `--build` salen con 0, y la plataforma responde a los 17 s gracias a la caché de BuildKit. Con `build --no-cache`: 31 s de build y 46 s hasta responder, sin contar la descarga de las imágenes base.
+  - **i) Auditoría:** en `docker-compose.yml` y los dos Dockerfile, el `grep` de `secret|password|key|postgresql://|eyJ` solo encuentra comentarios, y ningún valor del `.env`; `.env` ignorado y sin commits.
+  - **Tests y `.env`:** ningún test de los subproyectos lee `services/api/.env` ni `uis/backoffice/.env.local`. node:test y Jest solo tocan `process.env` dentro del test y lo restauran; la API no carga `.env` (`config.py:3-4`).
+  - **Comandos dentro de la API** (la imagen no instala el proyecto: no existen `seed`, `create-admin` ni `seed-inventory`):
+    - `docker compose exec api python -m app.seed`
+    - `docker compose exec api python -m app.auth.create_admin --email … --name …`
+    - `docker compose exec api python -m app.modules.inventory.seed --email …`
+    - `docker compose run --rm -v ./scripts:/app/scripts:ro -v ./data/raw:/app/data/raw:ro -e PYTHONPATH=/app/api:/packages/shared:/packages/incident-analyzer api python /app/scripts/seed_incidents.py`
+    - Comprobados solo con `--help`; `app.seed`, que no usa argparse, solo importándolo.
+  - **Para F7:** la documentación (`docs/local-development.md`, los README, `AGENTS.md` §4 y `uis/backoffice/CLAUDE.md`) debe presentar Docker como el único modo de arranque, con los comandos de arriba.
+- Impacto técnico: `.gitattributes`, `.env.example`, `requirements.txt`, `services/Dockerfile` y `services/.dockerignore`, `uis/Dockerfile`, `uis/.dockerignore`, `uis/start.sh` y `uis/serve-website.mjs` nuevos; `docker-compose.yml` nuevo; `uis/backoffice/next.config.ts` con el rewrite y el polling; `techContext.md` se actualizará al cerrar el ticket.
 ---
 
 ## 2026-10-21 — Memory-bank: estado del frontend del inventario
