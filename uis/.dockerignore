@@ -1,0 +1,16 @@
+# Contexto de build: uis/ (ver uis/Dockerfile). Patrones relativos a esa
+# carpeta; "**/" los aplica también dentro de cada app.
+
+# Exigidos por el brief (#infra-40). El node_modules del host (Windows) nunca
+# entra: la imagen instala el suyo con npm ci (binarios de Linux musl).
+**/node_modules
+**/.next
+**/.env*
+**/*.log
+
+# Fuera del contenedor de interfaces (el brief solo pide website y backoffice).
+talent-pipeline-tracker
+
+# Artefactos de tests y de TypeScript.
+**/coverage
+**/*.tsbuildinfo
