@@ -1,5 +1,7 @@
 # AUTH-02 — Flujos de autenticación y vistas protegidas en el frontend
 
+> **Desde #infra-40 la plataforma se arranca con Docker** (ver [`local-development.md`](./local-development.md)); los pasos de arranque de esta guía son los de su fecha.
+
 Documento de contexto del ticket AUTH-02 y resumen de cómo se implementó. Es la continuación de [AUTH-01](./auth-api.md) (la API ya exige JWT). El contrato HTTP sigue en [`services/api/SPECS.md`](../services/api/SPECS.md) Parte C; las reglas de cada app, en su propia documentación (ver §4). Aquí no se duplican.
 
 ## 1. Ticket (texto recibido)

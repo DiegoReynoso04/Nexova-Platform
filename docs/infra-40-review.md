@@ -7,7 +7,7 @@ Documento para revisar el ticket: qué se construyó, cómo arrancarlo, qué evi
 - Reglas para agentes y validación de cada pieza: [`AGENTS.md`](../AGENTS.md) §4 (bloque «Docker»).
 - Historial por fases (F0–F5 y F7) y validaciones ejecutadas: [`memory-bank/progress.md`](../memory-bank/progress.md).
 
-> Las decisiones D1–D7 y las posteriores (webpack, `data/` montada, Docker como único modo, tracker al 3002, VPS fuera de esta entrega) las tomó **el usuario** al revisar cada fase (2026-10-22 a 2026-10-25). No las ha revisado el tech lead.
+> Las decisiones D1–D7 y las posteriores (webpack, `data/` montada, Docker como único modo, tracker al 3002, VPS fuera de esta entrega, el rewrite como excepción de `/incidents`, los `.env.example` de las apps) las tomó **el usuario** al revisar cada fase (2026-10-22 a 2026-10-25). No las ha revisado el tech lead.
 
 ## Qué se construyó
 
@@ -41,7 +41,7 @@ docker compose ps      # api (healthy) y ui
 
 | Suite | Comando | Total |
 |---|---|---|
-| `uis/backoffice` node:test | ver `AGENTS.md` §4 | 497 (491 antes del ticket) |
+| `uis/backoffice` node:test | ver `AGENTS.md` §4 | 498 (491 antes del ticket; 497 en F5, +1 con la regla de Route Handlers y Server Actions de F7) |
 | `uis/backoffice` Jest | `npm run test:jest` | 222 (sin cambios) |
 | `uis/` | `node --test "uis/tests/*.test.mjs"` | 8 (nuevo) |
 | `services/api` unittest | ver `AGENTS.md` §4 | 415 (409 antes) |
@@ -72,13 +72,14 @@ Fuente: el brief literal, sección «Lo que evaluaremos». «F4» y «F5» son l
 | D3 | Rewrite `/backend` → `API_INTERNAL_URL`, variable solo de servidor | El navegador no puede resolver `api`; sin la variable no hay rewrite. Con `next start`, los rewrites salen del `routes-manifest.json` de `next build`, así que un build de producción necesitaría la variable al construir |
 | D4 | `services/Dockerfile` con contexto `services/` y `packages/` como contexto adicional; `requirements.txt` desde `uv.lock`; paquetes del monorepo por `PYTHONPATH` | Mismas versiones exactas que el venv, con hashes; los paquetes del monorepo no se instalan desde PyPI (instalarlos pediría `setuptools` a PyPI) y en desarrollo se ven sin reconstruir |
 | D5 | Recarga verificada, no supuesta; `node_modules` y `.next` en volúmenes anónimos; `.gitattributes` para `*.sh` y `Dockerfile` | El índice ya estaba en LF; el CRLF solo estaba en la copia de trabajo (`core.autocrlf=true`) |
-| D6 | Un solo `.env` en la raíz y un `.env.example` versionado | La `ui` solo recibe sus cuatro variables |
+| D6 | Un solo `.env` en la raíz y un `.env.example` versionado | La `ui` solo recibe sus cuatro variables. En F7, `uis/backoffice/.env.example` se borró (no lo leía ningún código ni test) y `services/api/.env.example` se queda con una cabecera que remite al de la raíz, porque lo citan los mensajes de `ConfigError` del código |
 | D7 | Producción con `docker-compose.prod.yml` | **No se hizo:** el VPS quedó fuera de esta entrega |
 | — | **`next dev --webpack`** en Docker | Con Turbopack, el código montado no recargaba ni con `watchOptions.pollIntervalMs` ni con cambios hechos dentro del contenedor; con webpack y `WATCHPACK_POLLING` sí (~2 s). Sin polling, webpack tampoco recarga |
 | — | **`services/api/data` del host montada** en la API | Conserva usuarios, proveedores e incidencias; Docker es el único modo de arranque, así que no hay otro uvicorn escribiendo en los mismos JSON |
 | — | **Docker como único modo de arranque** en desarrollo | Un solo `.env` y un solo juego de puertos; `services/api/.env` y `uis/backoffice/.env.local` dejan de usarse (el usuario los borró). Los tests siguen en el host |
 | — | **Tracker al 3002**, fuera de Docker | El brief no lo incluye y el 3001 es del backoffice; CORS del `.env.example` de la raíz: solo `http://localhost:3002` |
 | — | **VPS fuera de esta entrega** | Decisión del usuario, pendiente de confirmación del profesor |
+| — | **El rewrite `/backend` es el único proxy permitido hacia la API**, también para el CSV de `/incidents` (regla reescrita en [`uis/backoffice/CLAUDE.md`](../uis/backoffice/CLAUDE.md)); sin Server Actions ni Route Handlers | Decisión del usuario (2026-10-25), pendiente de revisión del tech lead. La regla anterior pedía que el CSV no pasara por el servidor de Next; el rewrite lo reenvía a la API sin leerlo, guardarlo ni registrarlo. **Evidencia:** con la plataforma en Docker, `POST localhost:3001/backend/api/incidents/analyze` con `packages/incident-analyzer/tests/fixtures/incidents-acceptance-synthetic.csv` (100 `customer_email` distintos) y un token firmado en local → 200, y `GET …/results/export` → 200. Después: 0 de esos emails en `docker compose logs ui` (y en los de `api`); ningún archivo del contenedor `ui` creado o modificado en esos minutos (`find -mmin`); 0 archivos con alguno de esos emails en todo el contenedor, montajes incluidos (`grep -rlF` sobre todas las carpetas salvo `/proc`, `/sys` y `/dev`; el control positivo, `NEXT_PUBLIC_API_URL`, aparece en 17). `tests/production-source.test.mjs` («sin Route Handlers ni Server Actions») falla si aparece un `route.*` en `app/` o un `'use server'` (comprobado con las dos mutaciones) |
 
 ## Lo que no está verificado
 
@@ -88,4 +89,3 @@ Fuente: el brief literal, sección «Lo que evaluaremos». «F4» y «F5» son l
 - **Primer arranque en una máquina limpia.** La prueba desde cero (F4h) se hizo con las imágenes base ya descargadas.
 - **Supabase caído al arrancar.** Comprobado sin Docker (`InventoryStartupError`, código 3) y con la configuración incompleta en Docker (`api` `unhealthy`, la `ui` no arranca); no se ha simulado una caída real de Supabase con el compose.
 - **Accesibilidad.** Sin cambios de interfaz en este ticket; no se ha probado con lector de pantalla.
-- **La regla de `/incidents` en `uis/backoffice/CLAUDE.md`** («el CSV no debe pasar por el servidor de Next»): con el rewrite, en Docker sí pasa (como proxy, en streaming). Conflicto pendiente de decisión del usuario.

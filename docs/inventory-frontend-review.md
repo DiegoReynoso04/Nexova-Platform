@@ -1,5 +1,7 @@
 # Inventario de equipos y materiales — frontend del backoffice: guía de revisión
 
+> **Desde #infra-40 la plataforma se arranca con Docker** (ver [`local-development.md`](./local-development.md)); los pasos de arranque de esta guía son los de su fecha.
+
 Documento para revisar la sección de inventario de `uis/backoffice`: cómo levantarla, qué se ve en cada página, qué cubre cada test y qué **no** está verificado.
 
 - Brief literal del frontend (con la nota de equivalencias de este repo): [`inventory-frontend-brief.md`](./inventory-frontend-brief.md).

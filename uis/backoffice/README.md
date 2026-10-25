@@ -99,7 +99,7 @@ Guía completa (requisitos, logs, cuándo reconstruir, comandos de seed y proble
 
 Tras cambiar una de estas variables: `docker compose up -d ui`. Con Docker, el backoffice llama a la API por su mismo origen (`/backend`): no necesita CORS. El Talent Pipeline Tracker, fuera de Docker, usa el **3002**.
 
-`.env.example` (de esta carpeta) ya no se usa para arrancar: la plantilla es el [`.env.example`](../../.env.example) de la raíz.
+La plantilla de variables es el [`.env.example`](../../.env.example) de la raíz (el `.env.example` de esta carpeta se borró en #infra-40).
 
 ## Validación
 
@@ -187,8 +187,6 @@ types/incident-manager.ts       # contrato, vocabulario, etiquetas de sede y tra
 types/auth.ts                   # contrato de autenticación y perfil
 types/inventory.ts              # contrato y vocabulario del inventario
 tests/                          # tests node --test (.mjs) + support/
-
-.env.example                    # variables de entorno documentadas (sin secretos)
 ```
 
 ## Documentación relacionada

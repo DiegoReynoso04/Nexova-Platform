@@ -297,6 +297,8 @@ Detalle en `progress.md` (entradas del 2026-10-10). Decisiones técnicas permane
 - **Datos:** `services/api/data` del host montada en la API (usuarios, proveedores e incidencias reales de desarrollo). En producción iría a un volumen con nombre.
 - **Fin de línea:** `.gitattributes` fuerza LF solo en `*.sh` y `Dockerfile` (con `core.autocrlf=true`, la copia de trabajo de Windows usa CRLF y un `start.sh` así falla en Linux).
 - **Healthcheck de la API** con `urllib` (la imagen no trae curl ni wget). Con `--reload`, un `ConfigError` no termina el contenedor (el reloader sigue vivo); el healthcheck lo marca `unhealthy` y la `ui` no arranca.
+- **Único proxy hacia la API: el rewrite `/backend`** (decisión del usuario, 2026-10-25, pendiente de revisión del tech lead). También para el CSV de `/incidents`: lo reenvía sin leerlo, guardarlo ni registrarlo (evidencia en `docs/infra-40-review.md`, «Decisiones»). Sin Server Actions ni Route Handlers, vigilado por `tests/production-source.test.mjs`. Regla en `uis/backoffice/CLAUDE.md`.
+- **`.env.example` de las apps:** `uis/backoffice/.env.example` borrado en F7; `services/api/.env.example` se queda con una cabecera que remite al de la raíz (lo citan los mensajes de `ConfigError`).
 - **Fuera de esta entrega:** el despliegue en el VPS (decisión del usuario, 2026-10-25, pendiente de confirmación del profesor).
 
 ## Skills y agentes en este repo
