@@ -4,9 +4,9 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
-## 2026-10-22 — #infra-40 (Docker para desarrollo y despliegue en el VPS): F0–F5
+## 2026-10-22 — #infra-40 (Docker para desarrollo; el despliegue en el VPS quedó fuera): F0–F7
 
-**Estado: en curso** (F0 y F1 en `6a49d6f`, F2 en `daede5e`, F3 en `0883f3d`, F4 en `cbeac39` y el tracker en `fe56224`; F5 sin commit; sin F6), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
+**Estado: hecho, pendiente de PR** (F0 y F1 en `6a49d6f`, F2 en `daede5e`, F3 en `0883f3d`, F4 en `cbeac39`, el tracker en `fe56224`, F5 en `f498ef5` y F7 en el commit `docs(infra-40)`; sin F6; sin push de F7), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
 
 - **F0 — análisis, aprobado por el usuario con cambios:**
   - brief literal en `docs/infra-40-brief.md`, con una nota de equivalencias (`uis/website` es HTML estático, no Next.js; `/services` es `services/api`);
@@ -72,7 +72,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 - **Tracker al puerto 3002 (2026-10-24, commit aparte de F4, aprobado por el usuario):** el 3001 es del backoffice en Docker y el tracker queda fuera de Docker.
   - Cambiado: `uis/talent-pipeline-tracker/package.json` (`dev` y `start`), su README y su `SPECS.md` (con nota del cambio), `uis/README.md` y `README.es.md`, el texto de un test (`tests/auth.test.mjs`); `CORS_ALLOWED_ORIGINS` = solo `http://localhost:3002` en el `.env.example` de la raíz (el website no llama a la API y el backoffice va por su mismo origen) y `http://localhost:3000,http://localhost:3002` en `services/api/.env.example` y su README; `docs/local-development.md`, `docs/auth-password-reset.md` y `memory-bank/techContext.md`; en `docs/auth-frontend.md` se conservan P-1 y P-5 con una nota.
   - Validación del tracker: `tsc` sin errores; `lint` con los 4 errores conocidos (`react-hooks/set-state-in-effect` en `use-notes`, `use-record-detail` y `use-records`); `node:test` 55/55. No se arrancó.
-  - **Pendiente de aprobación del usuario** (se escaparon de la lista): menciones del tracker en el 3001 en `AGENTS.md:51`, `memory-bank/techContext.md:36`, `:177` y `:188`, `uis/backoffice/README.md:103` y `docs/auth-password-reset.md:265`.
+  - **Resuelto en F7** (se escaparon de la lista; el usuario las pasó a F7): menciones del tracker en el 3001 en `AGENTS.md:51`, `memory-bank/techContext.md:36`, `:177` y `:188`, `uis/backoffice/README.md:103` y `docs/auth-password-reset.md:265`.
 - **Prueba del usuario en el navegador, con la plataforma en Docker (2026-10-24), todo correcto:** login con `Authorization` por `/backend`, inventario, `/incidents` con subida y exportación, `/suppliers`, `/incident-manager`, recuperación de contraseña con el enlace al 3001, ninguna petición a `:8000` y recarga del backoffice. El error de hidratación de la consola lo provoca una extensión de su navegador (atributos `bis_*`), no el código.
 - **Un solo `.env` (2026-10-25):** el usuario borró `services/api/.env` y `uis/backoffice/.env.local`. Comprobado con `ls`: ya no existen (solo quedan los `.env.example`), y la plataforma sigue respondiendo; el login, según el usuario, también.
 - **Decisión del usuario (2026-10-25): el despliegue en el VPS queda fuera de esta entrega. No hay F6.**
@@ -82,7 +82,25 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - **Mutaciones (9, todas detectadas y deshechas, md5 iguales):** sin quitar la barra final; sin recortar espacios; `watchOptions` de vuelta; destino sin `:path*`; otra versión de fastapi; falta una dependencia del proyecto; `pytest` en `requirements.txt`; `nexova-shared` en `requirements.txt`; un requisito sin hashes. **La última sobrevivió al primer intento** (el test partía el archivo por líneas que empiezan por letra y seguía viendo los hashes de debajo); se corrigió para leer líneas lógicas.
   - **`uis/serve-website.mjs`** (aprobado por el usuario): exporta `resolveRequestPath` y solo escucha si es el programa principal (`node serve-website.mjs` desde `start.sh`). Test en `uis/tests/serve-website.test.mjs` (node:test, 8 tests; comando `node --test "uis/tests/*.test.mjs"` desde la raíz): `/`, archivos con extensión, query y fragmento ignorados; las siete variantes de `..` de F3, `..` aunque quede dentro (`/src/../index.html`, porque la comprobación final `startsWith(ROOT)` tapaba la mutación), barra invertida, byte nulo y decodificación inválida → `null`. Mutaciones detectadas: aceptar `..`, aceptar `\` y aceptar `%00`. Con la ui reconstruida (Compose no monta ese archivo): `/` 200 con el index, `/no-existe` 404 con `404.html`, y las siete variantes de `..` dan 404.
   - **Validación** (antes → después): `uis/backoffice` `tsc` y `lint` sin errores, `build` correcto, `node:test` 491 → 497, Jest 222 (sin cambios); `uis/` (nuevo) 8 tests; `services/api` `unittest` 409 → 415 y pytest (`uv run --no-sync python -m pytest`) 612 → 618, con 3164 subtests.
-- Impacto técnico: `.gitattributes`, `.env.example`, `requirements.txt`, `services/Dockerfile` y `services/.dockerignore`, `uis/Dockerfile`, `uis/.dockerignore`, `uis/start.sh` y `uis/serve-website.mjs` nuevos; `docker-compose.yml` nuevo; `uis/backoffice/next.config.ts` con el rewrite y el polling; `techContext.md` se actualizará al cerrar el ticket.
+- **F7 — documentación (2026-10-25), solo documentación, sin tocar código:**
+  - Docker como único modo de arranque en `docs/local-development.md` (reescrito), `AGENTS.md` §4 (filas de `uis/` y Docker, bloque «Docker (ticket #infra-40)» y un solo comando oficial de pytest, `uv run --no-sync python -m pytest`, con el porqué), `uis/backoffice/CLAUDE.md` (sección «Docker»: rewrite, `API_INTERNAL_URL`, `--webpack`, `WATCHPACK_POLLING`), `uis/backoffice/README.md`, `uis/README(.es).md`, `services/README(.es).md` y `services/api/README.md` (sección «Docker» con cómo regenerar `requirements.txt` desde `services/api` y por qué no aparecen los paquetes del monorepo; seeds y `create-admin` con `docker compose exec`). Las 6 menciones del tracker en el 3001 pasan al 3002. El `README.md` raíz no se toca.
+  - `docs/infra-40-review.md` nuevo: qué se construyó, arranque, totales, trazabilidad de los criterios, decisiones y lo no verificado.
+  - `techContext.md`: fila «Entorno de desarrollo (Docker)», sección «Docker (#infra-40)» y las líneas del tracker, `/backend`, pytest y el `.env` de la raíz. `projectbrief.md` sin cambios: ticket técnico, sin capacidad de negocio ni interlocutor nuevos.
+  - **Pendiente de decisión del usuario:**
+    - `services/api/.env.example` y `uis/backoffice/.env.example`: borrar o marcar obsoletos. El de `services/api` lo citan mensajes de `ConfigError` del código (`config.py` y `inventory/database.py`): borrarlo pide cambiar código. Ningún test los lee.
+    - Conflicto con la regla de `/incidents` de `uis/backoffice/CLAUDE.md` («el CSV no debe pasar por el servidor de Next»): con el rewrite, pasa como proxy. Anotado en ese archivo y en la revisión.
+  - **Sin actualizar (guías históricas del arranque anterior):** `docs/auth-api.md`, `docs/auth-frontend.md`, `docs/centralized-incident-manager-review.md`, `docs/inventory-review.md` y `docs/inventory-frontend-review.md`.
+  - **Verificación final** (con la plataforma en Docker: `nexova-api-1` healthy, website 200, backoffice `/login` 200, `/backend/health` 200):
+
+    | Subproyecto | Resultado |
+    |---|---|
+    | `uis/backoffice` | `tsc` y `lint` sin errores, `build` correcto, `node:test` 497/497, Jest 222/222 |
+    | `uis/` | `node:test` 8/8 |
+    | `uis/talent-pipeline-tracker` | `tsc` sin errores, `lint` con los 4 errores conocidos, `node:test` 55/55 |
+    | `services/api` | `unittest` 415 OK; pytest 618 passed (3164 subtests) |
+
+    `docker compose config --quiet` sale con 0; 196 enlaces relativos de los documentos tocados sin problemas; sin secretos ni archivos prohibidos en los commits de la rama.
+- Impacto técnico: `.gitattributes`, `.env.example`, `requirements.txt`, `services/Dockerfile` y `services/.dockerignore`, `uis/Dockerfile`, `uis/.dockerignore`, `uis/start.sh` y `uis/serve-website.mjs` nuevos; `docker-compose.yml` nuevo; `uis/backoffice/next.config.ts` con el rewrite; `techContext.md` actualizado en F7.
 ---
 
 ## 2026-10-21 — Memory-bank: estado del frontend del inventario

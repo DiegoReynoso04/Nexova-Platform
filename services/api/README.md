@@ -66,7 +66,9 @@ Documentación interactiva de FastAPI en `http://localhost:8000/docs` con el ser
 
 Python 3.11 o superior (verificado con 3.14.6). Dependencias (`pyproject.toml`), acotadas a las versiones probadas (versiones exactas en [`uv.lock`](./uv.lock), versionado): `fastapi>=0.141,<0.142`, `python-multipart>=0.0.32,<0.1`, `uvicorn>=0.53,<0.54`, `tinydb>=4.9,<4.10`, `libpass[bcrypt]>=1.9.3,<1.10` y `python-jose[cryptography]>=3.5,<3.6` (AUTH-01), `sqlmodel>=0.0.48,<0.0.49` (instala SQLAlchemy 2.1) y `psycopg2-binary>=2.9.13,<2.10` (Hito 5, inventario) y, para tests, `httpx>=0.28,<0.29` (extra `dev`, para pip) más `pytest>=9.1,<9.2` y `pytest-cov>=7.1,<7.2` (grupo `dev` de uv, AUTH-088; repite httpx). Sin librerías de configuración.
 
-## Instalación (desde la raíz del monorepo)
+## Instalación del venv (para los tests, desde la raíz del monorepo)
+
+**Para arrancar la API no hace falta:** se arranca con Docker (ver [Docker](#docker)). El venv solo se usa para ejecutar los tests en el host ([Tests](#tests)) y para verificar los seeds sobre bases temporales.
 
 ```bash
 python -m venv services/api/.venv
@@ -77,23 +79,39 @@ python -m pip install -e packages/shared -e packages/incident-analyzer -e "servi
 
 **Instalar siempre los tres en la misma orden.** El núcleo (`packages/incident-analyzer`) y la validación compartida que usa (`packages/shared`, paquete `nexova_shared`) no están publicados y **no** figuran en las dependencias de `pyproject.toml` a propósito: sus nombres están libres en PyPI y declararlos haría que pip los buscase allí (*dependency confusion*). `pip install -e "services/api[dev]"` a solas instala el servicio pero no el núcleo, y la API fallará al importar `incident_analyzer`. (Si falta solo `nexova_shared`, el núcleo lo encuentra igualmente en el monorepo, pero el venv documentado lo instala.) `.venv/` y `*.egg-info/` están en `.gitignore`.
 
-## Arranque
+## Docker
 
-La API necesita `JWT_SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES` y `DATABASE_URL` (Hito 5, ver [Inventario](#inventario-hito-5)); sin ellas **no arranca** (`ConfigError`). Se guardan en `services/api/.env` (ignorado por git) y se cargan con `uv run --env-file`:
+**Desde el ticket #infra-40, la API se arranca con Docker**, junto con el website y el backoffice, desde la raíz del monorepo:
 
 ```bash
-cd services/api
-cp .env.example .env    # rellenar JWT_SECRET_KEY: python -c "import secrets; print(secrets.token_urlsafe(48))"
-uv run --env-file .env uvicorn app.main:create_app --factory --port 8000 --workers 1
+cp .env.example .env    # una sola vez, en la raíz: rellenar JWT_SECRET_KEY y DATABASE_URL
+docker compose up -d    # API en http://localhost:8000 (Swagger en /docs)
 ```
 
-Con el venv activado y sin uv, exportar antes las variables (ver abajo) y lanzar `uvicorn app.main:create_app --factory --port 8000 --workers 1`.
+Guía completa (requisitos, puertos, logs, cuándo reconstruir, problemas conocidos): [`docs/local-development.md`](../../docs/local-development.md). Revisión del ticket: [`docs/infra-40-review.md`](../../docs/infra-40-review.md).
 
-**Siempre con un único worker**: el último análisis vive en memoria del proceso y TinyDB (proveedores y usuarios) solo se protege con un bloqueo dentro del proceso.
+- **Imagen** ([`services/Dockerfile`](../Dockerfile), contexto `services/`): `python:3.14.6-slim` (la versión del venv), `uv` 0.12.21 y las dependencias de [`requirements.txt`](./requirements.txt) con `uv pip install --system --require-hashes`. Arranca uvicorn con `--reload`, `--host 0.0.0.0`, `--port 8000` y `--workers 1`.
+- **Paquetes del monorepo:** `nexova_shared` e `incident_analyzer` entran por `PYTHONPATH` desde el contexto adicional `packages` (Compose: `additional_contexts`), sin instalarlos: no están en PyPI (ver Instalación) e instalarlos pediría `setuptools` a PyPI. En desarrollo se montan desde el host, igual que `app/`, y la API se reinicia sola con cada cambio (`--reload-dir /app/api --reload-dir /packages`).
+- **Datos:** `services/api/data/` (TinyDB) se monta desde el host. El inventario está en Supabase (`DATABASE_URL`).
+- **Variables:** las lee del `.env` de la raíz (`env_file` de Compose). La API sigue sin cargar archivos `.env` por sí sola.
+- **Siempre con un único worker:** el último análisis vive en memoria del proceso y TinyDB (proveedores y usuarios) solo se protege con un bloqueo dentro del proceso.
+
+### `requirements.txt`
+
+La imagen instala `requirements.txt`, no `uv.lock`. Se genera desde `uv.lock`, **desde `services/api`**, cada vez que cambian las dependencias:
+
+```bash
+uv export --frozen --no-dev --no-emit-project --format requirements-txt -o requirements.txt
+```
+
+- `--frozen`: no toca `uv.lock`; `--no-dev`: sin pytest ni pytest-cov; `--no-emit-project`: sin la propia API.
+- **No aparecen `nexova-shared` ni `nexova-incident-analyzer`**, porque no están en `uv.lock`: `pyproject.toml` no los declara a propósito (no están publicados y declararlos invitaría a buscarlos en PyPI). En la imagen entran por `PYTHONPATH`.
+- Lleva los hashes de cada paquete (`--require-hashes`). `tests/test_requirements_lock.py` falla si deja de coincidir con `uv.lock` o con `pyproject.toml`, y su mensaje dice este mismo comando.
+- Después: `docker compose up -d --build`.
 
 ### Configuración
 
-Variables de entorno (la API **no** carga archivos `.env` por sí sola, no usa `python-dotenv`: las carga `uv run --env-file .env`; [`.env.example`](./.env.example) las documenta):
+Variables de entorno (la API **no** carga archivos `.env` por sí sola, no usa `python-dotenv`: con Docker llegan del `.env` de la raíz, documentado en [`.env.example`](../../.env.example)):
 
 | Variable | Por defecto | Uso |
 |---|---|---|
@@ -101,21 +119,16 @@ Variables de entorno (la API **no** carga archivos `.env` por sí sola, no usa `
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | — (**obligatoria**) | Validez del token de acceso en minutos (entero > 0) |
 | `DATABASE_URL` | — (**obligatoria**) | Base PostgreSQL de Supabase del inventario (Hito 5): la URI del **Transaction pooler** (puerto 6543). Solo `postgresql://` o `postgresql+psycopg2://`. Lleva la contraseña de la base: nunca en el código ni en git. Ver [Crear la base en Supabase](#crear-la-base-en-supabase) |
 | `AUTH_DB_PATH` | `services/api/data/auth.json` | Archivo TinyDB de `User` y `Profile` (API y `create-admin`). `data/` está en `.gitignore` |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Orígenes permitidos, separados por comas. `*` se rechaza al arrancar. Con AUTH-02 el Talent Pipeline Tracker (puerto 3002 desde #infra-40) también llama a la API para login, registro y perfil: en local usar `http://localhost:3000,http://localhost:3002` (así viene en `.env.example`) |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Orígenes permitidos, separados por comas. `*` se rechaza al arrancar. Con Docker, el backoffice llama a la API por su mismo origen (`/backend`) y no necesita CORS; el Talent Pipeline Tracker (fuera de Docker, puerto 3002 desde #infra-40) sí, para login, registro y perfil: `http://localhost:3002` (así viene en el `.env.example` de la raíz) |
 | `SUPPLIERS_DB_PATH` | `services/api/data/suppliers.json` | Archivo TinyDB del directorio de proveedores (API y seeder). `data/` está en `.gitignore` |
 | `INCIDENTS_DB_PATH` | `services/api/data/incidents.json` | Archivo TinyDB del gestor centralizado de incidencias: tabla `incidents` y tabla `seed_keys` (solo el SHA-256 de la clave de origen de cada registro histórico cargado; nunca el `ticket_id` en claro). Lo usan el repositorio de `app/modules/incident_manager/` y `scripts/seed_incidents.py`. `data/` está en `.gitignore` |
 | `RESEND_API_KEY` | — (opcional) | API key de [Resend](https://resend.com/) para enviar el email de restablecimiento (AUTH-03). Nunca en el código ni en git. Sin ella (y sin las dos siguientes) la API arranca, pero no envía emails |
 | `EMAIL_FROM` | — (con `RESEND_API_KEY`) | Remitente, p. ej. `Nexova <onboarding@resend.dev>` (remitente de pruebas de Resend: solo entrega a la dirección de tu cuenta de Resend) |
-| `PASSWORD_RESET_URL` | — (con `RESEND_API_KEY`) | URL absoluta de la página de restablecimiento del frontend; el enlace añade `?token=…`. En local: `http://localhost:3000/reset-password` |
+| `PASSWORD_RESET_URL` | — (con `RESEND_API_KEY`) | URL absoluta de la página de restablecimiento del frontend; el enlace añade `?token=…`. Con Docker: `http://localhost:3001/reset-password` |
 | `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` | `30` | Vigencia del enlace, entre 15 y 60 minutos |
 | `MAX_UPLOAD_BYTES` | `1048576` (1 MiB) | Límite técnico del **body HTTP completo** (CSV + cabeceras y delimitadores multipart), **no del CSV**: el CSV máximo es algo menor. Decisión de la API, no requisito del cliente. Detalle en `SPECS.md` §3.1 |
 
-```powershell
-$env:CORS_ALLOWED_ORIGINS = "http://localhost:3000,http://localhost:3002"
-$env:SUPPLIERS_DB_PATH = "C:\ruta\absoluta\suppliers.json"   # bash: export SUPPLIERS_DB_PATH=/ruta/absoluta/suppliers.json
-```
-
-Una ruta relativa en `SUPPLIERS_DB_PATH` se resuelve desde el directorio en el que se lanza cada proceso: para que la API y el seeder usen el mismo archivo, usar una ruta absoluta o lanzar ambos desde `services/api`. Sin la variable, los dos usan `services/api/data/suppliers.json`.
+Con Docker no hace falta definir las rutas TinyDB: por defecto apuntan a `/app/api/data/`, que es `services/api/data/` del host montada. Tras cambiar el `.env`: `docker compose up -d api`.
 
 ## Directorio de proveedores
 
@@ -130,25 +143,23 @@ Registro oficial de proveedores de Nexova (Patricia Solís, HR Manager). Context
 
 **Puesta en marcha del directorio** (desde cero):
 
-1. Instalar el venv del servicio (sección [Instalación](#instalación-desde-la-raíz-del-monorepo)).
-2. Cargar los proveedores: `cd services/api && uv run seed` (ver abajo).
-3. Arrancar la API (sección [Arranque](#arranque)); Swagger en `http://localhost:8000/docs`.
-4. Para la interfaz web, arrancar el backoffice y abrir `http://localhost:3000/suppliers` (ver [`uis/backoffice/README.md`](../../uis/backoffice/README.md)).
+1. Arrancar la plataforma con Docker (sección [Docker](#docker)); Swagger en `http://localhost:8000/docs`.
+2. Cargar los proveedores: `docker compose exec api python -m app.seed` (ver abajo).
+3. Abrir `http://localhost:3001/suppliers` en el backoffice (ver [`uis/backoffice/README.md`](../../uis/backoffice/README.md)).
 
 ### Seeder
 
 Carga los 15 proveedores del contexto. Idempotente: solo inserta los que no existen (por `name`) y confirma en consola cuántos insertó. Con una variable de entorno inválida (por ejemplo, la configuración de email incompleta) o una base `SUPPLIERS_DB_PATH` ilegible o corrupta, escribe el motivo en stderr y termina con código `1`, sin traceback.
 
+Con la plataforma arrancada, desde la raíz:
+
 ```bash
-cd services/api
-uv run seed
+docker compose exec api python -m app.seed
 ```
 
-`uv run` usa el `.venv` de `services/api` (el mismo del flujo con pip) y, antes de ejecutar, lo sincroniza con `pyproject.toml`/`uv.lock`. Esa sincronización **no siempre conserva** el núcleo `incident-analyzer`, que se instala aparte con pip: `uv run seed` y `uv run --env-file .env uvicorn …` lo han conservado, pero `uv run --extra dev …` lo desinstaló (comprobado el 2026-09-30), y a partir de ahí la API de incidentes y los tests fallan al importar `incident_analyzer`. Con el venv ya instalado, `uv run --no-sync …` lo usa tal cual, sin sincronizar. Si el núcleo desaparece, se reinstala desde la raíz con `services\api\.venv\Scripts\python -m pip install --no-deps -e packages/incident-analyzer` (Linux/macOS: `services/api/.venv/bin/python …`). El seeder no importa el núcleo, por lo que `uv run seed` también funciona en un clon limpio con solo uv instalado.
+La imagen no instala el proyecto, así que el atajo `seed` de `[project.scripts]` no existe dentro del contenedor: se usa `python -m`. El seeder corre en el mismo contenedor que la API; ejecutarlo sin peticiones de escritura en curso (TinyDB no coordina procesos distintos).
 
-> **Nota sobre `uv sync`:** `uv sync` sincroniza el entorno de forma **exacta** con `uv.lock` y elimina los paquetes que no declara `pyproject.toml`; en este `.venv` eso incluye el núcleo `incident-analyzer` (instalado aparte, ver Instalación) y el extra `dev` si no se pide, con lo que la API de incidentes y los tests dejarían de funcionar hasta reinstalarlos. Para cargar los proveedores, la operación prevista es `uv run seed`.
-
-Sin uv, con el venv del servicio ya instalado: `python -m app.seed` (desde `services/api`). Ejecutarlo con la API parada o sin peticiones de escritura en curso (TinyDB no coordina procesos distintos).
+> **Nota sobre `uv sync`** (venv de los tests): `uv sync` sincroniza el entorno de forma **exacta** con `uv.lock` y elimina los paquetes que no declara `pyproject.toml`; en este `.venv` eso incluye el núcleo `incident-analyzer` y `nexova-shared` (instalados aparte, ver Instalación), con lo que la API de incidentes y los tests dejarían de funcionar hasta reinstalarlos. No usarlo.
 
 ## Autenticación (AUTH-01)
 
@@ -163,7 +174,7 @@ Contexto y guía paso a paso (incluido el flujo en `/docs`): [`docs/auth-api.md`
 
 Contexto: [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md). Contrato y decisiones D-PWD-1…12: `SPECS.md` Parte D. **Guía para revisar AUTH-03** (endpoints, arranque, variables, validación manual paso a paso, prueba de H-1, Resend sin dominio propio, tests y deuda técnica): ese mismo documento, §5–§14.
 
-- **Envío con Resend** por HTTP (`urllib`, sin dependencias nuevas). Configurar `RESEND_API_KEY`, `EMAIL_FROM` y `PASSWORD_RESET_URL` en `services/api/.env` (ver `.env.example`) y arrancar con `uv run --env-file .env …` (la API no lee `.env` por sí sola). Con el remitente de pruebas `onboarding@resend.dev` y sin dominio verificado, Resend restringe los destinatarios: para una demo, registra en Nexova un usuario con el destinatario de pruebas `delivered@resend.dev` (detalle en `docs/auth-password-reset.md` §10).
+- **Envío con Resend** por HTTP (`urllib`, sin dependencias nuevas). Configurar `RESEND_API_KEY`, `EMAIL_FROM` y `PASSWORD_RESET_URL` en el `.env` de la raíz (ver su `.env.example`) y aplicar con `docker compose up -d api`. Con el remitente de pruebas `onboarding@resend.dev` y sin dominio verificado, Resend restringe los destinatarios: para una demo, registra en Nexova un usuario con el destinatario de pruebas `delivered@resend.dev` (detalle en `docs/auth-password-reset.md` §10).
 - **Token de un solo uso:** aleatorio, guardado solo como SHA-256 en `auth.json` (`password_reset_tokens`), caduca a los `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`. Un enlace nuevo, un reset correcto o un cambio de contraseña invalidan los pendientes.
 - **Sin enumeración:** `forgot-password` responde 200 con el mismo cuerpo exista o no el email; el email se envía después de responder.
 - **Auditoría:** cada evento queda en `password_audit` (`auth.json`) con IP y fecha, sin email ni token.
@@ -174,11 +185,10 @@ Contexto: [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md). Co
 `POST /users` siempre crea usuarios `user`. El primer admin se crea con un comando explícito (la contraseña se pide oculta, dos veces; no se imprime ni se pasa por argumento). Termina con código `1`, sin traceback ni crear nada, si el email ya existe, la entrada no es válida, se cancela (Ctrl+C o fin de entrada), falla la configuración o `auth.json` no se puede abrir o está corrupto:
 
 ```bash
-cd services/api
-uv run --env-file .env create-admin --email admin@example.com --name "Administración"
+docker compose exec api python -m app.auth.create_admin --email admin@example.com --name "Administración"
 ```
 
-Sin uv, con el venv del servicio: `python -m app.auth.create_admin --email ...`. Si el email ya existe, termina con código 1 sin tocar nada. Como el seeder, ejecutarlo sin escrituras de la API en curso (TinyDB no coordina procesos distintos).
+`docker compose exec` asigna un terminal, así que la contraseña se pide oculta igual que en local. Si el email ya existe, termina con código 1 sin tocar nada. Como el seeder, ejecutarlo sin escrituras de la API en curso (TinyDB no coordina procesos distintos).
 
 ## Limitaciones conocidas (deliberadas en esta fase)
 
@@ -200,7 +210,13 @@ Registro estructurado de incidencias de Nexova (Sergio Molina, CTO; Roberto Día
 
 Carga el CSV del helpdesk (el del analizador de incidentes) con `origin = customer` y `branch = central`. Cada fila pasa por las 7 reglas del analizador y por el mapeo del CONTEXT (estado, categoría, `description` → `title` de 120 caracteres, `date` → `created_at` a medianoche UTC); nunca se inserta una fila tal cual. Es **idempotente**: una segunda ejecución no duplica nada.
 
-Se ejecuta con el intérprete del venv de `services/api` (necesita `tinydb` y `pydantic`), desde la raíz del monorepo. Con el **fixture sintético de aceptación** (100 filas, 96 válidas; no son datos de Nexova) y una base temporal:
+**Sobre los datos de la plataforma** (Docker), con el CSV real en `data/raw/incidents/incidents-nexova.csv`: el script no está en la imagen y se monta al ejecutarlo, desde la raíz:
+
+```bash
+docker compose run --rm -v ./scripts:/app/scripts:ro -v ./data/raw:/app/data/raw:ro -e PYTHONPATH=/app/api:/packages/shared:/packages/incident-analyzer api python /app/scripts/seed_incidents.py
+```
+
+**Para verificarlo sobre una base temporal**, con el intérprete del venv de `services/api` (necesita `tinydb` y `pydantic`), desde la raíz del monorepo, con el **fixture sintético de aceptación** (100 filas, 96 válidas; no son datos de Nexova):
 
 ```bash
 # Windows (PowerShell)
@@ -236,25 +252,20 @@ API de inventario de equipos y materiales de Nexova (ticket NXV-0201, Sergio Mol
    postgresql://<usuario>:<contraseña>@<host-del-pooler>:6543/postgres
    ```
 
-3. Pégala en `services/api/.env` como `DATABASE_URL=…`, sustituyendo `<contraseña>` por la tuya. `.env` está en `.gitignore`: **nunca** subas la cadena a git ni la pegues en el código.
+3. Pégala en el `.env` de la raíz del repositorio como `DATABASE_URL=…`, sustituyendo `<contraseña>` por la tuya. `.env` está en `.gitignore`: **nunca** subas la cadena a git ni la pegues en el código.
 
 No hace falta crear las tablas a mano: la API las crea al arrancar (`create_all`) y activa RLS sin políticas en las tres. Así la Data API pública de Supabase no puede leerlas ni escribirlas, y la API, que conecta como dueña de las tablas, sí.
 
 - **Esquemas aceptados:** solo `postgresql://` y `postgresql+psycopg2://`. El motor usa siempre psycopg2, porque SQLAlchemy 2.1 usaría psycopg v3, que no está instalado.
 - **Sin `DATABASE_URL`**, o con otro esquema, la API no arranca (`ConfigError`).
-- **Si Supabase no responde al arrancar**, uvicorn no arranca: `InventoryStartupError: inventory database is unavailable at startup: OperationalError`, sin host, usuario ni contraseña.
+- **Si Supabase no responde al arrancar**, uvicorn no arranca: `InventoryStartupError: inventory database is unavailable at startup: OperationalError`, sin host, usuario ni contraseña. Con Docker, el contenedor `api` queda `unhealthy` y la `ui` no arranca.
 - **Si deja de responder durante una petición**, la ruta responde 503 `storage_unavailable`.
 
 ### Arranque con el inventario
 
-El mismo comando de [Arranque](#arranque), con `DATABASE_URL` en el `.env`:
+El mismo `docker compose up -d` de [Docker](#docker), con `DATABASE_URL` en el `.env` de la raíz. Al arrancar, la API crea las tablas que falten.
 
-```bash
-cd services/api
-uv run --env-file .env uvicorn app.main:create_app --factory --port 8000 --workers 1
-```
-
-### Seed (`uv run seed-inventory`)
+### Seed (`seed-inventory`)
 
 Carga los datos semilla del CONTEXT:
 
@@ -265,9 +276,10 @@ Carga los datos semilla del CONTEXT:
 Las órdenes van a nombre de un usuario que ya exista en TinyDB, por ejemplo uno creado con `/register` o con `create-admin`. Los `assigned_to` (`EMPLEADO-FICTICIO-01` y `-02`) son identificadores **ficticios**: el CONTEXT no da empleados.
 
 ```bash
-cd services/api
-uv run --env-file .env seed-inventory --email usuario@example.com
+docker compose exec api python -m app.modules.inventory.seed --email usuario@example.com
 ```
+
+Usa la `DATABASE_URL` del `.env` de la raíz, es decir, la base de la demo. Para verificar un cambio del seed sobre **otra** base, ejecutarlo con el venv de los tests y la `DATABASE_URL` de esa base exportada solo en esa terminal: `python -m app.modules.inventory.seed --email …` desde `services/api`.
 
 Salida de la primera ejecución:
 
@@ -294,7 +306,6 @@ Stock por SKU:
   - `1` configuración (sin `DATABASE_URL`, esquema inválido o falta `--email`), usuario inexistente o inactivo (el mensaje no repite el email), o datos semilla que la API rechazaría;
   - `2` base no disponible (Supabase o el `auth.json` ilegible), con solo la clase del error.
   - Nunca hay traceback.
-- **Sin uv**, con el venv activado: `python -m app.modules.inventory.seed --email …`.
 
 ### Endpoints del inventario
 
@@ -332,7 +343,13 @@ Con uv, desde `services/api` y con el venv ya instalado:
 uv run --no-sync python -m unittest discover -s tests -t .
 ```
 
-Con pytest (AUTH-088), desde `services/api`: `uv run pytest` (recoge también los tests `unittest`) y `uv run pytest --cov` para la cobertura. El comando `unittest` de arriba solo ejecuta la suite anterior: la batería de AUTH-088 está escrita al estilo pytest y solo la recoge `uv run pytest` (detalle en [`TESTING.md`](./TESTING.md)). `uv run` sincroniza el venv sin borrar paquetes que no declara (verificado con uv 0.12.21: `nexova-shared` y `nexova-incident-analyzer` siguen instalados); `uv sync`, en cambio, es exacto y **sí** los desinstala. Aunque falten, pytest los encuentra en el monorepo (`pythonpath` en `pyproject.toml`), pero el comando `unittest` de arriba los necesita instalados: reinstalarlos con `pip install --no-deps -e packages/shared -e packages/incident-analyzer` desde la raíz.
+Con pytest (AUTH-088), desde `services/api` (comando oficial, el mismo de `AGENTS.md` §4):
+
+```bash
+uv run --no-sync python -m pytest
+```
+
+Recoge también los tests `unittest`; `--cov` añade la cobertura. El comando `unittest` de arriba solo ejecuta la suite anterior: la batería de AUTH-088 está escrita al estilo pytest y solo la recoge pytest (detalle en [`TESTING.md`](./TESTING.md)). **Por qué así:** `--no-sync` usa el venv tal cual, sin sincronizarlo con `uv.lock` (una sincronización desinstaló una vez el núcleo, el 2026-09-30; `uv sync` es exacto y **sí** lo desinstala), y `python -m pytest` evita el `pytest.exe` que el Control de aplicaciones de Windows puede bloquear (os error 4551). Aunque falten, pytest los encuentra en el monorepo (`pythonpath` en `pyproject.toml`), pero el comando `unittest` de arriba los necesita instalados: reinstalarlos con `pip install --no-deps -e packages/shared -e packages/incident-analyzer` desde la raíz.
 
 La suite del núcleo (Fase 1) no necesita el venv: `python -m unittest discover -s packages/incident-analyzer/tests -t packages/incident-analyzer` con cualquier Python ≥ 3.11.
 
@@ -380,13 +397,13 @@ app/
 │   ├── service.py           # UserService: crear, obtener por id/email, actualizar, eliminar, login, contraseñas
 │   ├── email.py             # AUTH-03: envío con Resend (urllib) y texto del email de restablecimiento
 │   ├── dependencies.py      # OAuth2PasswordBearer, get_current_user, require_admin, ensure_self_or_admin
-│   └── create_admin.py      # entry point de `uv run create-admin`
+│   └── create_admin.py      # create-admin (en Docker: `python -m app.auth.create_admin`)
 ├── routes/auth.py           # POST /auth/login, GET /auth/me; AUTH-03: forgot/reset/change-password
 ├── routes/users.py          # CRUD /users
 ├── routes/profiles.py       # GET/PUT /profiles/me
 ├── models.py                # Proveedores: modelos Pydantic, categorías y estados del contexto
 ├── database.py              # Proveedores: TinyDB (SupplierRepository, thread-safe, un archivo JSON)
-├── seed.py                  # Proveedores: SUPPLIERS_SEED + entry point de `uv run seed`
+├── seed.py                  # Proveedores: SUPPLIERS_SEED + seeder (en Docker: `python -m app.seed`)
 ├── routes/suppliers.py      # Proveedores: 6 endpoints /suppliers
 ├── modules/incident_manager/  # Gestor centralizado de incidencias (SPECS Parte E)
 │   ├── router.py            # 5 endpoints /api/incidents, 400 propio (IncidentManagerRoute)
@@ -399,7 +416,7 @@ app/
 │   ├── database.py          # build_engine, init_db (create_all + RLS), lifespan, get_db
 │   ├── service.py           # stock calculado, órdenes con FOR UPDATE, listado sin N+1
 │   ├── router.py            # APIRouter(prefix="/inventory"): 6 endpoints
-│   └── seed.py              # entry point de `uv run seed-inventory`
+│   └── seed.py              # seed-inventory (en Docker: `python -m app.modules.inventory.seed`)
 └── modules/incidents/
     ├── router.py            # 2 endpoints: request → servicio → respuesta
     ├── schemas.py           # contrato JSON (traducción de AnalysisResult, sin cálculo)

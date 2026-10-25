@@ -189,7 +189,9 @@ Invoke-RestMethod -Method Post -Uri "$api/auth/change-password" -Headers $header
 
 ## 8. Puesta en marcha local
 
-Guía general (puertos, CORS, `.env.local` de los frontends): [`local-development.md`](./local-development.md). Lo imprescindible para AUTH-03:
+> **Desde el ticket #infra-40, la plataforma se arranca con Docker** (un solo `.env` en la raíz; backoffice en el **3001**, website en el 3000, API en el 8000; el tracker, fuera de Docker, en el 3002): ver [`local-development.md`](./local-development.md). Las tres variables de Resend van en el `.env` de la raíz, con `PASSWORD_RESET_URL=http://localhost:3001/reset-password`. Los comandos y puertos de esta sección y de la §9 son los de cuando se hizo AUTH-03 (con `uv run` y `npm run dev`); se conservan como registro.
+
+Guía general de entonces (puertos, CORS, `.env.local` de los frontends): [`local-development.md`](./local-development.md). Lo imprescindible para AUTH-03:
 
 | Aplicación | Directorio | Comando | URL |
 |---|---|---|---|
@@ -262,7 +264,7 @@ Repetir 9.1–9.3 en los dos frontends:
 | `/reset-password` con token válido y con token inválido/reutilizado | ✓ | ✓ |
 | `/account/change-password`, enlazado desde `/account/profile` | ✓ | ✓ |
 
-Nota: el enlace del email apunta a la página configurada en `PASSWORD_RESET_URL` (en local, el backoffice). La `/reset-password` del tracker funciona igual si se abre con un token válido o si `PASSWORD_RESET_URL` apunta a `http://localhost:3001/reset-password` (propuesta P3-1).
+Nota: el enlace del email apunta a la página configurada en `PASSWORD_RESET_URL` (en local, el backoffice). La `/reset-password` del tracker funciona igual si se abre con un token válido o si `PASSWORD_RESET_URL` apunta a `http://localhost:3002/reset-password` (propuesta P3-1; el tracker está en el 3002 desde #infra-40).
 
 ## 10. Resend sin dominio propio
 
