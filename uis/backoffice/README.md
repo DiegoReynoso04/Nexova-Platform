@@ -30,7 +30,7 @@ Registro oficial de proveedores de Nexova (Patricia Solís, HR Manager). Requisi
 - Cambio de tarifa (`PATCH /suppliers/{id}/rate`) y activar/suspender (`PATCH /suppliers/{id}/status`) en cada fila; la respuesta de la API se refleja al momento.
 - Badges `active` / `suspended` (color + símbolo). Las renovaciones de los próximos 60 días (fecha local del navegador) se destacan con un borde lateral y la etiqueta «Renueva en N días»; de los 15 proveedores del seed, 10 tienen fecha de renovación (todas ya pasadas) y 5 no tienen fecha, así que ninguno aparece como renovación próxima: solo se ve con proveedores registrados con una fecha próxima.
 - **Sin botón de eliminar**: el endpoint `DELETE` existe en la API, pero los proveedores se suspenden, no se borran.
-- Necesita la API en marcha y, para ver datos, el seeder ejecutado (`cd services/api && uv run seed`).
+- Necesita la API en marcha y, para ver datos, el seeder ejecutado (`docker compose exec api python -m app.seed`, ver [`docs/local-development.md`](../../docs/local-development.md)).
 
 ### `/incident-manager` y `/incident-manager/new` — gestor centralizado de incidencias
 
@@ -51,7 +51,7 @@ Interfaz del inventario del Hito 5 para el personal de operaciones: consultar el
 - **`/inventory/orders/outbound` (Salida de activos)**: `POST /inventory/orders/outbound`. Al elegir un activo se lee su stock (`GET /inventory/products/{id}`) y se muestra antes de la cantidad; Cantidad espera a conocerlo. Asignación (con «Asignado a») o Consumo. Una cantidad mayor que el stock avisa sin bloquear; el 400 de stock insuficiente aparece bajo Cantidad con el mensaje de la API. Tras el envío, el stock se vuelve a leer.
 - **`/inventory/orders` (Historial)**: `GET /inventory/orders`, de solo lectura, la más reciente primero: tipo (Entrada/Salida), activo, cantidad, oficina, detalle, fecha local y `user_uuid`.
 - **Errores:** un 4xx/5xx con `detail` muestra ese mensaje de la API bajo un título en español; los 422, un texto propio por campo con el mensaje de la API debajo; red, timeout o respuesta ilegible, textos fijos con «Reintentar».
-- Necesita la API en marcha con `DATABASE_URL` y, para ver datos, el seed (`uv run --env-file .env seed-inventory --email <usuario>`; ver [`services/api/README.md`](../../services/api/README.md#inventario-hito-5)).
+- Necesita la API en marcha con `DATABASE_URL` y, para ver datos, el seed (`docker compose exec api python -m app.modules.inventory.seed --email <usuario>`; ver [`services/api/README.md`](../../services/api/README.md#inventario-hito-5)).
 - **Prueba manual** (las 4 páginas, paso a paso) y trazabilidad con el brief: [`docs/inventory-frontend-review.md`](../../docs/inventory-frontend-review.md).
 
 ### Autenticación — `/login`, `/register`, `/account/profile` (AUTH-02)
@@ -63,7 +63,7 @@ Contexto: [`docs/auth-frontend.md`](../../docs/auth-frontend.md); contrato: [`se
 - **`/account/profile`**: email (del `User`) y nombre, teléfono y dirección (del `Profile`) desde `GET /auth/me`; editar nombre y contacto con `PUT /profiles/me` (un campo vacío borra ese dato).
 - **Protección de rutas**: todas las vistas salvo `/login` y `/register` exigen sesión. Un guard en el layout raíz valida el token con `GET /auth/me` y redirige a `/login` si no hay token o la API responde 401 (el token se elimina). Toda llamada protegida lleva `Authorization: Bearer <token>`.
 - **Cerrar sesión** (cabecera): elimina el token y vuelve a `/login`.
-- Para crear la primera cuenta basta con `/register` (rol `user`); los admins se crean con `uv run create-admin` en `services/api`.
+- Para crear la primera cuenta basta con `/register` (rol `user`); los admins se crean con `docker compose exec api python -m app.auth.create_admin` (ver [`services/api/README.md`](../../services/api/README.md#primer-administrador)).
 
 ### Contraseñas — `/forgot-password`, `/reset-password`, `/account/change-password` (AUTH-03)
 
@@ -73,7 +73,7 @@ Contexto: [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md); co
 - **`/forgot-password`** (sin sesión): email → `POST /auth/forgot-password`. Tras enviarlo, el formulario se desactiva y muestra siempre "Si esa dirección está registrada, recibirás un enlace en breve".
 - **`/reset-password`** (con o sin sesión): abre el enlace del email (`?token=…`), pide la contraseña nueva y su confirmación → `POST /auth/reset-password` → `/login` con aviso. Si el token falta, no es válido, caducó o ya se usó: error claro y enlace a `/forgot-password`.
 - **`/account/change-password`** (con sesión; enlace en `/account/profile`): contraseña actual, nueva y confirmación (deben coincidir antes de llamar a la API) → `POST /auth/change-password`; muestra el éxito o el error junto a su campo.
-- El email lo envía `services/api` con Resend: requiere `RESEND_API_KEY`, `EMAIL_FROM` y `PASSWORD_RESET_URL=http://localhost:3000/reset-password` en `services/api/.env` (ver su README).
+- El email lo envía `services/api` con Resend: requiere `RESEND_API_KEY`, `EMAIL_FROM` y `PASSWORD_RESET_URL=http://localhost:3001/reset-password` en el `.env` de la raíz (ver su `.env.example`).
 
 ## Stack técnico
 
@@ -81,26 +81,25 @@ Mismo stack que [`uis/talent-pipeline-tracker`](../talent-pipeline-tracker/READM
 
 ## Puesta en marcha
 
-Requisitos: Node.js 20 o superior para la app; **Node.js 24** para ejecutar los tests (`node --test` con TypeScript sin dependencias). Para `/incidents`, `/suppliers`, `/incident-manager` y `/inventory`, además, la API de `services/api` en marcha (ver su README); para ver proveedores, el seeder ejecutado (`cd services/api && uv run seed`); para el inventario, `DATABASE_URL` y `seed-inventory`.
+**Desde el ticket #infra-40, el backoffice se arranca con Docker**, junto con el website y la API, desde la raíz del monorepo:
 
 ```bash
-npm install
-cp .env.example .env.local   # NEXT_PUBLIC_API_URL y NEXT_PUBLIC_INVENTORY_API_URL=http://localhost:8000 (.env.local está ignorado por git)
-npm run dev                  # servidor de desarrollo en http://localhost:3000
-npm run build                # build de producción
-npm run start                # sirve el build
+cp .env.example .env    # una sola vez, en la raíz: rellenar JWT_SECRET_KEY y DATABASE_URL
+docker compose up -d    # backoffice en http://localhost:3001 (website en el 3000, API en el 8000)
 ```
 
-| Variable | Valor local | Uso |
+Guía completa (requisitos, logs, cuándo reconstruir, comandos de seed y problemas conocidos): [`docs/local-development.md`](../../docs/local-development.md). Para ver proveedores, el seeder ejecutado (`docker compose exec api python -m app.seed`); para el inventario, `DATABASE_URL` y `seed-inventory` (ver [`services/api/README.md`](../../services/api/README.md#inventario-hito-5)).
+
+| Variable (en el `.env` de la raíz) | Valor con Docker | Uso |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | URL base de `services/api`. Se incorpora al JavaScript **en tiempo de build** (`NEXT_PUBLIC_*`). Si falta, `/incidents` y `/suppliers` muestran un error de configuración al usarlas; el build no falla |
-| `NEXT_PUBLIC_INVENTORY_API_URL` | `http://localhost:8000` | URL base de la API del inventario (solo el host; el servicio añade `/inventory/...`). La pide el brief. **Sin reserva** a `NEXT_PUBLIC_API_URL`: si falta, las páginas del inventario muestran un error de configuración; el build no falla |
+| `NEXT_PUBLIC_API_URL` | `/backend` | URL base de `services/api` que usa el navegador: la ruta `/backend` del propio backoffice. Se incorpora al JavaScript al arrancar `next dev` (`NEXT_PUBLIC_*`). Si falta, `/incidents` y `/suppliers` muestran un error de configuración al usarlas; el build no falla |
+| `NEXT_PUBLIC_INVENTORY_API_URL` | `/backend` | URL base de la API del inventario (el servicio añade `/inventory/...`). La pide el brief. **Sin reserva** a `NEXT_PUBLIC_API_URL`: si falta, las páginas del inventario muestran un error de configuración; el build no falla |
+| `API_INTERNAL_URL` | `http://api:8000` | Solo de servidor (sin `NEXT_PUBLIC_`): destino del rewrite de `/backend/*` en `next.config.ts`, por el nombre del servicio en la red de Docker. Sin ella no hay rewrite |
+| `WATCHPACK_POLLING` | `true` | Recarga de `next dev --webpack` con el código montado desde Windows |
 
-Las variables `NEXT_PUBLIC_*` se leen al arrancar `npm run dev`: tras cambiar `.env.local`, hay que pararlo y volver a lanzarlo.
+Tras cambiar una de estas variables: `docker compose up -d ui`. Con Docker, el backoffice llama a la API por su mismo origen (`/backend`): no necesita CORS. El Talent Pipeline Tracker, fuera de Docker, usa el **3002**.
 
-`.env.example` es solo documentación: Next.js no lo carga (solo lee `.env`, `.env.local`, `.env.$(NODE_ENV)` y `.env.$(NODE_ENV).local`).
-
-La API solo acepta los orígenes de `CORS_ALLOWED_ORIGINS` (por defecto `http://localhost:3000`; ver `services/api/README.md`). Si el backoffice arranca en otro puerto porque el 3000 está ocupado, hay que liberar ese puerto o añadir el origen en `CORS_ALLOWED_ORIGINS` de la API. El Talent Pipeline Tracker usa el 3001.
+La plantilla de variables es el [`.env.example`](../../.env.example) de la raíz (el `.env.example` de esta carpeta se borró en #infra-40).
 
 ## Validación
 
@@ -188,8 +187,6 @@ types/incident-manager.ts       # contrato, vocabulario, etiquetas de sede y tra
 types/auth.ts                   # contrato de autenticación y perfil
 types/inventory.ts              # contrato y vocabulario del inventario
 tests/                          # tests node --test (.mjs) + support/
-
-.env.example                    # variables de entorno documentadas (sin secretos)
 ```
 
 ## Documentación relacionada

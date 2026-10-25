@@ -1,5 +1,7 @@
 # Gestor centralizado de incidencias — guía de revisión
 
+> **Desde #infra-40 la plataforma se arranca con Docker** (ver [`local-development.md`](./local-development.md)); los pasos de arranque de esta guía son los de su fecha.
+
 Documento para revisar el proyecto: cómo levantarlo, qué salida esperar, qué cubre cada test y qué **no** está verificado.
 
 - Contexto de negocio (enumerados, mapeos y conteos esperados): [`centralized-incident-manager.md`](./centralized-incident-manager.md).

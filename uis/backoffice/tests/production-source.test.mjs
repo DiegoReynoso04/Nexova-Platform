@@ -50,6 +50,21 @@ describe('código de producción', () => {
     }
   });
 
+  // #infra-40: el único proxy permitido hacia la API es el rewrite /backend de
+  // next.config.ts, que reenvía el cuerpo sin leerlo. Un Route Handler o un
+  // Server Action haría pasar los datos (p. ej. el CSV de /incidents) por código
+  // propio en el servidor de Next.
+  test('sin Route Handlers ni Server Actions', () => {
+    const appEntries = readdirSync(new URL('app/', APP_ROOT), { recursive: true }).map((entry) =>
+      String(entry).replaceAll('\\', '/')
+    );
+    const routeHandlers = appEntries.filter((path) => /(^|\/)route\.[cm]?[jt]sx?$/.test(path));
+    assert.deepEqual(routeHandlers, []);
+    for (const file of PRODUCTION_FILES) {
+      assert.doesNotMatch(codeWithoutComments(file), /['"]use server['"]/, file);
+    }
+  });
+
   test('incluye el directorio de proveedores y sus piezas', () => {
     for (const file of [
       'app/suppliers/page.tsx',

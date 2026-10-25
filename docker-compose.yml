@@ -1,0 +1,91 @@
+# Entorno de desarrollo del monorepo con Docker (ticket #infra-40).
+#
+#   cp .env.example .env   # rellenar JWT_SECRET_KEY y DATABASE_URL
+#   docker compose up      # website :3000 · backoffice :3001 · API :8000 (/docs)
+#
+# Sin secretos en este archivo: todas las variables salen del .env de la raíz
+# (ignorado por git). No ejecutes `docker compose config` sin --quiet: imprime
+# el entorno interpolado, con los secretos.
+
+name: nexova
+
+services:
+  api:
+    build:
+      context: ./services
+      additional_contexts:
+        # nexova_shared e incident_analyzer: paquetes del monorepo, nunca de PyPI.
+        packages: ./packages
+    env_file:
+      - path: .env
+        required: true
+    command:
+      - uvicorn
+      - app.main:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --workers
+      - "1"
+      - --reload
+      # --reload-dir sustituye al directorio vigilado por defecto: van los dos.
+      - --reload-dir
+      - /app/api
+      - --reload-dir
+      - /packages
+    volumes:
+      # Código de la API y de los dos paquetes del monorepo, sobre las rutas de
+      # la imagen (recarga sin reconstruir). El .venv del host (Windows) no entra.
+      - ./services/api/app:/app/api/app
+      - ./packages/shared/nexova_shared:/packages/shared/nexova_shared
+      - ./packages/incident-analyzer/incident_analyzer:/packages/incident-analyzer/incident_analyzer
+      # TinyDB (usuarios, proveedores, incidencias): los datos de desarrollo del
+      # host. Docker es el único modo de arranque, así que no hay otro uvicorn
+      # escribiendo en los mismos archivos. En producción, un volumen con nombre.
+      - ./services/api/data:/app/api/data
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # localhost dentro de su propio contenedor (entre servicios se usa `api`).
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - nexova
+
+  ui:
+    build:
+      context: ./uis
+    # Solo lo que necesitan el website y el backoffice: ningún secreto de la API.
+    environment:
+      API_INTERNAL_URL: ${API_INTERNAL_URL:?falta API_INTERNAL_URL en el .env de la raíz (ver .env.example)}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?falta NEXT_PUBLIC_API_URL en el .env de la raíz (ver .env.example)}
+      NEXT_PUBLIC_INVENTORY_API_URL: ${NEXT_PUBLIC_INVENTORY_API_URL:?falta NEXT_PUBLIC_INVENTORY_API_URL en el .env de la raíz (ver .env.example)}
+      # Sondeo de cambios de Watchpack para `next dev --webpack` (uis/start.sh):
+      # un bind mount desde Windows no avisa al contenedor. Comprobado en F4:
+      # con este sondeo el backoffice recarga en unos 2 s, sin él no recarga.
+      WATCHPACK_POLLING: ${WATCHPACK_POLLING:?falta WATCHPACK_POLLING en el .env de la raíz (ver .env.example)}
+    volumes:
+      # Código de las dos apps (recarga sin reconstruir).
+      - ./uis/website:/app/uis/website
+      - ./uis/backoffice:/app/uis/backoffice
+      # node_modules y .next del host son de Windows: volúmenes anónimos, con el
+      # node_modules de Linux (musl) que instaló la imagen.
+      - /app/uis/backoffice/node_modules
+      - /app/uis/backoffice/.next
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - nexova
+
+networks:
+  nexova:
+    name: nexova-net

@@ -1,5 +1,7 @@
 # Inventario de equipos y materiales (Hito 5) — guía de revisión
 
+> **Desde #infra-40 la plataforma se arranca con Docker** (ver [`local-development.md`](./local-development.md)); los pasos de arranque de esta guía son los de su fecha.
+
 Documento para revisar el hito: cómo levantarlo, qué salida esperar, qué cubre cada test y qué **no** está verificado.
 
 - Contexto de negocio (entidades, campos, reglas, datos semilla y notas de evaluación): [`context-nexova-gestion-inventario-hito-5.md`](./context-nexova-gestion-inventario-hito-5.md).

@@ -1,5 +1,7 @@
 # AUTH-01 — Autenticación y protección de rutas (`services/api`)
 
+> **Desde #infra-40 la plataforma se arranca con Docker** (ver [`local-development.md`](./local-development.md)); los pasos de arranque de esta guía son los de su fecha.
+
 Documento de contexto y guía de uso de la autenticación de la API de Nexova. El contrato HTTP completo y las decisiones de implementación (D-AUTH-1…13) están en [`services/api/SPECS.md`](../services/api/SPECS.md) Parte C; aquí no se duplican.
 
 ## 1. Contexto (ticket AUTH-01)

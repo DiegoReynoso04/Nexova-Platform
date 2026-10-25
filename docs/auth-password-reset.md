@@ -189,13 +189,15 @@ Invoke-RestMethod -Method Post -Uri "$api/auth/change-password" -Headers $header
 
 ## 8. Puesta en marcha local
 
-Guía general (puertos, CORS, `.env.local` de los frontends): [`local-development.md`](./local-development.md). Lo imprescindible para AUTH-03:
+> **Desde el ticket #infra-40, la plataforma se arranca con Docker** (un solo `.env` en la raíz; backoffice en el **3001**, website en el 3000, API en el 8000; el tracker, fuera de Docker, en el 3002): ver [`local-development.md`](./local-development.md). Las tres variables de Resend van en el `.env` de la raíz, con `PASSWORD_RESET_URL=http://localhost:3001/reset-password`. Los comandos y puertos de esta sección y de la §9 son los de cuando se hizo AUTH-03 (con `uv run` y `npm run dev`); se conservan como registro.
+
+Guía general de entonces (puertos, CORS, `.env.local` de los frontends): [`local-development.md`](./local-development.md). Lo imprescindible para AUTH-03:
 
 | Aplicación | Directorio | Comando | URL |
 |---|---|---|---|
 | API (FastAPI) | `services/api` | `uv run --env-file .env uvicorn app.main:create_app --factory --port 8000 --workers 1` | `http://localhost:8000` (Swagger en `/docs`) |
 | Backoffice | `uis/backoffice` | `npm run dev` | `http://localhost:3000` |
-| Talent Pipeline Tracker | `uis/talent-pipeline-tracker` | `npm run dev` | `http://localhost:3001` |
+| Talent Pipeline Tracker | `uis/talent-pipeline-tracker` | `npm run dev` | `http://localhost:3002` |
 
 **API.** El backend vive en `services/api` y usa su propio entorno virtual `services/api/.venv`, gestionado con `uv` (instalación inicial en [`services/api/README.md`](../services/api/README.md)). La aplicación se crea con la factory `create_app`: por eso el comando usa `app.main:create_app --factory` (**no** existe un objeto `app.main:app`). `--workers 1` es obligatorio (estado en memoria y TinyDB).
 
@@ -211,7 +213,7 @@ Guía general (puertos, CORS, `.env.local` de los frontends): [`local-developmen
 | `EMAIL_FROM` | Con `RESEND_API_KEY` | Remitente. Sin dominio propio: `onboarding@resend.dev` (§10) |
 | `PASSWORD_RESET_URL` | Con `RESEND_API_KEY` | Página de restablecimiento del frontend, p. ej. `http://localhost:3000/reset-password` |
 | `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` | No (30 por defecto) | Vigencia del enlace, entre 15 y 60 |
-| `CORS_ALLOWED_ORIGINS` | Recomendada | `http://localhost:3000,http://localhost:3001` para que los dos frontends puedan llamar a la API |
+| `CORS_ALLOWED_ORIGINS` | Recomendada | `http://localhost:3002` para el tracker (desde #infra-40, el backoffice llama a la API por su mismo origen) |
 
 **Frontends.** Necesitan su `.env.local` (tampoco se versiona): el backoffice `NEXT_PUBLIC_API_URL=http://localhost:8000`; el tracker `NEXT_PUBLIC_API_URL` (API de candidaturas de 4Geeks) y `NEXT_PUBLIC_AUTH_API_URL=http://localhost:8000`. Detalle en [`local-development.md`](./local-development.md) §3. Ningún secreto de la API va a los frontends.
 
@@ -255,14 +257,14 @@ Seguir la prueba de PowerShell de §7: crear o usar un usuario normal, obtener s
 
 Repetir 9.1–9.3 en los dos frontends:
 
-| Comprobación | Backoffice (`:3000`) | Tracker (`:3001`) |
+| Comprobación | Backoffice (`:3000`) | Tracker (`:3002`) |
 |---|---|---|
 | Enlace "¿Olvidaste tu contraseña?" en `/login` | ✓ | ✓ |
 | `/forgot-password` con mensaje genérico y formulario desactivado tras enviar | ✓ | ✓ |
 | `/reset-password` con token válido y con token inválido/reutilizado | ✓ | ✓ |
 | `/account/change-password`, enlazado desde `/account/profile` | ✓ | ✓ |
 
-Nota: el enlace del email apunta a la página configurada en `PASSWORD_RESET_URL` (en local, el backoffice). La `/reset-password` del tracker funciona igual si se abre con un token válido o si `PASSWORD_RESET_URL` apunta a `http://localhost:3001/reset-password` (propuesta P3-1).
+Nota: el enlace del email apunta a la página configurada en `PASSWORD_RESET_URL` (en local, el backoffice). La `/reset-password` del tracker funciona igual si se abre con un token válido o si `PASSWORD_RESET_URL` apunta a `http://localhost:3002/reset-password` (propuesta P3-1; el tracker está en el 3002 desde #infra-40).
 
 ## 10. Resend sin dominio propio
 

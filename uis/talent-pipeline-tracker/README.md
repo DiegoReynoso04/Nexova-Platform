@@ -41,12 +41,12 @@ NEXT_PUBLIC_API_URL=https://playground.4geeks.com/tracker/api/v1
 NEXT_PUBLIC_AUTH_API_URL=http://localhost:8000
 ```
 
-La aplicación falla al arrancar con un error explícito si alguna de las dos no está definida. Para iniciar sesión hace falta `services/api` en marcha (ver su README) con `http://localhost:3001` en `CORS_ALLOWED_ORIGINS`.
+La aplicación falla al arrancar con un error explícito si alguna de las dos no está definida. Para iniciar sesión hace falta `services/api` en marcha (ver su README) con `http://localhost:3002` en `CORS_ALLOWED_ORIGINS`.
 
 ```bash
-npm run dev      # servidor de desarrollo en http://localhost:3001 (el 3000 es del backoffice)
+npm run dev      # servidor de desarrollo en http://localhost:3002 (el 3000 y el 3001 son del contenedor de interfaces de Docker)
 npm run build    # build de producción
-npm run start    # sirve el build de producción (puerto 3001)
+npm run start    # sirve el build de producción (puerto 3002)
 npm run lint     # ESLint
 ```
 

@@ -1,77 +1,126 @@
 # Desarrollo local — cómo levantar y probar el sistema completo
 
-Guía de arranque del monorepo para quien llega nuevo. Resume lo imprescindible y enlaza al README de cada aplicación, que es donde está el detalle (no se duplica aquí). La autenticación del frontend se explica en [`auth-frontend.md`](./auth-frontend.md); el contrato HTTP de la API, en [`services/api/SPECS.md`](../services/api/SPECS.md).
+Guía de arranque del monorepo para quien llega nuevo. **Desde el ticket #infra-40 (2026-10), Docker es el único modo de arrancar la plataforma en desarrollo:** website, backoffice y API se levantan con un solo `docker compose up`, un solo `.env` (el de la raíz) y un solo juego de puertos. El detalle de cada aplicación está en su README (no se duplica aquí); la guía de revisión del ticket, en [`infra-40-review.md`](./infra-40-review.md). La autenticación del frontend se explica en [`auth-frontend.md`](./auth-frontend.md); el contrato HTTP de la API, en [`services/api/SPECS.md`](../services/api/SPECS.md).
 
-## 1. Aplicaciones y puertos
+## 1. Requisitos
 
-| Aplicación | Qué es | Puerto local | Autenticación | Detalle |
+- **Docker Desktop** (Windows/macOS) o **Docker Engine con el plugin Compose v2** (Linux). Compose 2.17 o superior: `docker-compose.yml` usa `additional_contexts`. Comprobado con Docker 29.7.2 y Compose v5.5.0 en Windows.
+- Para **ejecutar los tests** (siguen en el host, ver §8): Node.js 24 y el venv de `services/api` (ver su README). Arrancar la plataforma no necesita ni Node ni Python en el host.
+- Un proyecto de **Supabase** para el inventario (Hito 5): la API no arranca sin `DATABASE_URL`. Cómo obtener la URI: [`services/api/README.md`](../services/api/README.md#crear-la-base-en-supabase).
+
+## 2. Crear el `.env` (una sola vez)
+
+```bash
+cp .env.example .env
+```
+
+En `.env` (raíz del repositorio, ignorado por git):
+
+- **`JWT_SECRET_KEY`:** 32 caracteres o más. Generar una: `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+- **`DATABASE_URL`:** la URI del Transaction pooler de tu proyecto de Supabase (puerto 6543), con la contraseña.
+- El resto viene con valores válidos; cada variable está explicada en [`.env.example`](../.env.example). El trío de Resend (`RESEND_API_KEY`, `EMAIL_FROM`, `PASSWORD_RESET_URL`) va todo o nada: con solo una parte, la API no arranca.
+
+Cuidado con:
+
+- **Fin de línea LF** (no CRLF). Guarda el archivo en LF si tu editor de Windows lo permite.
+- **El símbolo `$`:** Compose interpola `$VAR` y `${VAR}` al leer el `.env`, así que un valor con `$` puede llegar cambiado. Evítalo en los valores; si no puedes, compruébalo con `docker compose config --quiet` (sin `--quiet` imprime el entorno con los secretos: no lo hagas).
+- **No volver a copiar la plantilla encima** del `.env` ya rellenado (ver §9).
+
+## 3. Arrancar, parar y ver logs
+
+Desde la raíz del repositorio:
+
+```bash
+docker compose up -d          # construye las imágenes la primera vez y arranca todo
+docker compose ps             # api (healthy) y ui
+docker compose logs -f ui     # o api
+docker compose down           # parar (los datos de services/api/data se conservan)
+```
+
+La primera vez construye las dos imágenes (unos 30 s de build más la descarga de las imágenes base). La `ui` arranca cuando la `api` está `healthy`: si la API no puede arrancar (falta una variable, Supabase no responde), la `api` queda `unhealthy` y `docker compose up` termina con error.
+
+**Cuándo reconstruir** (`docker compose up -d --build`): si cambian las dependencias o los archivos que no se montan:
+
+- `uis/backoffice/package-lock.json` (añadir `-V` para renovar el `node_modules` del volumen anónimo: `docker compose up -d --build -V`);
+- `services/api/requirements.txt` (regenerado desde `uv.lock`, ver [`services/api/README.md`](../services/api/README.md#docker));
+- `uis/start.sh`, `uis/serve-website.mjs`, los `Dockerfile` o `docker-compose.yml`.
+
+El código del website, del backoffice, de `services/api/app` y de `packages/` se monta desde el host: un cambio se ve sin reconstruir (website al recargar; backoffice en unos 2 s; la API se reinicia sola).
+
+## 4. Aplicaciones y puertos
+
+| Aplicación | Qué es | Dirección | Autenticación | Detalle |
 |---|---|---|---|---|
-| `uis/website` | Landing pública + formulario de registro de talento (Hito 1) | — (HTML estático, sin build) | **Ninguna**: es pública y no participa en el sistema de sesión | — (se publica en Netlify desde `netlify.toml`) |
-| `services/api` | API FastAPI de Nexova: autenticación (`/auth`, `/users`, `/profiles`), incidentes, proveedores e inventario (`/inventory`, Hito 5) | `8000` | Emite y exige el JWT | [`services/api/README.md`](../services/api/README.md) |
-| `uis/backoffice` | Panel interno: `/incidents`, `/suppliers`, cuenta | `3000` | Sesión obligatoria (salvo `/login` y `/register`) | [`uis/backoffice/README.md`](../uis/backoffice/README.md) |
-| `uis/talent-pipeline-tracker` | Gestión de candidaturas contra la API de 4Geeks | `3001` | Sesión obligatoria (salvo `/login` y `/register`), contra `services/api` | [`uis/talent-pipeline-tracker/README.md`](../uis/talent-pipeline-tracker/README.md) |
+| `uis/website` | Landing pública + formulario de registro de talento (Hito 1). HTML estático: se publica en Netlify (`netlify.toml`); en Docker lo sirve `uis/serve-website.mjs` | `http://localhost:3000` | **Ninguna** | — |
+| `uis/backoffice` | Panel interno: incidentes, proveedores, gestor de incidencias, inventario y cuenta | `http://localhost:3001` | Sesión obligatoria (salvo `/login`, `/register` y las de contraseña) | [`uis/backoffice/README.md`](../uis/backoffice/README.md) |
+| `services/api` | API FastAPI de Nexova | `http://localhost:8000` (Swagger en `/docs`) | Emite y exige el JWT | [`services/api/README.md`](../services/api/README.md) |
+| `uis/talent-pipeline-tracker` | Gestión de candidaturas contra la API de 4Geeks. **Fuera de Docker** (el ticket no lo incluye) | `http://localhost:3002` | Sesión contra `services/api` | §7 |
 
-## 2. Arranque (cada uno en su terminal)
+**Cómo hablan entre sí:** el navegador solo habla con el backoffice. Las peticiones a la API van a `http://localhost:3001/backend/…` (mismo origen, sin CORS) y el servidor de Next las reenvía a `http://api:8000` por el nombre del servicio en la red de Docker (`API_INTERNAL_URL`, rewrite de `uis/backoffice/next.config.ts`). El puerto 8000 se publica para `/docs`.
 
-1. **API** — requisitos, venv e instalación en su README. Después:
+## 5. Comandos dentro del contenedor `api`
 
-   ```bash
-   cd services/api
-   cp .env.example .env        # solo la primera vez; rellenar JWT_SECRET_KEY y DATABASE_URL (ver el propio archivo)
-   uv run seed                 # opcional: carga los 15 proveedores iniciales (idempotente)
-   uv run --env-file .env uvicorn app.main:create_app --factory --port 8000 --workers 1
-   ```
+La imagen instala las dependencias de `requirements.txt`, no el proyecto, así que los atajos de `[project.scripts]` (`seed`, `create-admin`, `seed-inventory`) no existen dentro. Sus equivalentes, con la plataforma arrancada:
 
-   Swagger en `http://localhost:8000/docs`.
+```bash
+docker compose exec api python -m app.seed                                     # 15 proveedores iniciales (idempotente)
+docker compose exec api python -m app.auth.create_admin --email admin@example.com --name "Nombre"   # pide la contraseña
+docker compose exec api python -m app.modules.inventory.seed --email usuario@example.com          # datos del inventario en Supabase
+```
 
-   **Desde el Hito 5 la API exige `DATABASE_URL`:** la base PostgreSQL de Supabase del inventario, con la URI del Transaction pooler (puerto 6543). Sin ella no arranca. Cómo obtenerla: [`services/api/README.md`](../services/api/README.md#crear-la-base-en-supabase). Al arrancar, la API crea las tablas del inventario si faltan. Para los datos de la demo, con la API parada o en marcha, y un usuario ya registrado:
+El seed del gestor de incidencias (`scripts/seed_incidents.py`) no está en la imagen: se monta al ejecutarlo. Con el CSV real en `data/raw/incidents/incidents-nexova.csv` (ignorado por git):
 
-   ```bash
-   uv run --env-file .env seed-inventory --email usuario@example.com   # idempotente
-   ```
+```bash
+docker compose run --rm -v ./scripts:/app/scripts:ro -v ./data/raw:/app/data/raw:ro -e PYTHONPATH=/app/api:/packages/shared:/packages/incident-analyzer api python /app/scripts/seed_incidents.py
+```
 
-2. **Backoffice:**
+`DATABASE_URL` y el resto de variables ya llegan al contenedor desde el `.env`. La primera cuenta también se puede crear desde `/register` del backoffice (rol `user`).
 
-   ```bash
-   cd uis/backoffice
-   npm install
-   cp .env.example .env.local  # NEXT_PUBLIC_API_URL=http://localhost:8000
-   npm run dev                 # http://localhost:3000
-   ```
+## 6. Dónde están los datos
 
-3. **Tracker:**
+- **Usuarios, proveedores e incidencias (TinyDB):** `services/api/data/` del host, montada en el contenedor (`/app/api/data`). Se conservan al parar o reconstruir. Ignorada por git.
+- **Inventario (Hito 5):** en la base PostgreSQL de Supabase de `DATABASE_URL`. Las pruebas cambian el neto del seed; restaurarlo con `TRUNCATE` + `seed-inventory` solo cuando corresponda (ver [`services/api/README.md`](../services/api/README.md#inventario-hito-5)).
 
-   ```bash
-   cd uis/talent-pipeline-tracker
-   npm install
-   # crear .env.local con las dos variables de la sección 3
-   npm run dev                 # http://localhost:3001
-   ```
+## 7. El tracker, fuera de Docker
 
-4. **Website:** abrir `uis/website/index.html` en el navegador (o servir la carpeta con cualquier servidor estático). No necesita la API.
+`uis/talent-pipeline-tracker` no forma parte del ticket y se arranca como siempre, en el **3002**, con la plataforma de Docker en marcha:
 
-La primera cuenta se crea desde `/register` en cualquiera de las dos apps (rol `user`). Un admin se crea con `uv run --env-file .env create-admin` en `services/api` (ver su README).
+```bash
+cd uis/talent-pipeline-tracker
+npm install
+# .env.local con NEXT_PUBLIC_API_URL=https://playground.4geeks.com/tracker/api/v1
+#            y NEXT_PUBLIC_AUTH_API_URL=http://localhost:8000
+npm run dev                 # http://localhost:3002
+```
 
-## 3. Variables de entorno
+Llama a la API desde el navegador con otro origen, así que el `.env` de la raíz debe tener `CORS_ALLOWED_ORIGINS=http://localhost:3002` (es el valor de la plantilla). Tras cambiarlo: `docker compose up -d api`. Síntoma si falta: el login devuelve `200` en la pestaña de red, pero la UI muestra «No se pudo conectar con el servidor» y no se guarda ningún token (petición CORS simple, sin preflight).
 
-**Ningún `.env` ni `.env.local` se versiona** (están en `.gitignore`); los valores reales, y en especial `JWT_SECRET_KEY` y `DATABASE_URL`, solo viven en tu máquina. Lo versionado son los ejemplos (`services/api/.env.example`, `uis/backoffice/.env.example`) y esta documentación.
+## 8. Validación (en el host)
 
-| App | Variable | Valor local | Para qué |
-|---|---|---|---|
-| `services/api` | `JWT_SECRET_KEY` | secreto propio (≥ 32 caracteres) | Firma de los JWT. Obligatoria |
-| `services/api` | `ACCESS_TOKEN_EXPIRE_MINUTES` | p. ej. `30` | Validez del token. Obligatoria |
-| `services/api` | `DATABASE_URL` | URI del Transaction pooler de tu proyecto de Supabase (puerto 6543) | Base PostgreSQL del inventario (Hito 5). Obligatoria; lleva la contraseña de la base |
-| `services/api` | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Orígenes que pueden llamar a la API desde el navegador (sección 5) |
-| `services/api` | `RESEND_API_KEY` | tu API key de Resend | Envío del email de restablecimiento (AUTH-03). Opcional: va junto con las dos siguientes |
-| `services/api` | `EMAIL_FROM` | `Nexova <onboarding@resend.dev>` | Remitente de pruebas de Resend: solo entrega a la dirección de tu cuenta de Resend |
-| `services/api` | `PASSWORD_RESET_URL` | `http://localhost:3000/reset-password` | Página del enlace del email (`?token=…`) |
-| `uis/backoffice` | `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | URL de `services/api` |
-| `uis/talent-pipeline-tracker` | `NEXT_PUBLIC_API_URL` | `https://playground.4geeks.com/tracker/api/v1` | API de candidaturas de **4Geeks** (sin cambios) |
-| `uis/talent-pipeline-tracker` | `NEXT_PUBLIC_AUTH_API_URL` | `http://localhost:8000` | URL de `services/api` para login, registro y perfil |
+Los tests y las comprobaciones de cada subproyecto se ejecutan en el host, no en los contenedores. Los comandos exactos están en [`AGENTS.md`](../AGENTS.md) §4. Ningún test lee el `.env` de la raíz ni conecta con la API o con Supabase.
 
-Las variables `NEXT_PUBLIC_*` se incorporan al build: tras cambiarlas hay que reiniciar `npm run dev` (o recompilar).
+| Subproyecto | Validación |
+|---|---|
+| `services/api` | `unittest` con su venv y pytest (comandos en `AGENTS.md` §4) |
+| `uis/backoffice` | `npx tsc --noEmit`, `npm run lint`, `npm run build`, tests con Node 24 y Jest |
+| `uis/` (servidor del website) | `node --test "uis/tests/*.test.mjs"` desde la raíz |
+| `uis/talent-pipeline-tracker` | `npx tsc --noEmit`, `npm run lint` y tests con Node 24 |
+| Docker (`Dockerfile`, `docker-compose.yml`, `start.sh`) | `docker compose config --quiet`, `docker compose up -d --build` y las comprobaciones de `AGENTS.md` §4 |
+| `src/` (Hito 2) | `npm run check` desde la raíz |
+| `packages/incident-analyzer` | `python -m unittest discover -s packages/incident-analyzer/tests -t packages/incident-analyzer` |
+| `uis/website` | Sin build: verificación manual en el navegador |
 
-## 4. Autenticación (AUTH-01, AUTH-02 y AUTH-03), en resumen
+- `npx tsc --noEmit` en las apps Next.js necesita los tipos que Next genera en `.next/` (`LayoutProps`, `PageProps`): ejecutar antes `npm run build`.
+- `npm run lint` del tracker informa de 4 errores `react-hooks/set-state-in-effect` en `hooks/use-notes.ts`, `hooks/use-record-detail.ts` y `hooks/use-records.ts`, anteriores a AUTH-02.
+
+## 9. Problemas conocidos
+
+- **Docker Desktop no arranca en Windows** (el motor no responde: `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`). En `%LOCALAPPDATA%\Docker\log\host\com.docker.backend.exe.log` aparece `starting services: initializing Ingest server: listening on unix://…/Docker/run/sailor-ingest.sock: rename …`. **Causa probable, no confirmada:** archivos `.stale` viejos en `%LOCALAPPDATA%\Docker\run`; en este equipo se arregló borrándolos con Docker Desktop cerrado. No usar «Reset to factory defaults» (borra imágenes y volúmenes).
+- **La API queda `unhealthy` tras recrear el `.env`:** pasó al volver a copiar `.env.example` encima del `.env` ya rellenado, que dejó `JWT_SECRET_KEY` y `DATABASE_URL` vacías (`docker compose logs api`: `ConfigError: JWT_SECRET_KEY is required…`). El `.env` se crea una sola vez (§2).
+- **Error de hidratación en la consola del navegador** con atributos `bis_*` o similares: lo provocan extensiones del navegador que modifican el HTML, no el código. Probar en una ventana privada sin extensiones.
+- **El backoffice no recarga:** comprobar que `WATCHPACK_POLLING=true` está en el `.env`. El contenedor usa `next dev --webpack`: con Turbopack, el bundler por defecto, el código montado no recarga (comprobado en #infra-40).
+
+## 10. Autenticación (AUTH-01, AUTH-02 y AUTH-03), en resumen
 
 - **Login** (`/login`): `POST /auth/login` con formulario `application/x-www-form-urlencoded` (`username` = email, `password`). Si es correcto, el JWT se guarda en `localStorage` y se entra en `/`.
 - **Registro** (`/register`): `POST /users` (email, contraseña y nombre/teléfono/dirección opcionales) y después login automático con las mismas credenciales.
@@ -80,29 +129,5 @@ Las variables `NEXT_PUBLIC_*` se incorporan al build: tras cambiarlas hay que re
 - **401:** si la API rechaza el token (caducado o inválido), se borra de `localStorage` y se vuelve a `/login`.
 - **Logout:** borra el token y vuelve a `/login`, sin llamar a la API.
 - **Sin refresh tokens:** al caducar el JWT hay que volver a iniciar sesión.
-- **Contraseñas (AUTH-03):** `/forgot-password` → email con enlace (Resend) → `/reset-password?token=…` → `/login`; `/account/change-password` con sesión. El token del enlace caduca (30 minutos por defecto) y solo sirve una vez. Para recibir el email en local: configurar las tres variables de Resend de la sección 3, reiniciar la API con `--env-file .env` y pedir el enlace para un email registrado antes en `/register`. Sin dominio verificado en Resend, usar el destinatario de pruebas `delivered@resend.dev` (o el email de tu cuenta de Resend). Guía de validación paso a paso, prueba de H-1 y tests en [`auth-password-reset.md`](./auth-password-reset.md) §9–§12.
+- **Contraseñas (AUTH-03):** `/forgot-password` → email con enlace (Resend) → `/reset-password?token=…` → `/login`; `/account/change-password` con sesión. El enlace va a `PASSWORD_RESET_URL` (`http://localhost:3001/reset-password` con Docker), caduca (30 minutos por defecto) y solo sirve una vez. Para recibir el email: las tres variables de Resend en el `.env` y `docker compose up -d api`. Sin dominio verificado en Resend, usar el destinatario de pruebas `delivered@resend.dev` (o el email de tu cuenta de Resend). Guía paso a paso en [`auth-password-reset.md`](./auth-password-reset.md) §9–§12.
 - **Separación de servicios:** el JWT solo se envía a `services/api`. **Nunca** se envía a la API de 4Geeks (el tracker usa dos clientes distintos) y el website no interviene en la autenticación.
-
-## 5. CORS
-
-El navegador solo deja que una app lea las respuestas de la API si su origen está en `CORS_ALLOWED_ORIGINS` (`services/api/.env`; por defecto en código solo `http://localhost:3000`). El tracker corre en `http://localhost:3001`, así que ese origen **debe** estar en la lista; `services/api/.env.example` ya lo incluye. Tras cambiar el `.env`, reiniciar la API.
-
-Síntoma típico si falta: en el tracker, el login devuelve `200` en la pestaña de red pero la UI muestra "No se pudo conectar con el servidor" y no se guarda ningún token (el login es una petición CORS simple, sin preflight, y el navegador bloquea la lectura de la respuesta).
-
-## 6. Validación
-
-Los comandos exactos de cada subproyecto están en [`AGENTS.md`](../AGENTS.md) §4. Resumen:
-
-| Subproyecto | Validación |
-|---|---|
-| `services/api` | `services\api\.venv\Scripts\python -m unittest discover -s services/api/tests -t services/api` (desde la raíz; Linux/macOS: `services/api/.venv/bin/python …`) |
-| `uis/backoffice` | `npm run build`, `npx tsc --noEmit`, `npm run lint` y tests con Node 24 (comando en su README) |
-| `uis/talent-pipeline-tracker` | `npm run build`, `npx tsc --noEmit`, `npm run lint` y tests con Node 24 (comando en su README) |
-| `src/` (Hito 2) | `npm run check` desde la raíz |
-| `packages/incident-analyzer` | `python -m unittest discover -s packages/incident-analyzer/tests -t packages/incident-analyzer` |
-| `uis/website` | Sin build: verificación manual en el navegador |
-
-Problemas conocidos, anteriores a AUTH-02 (también en `main`):
-
-- `npx tsc --noEmit` en las apps Next.js necesita los tipos que Next genera en `.next/` (`LayoutProps`, `PageProps`): ejecutar antes `npm run build` (o `npm run dev`).
-- `npm run lint` del tracker informa de 4 errores `react-hooks/set-state-in-effect` en `hooks/use-notes.ts`, `hooks/use-record-detail.ts` y `hooks/use-records.ts`.
