@@ -42,7 +42,7 @@ const CONTENT_TYPES = {
  * Ruta del archivo pedido dentro de ROOT, o `null` si la petición no es válida
  * o intentaría salir de ROOT.
  */
-function resolveRequestPath(rawUrl) {
+export function resolveRequestPath(rawUrl) {
   const pathname = rawUrl.split('?', 1)[0].split('#', 1)[0];
   let decoded;
   try {
@@ -101,6 +101,10 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`website: http://${HOST}:${PORT} (sirve ${ROOT})`);
-});
+// Solo escucha si es el programa principal (start.sh: `node serve-website.mjs`);
+// importado desde un test (uis/tests/), no abre ningún puerto.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  server.listen(PORT, HOST, () => {
+    console.log(`website: http://${HOST}:${PORT} (sirve ${ROOT})`);
+  });
+}
