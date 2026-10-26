@@ -4,9 +4,58 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-27 — Auditoría de rendimiento de los dos frontends: F0–F1
+
+**Estado: en curso** (F1 hecha), en `feature/perf-audit`, creada desde `main` en `6877599`. Brief literal en `docs/perf-audit-brief.md` (`fb3cb15`). Sin push.
+
+- **F0 — análisis y decisiones del usuario:**
+  - **Ubicación:** `AUDIT.md`, `REPORT.md` y `audit/` en la raíz. `audit/` queda como carpeta de evidencias en `.agents/rules/monorepo-structure.md`.
+  - **Medición:** solo en local, sin Netlify ni URLs públicas, con el panel Lighthouse de Chrome DevTools, que ejecuta el usuario (nunca el CLI de Lighthouse).
+  - **Correcciones y refactorizaciones aprobadas:**
+    - **D3:** Tailwind precompilado con su CLI en lugar del Play CDN. El CLI escanea también `src/js/*.js`, la versión va fijada y el antes/después se compara en desktop y a 375 px.
+    - **R1:** `components/ui/table-scroll.tsx`.
+    - **R2:** un hook genérico de carga de listados bajo `use-inventory-assets` y `use-inventory-orders`.
+  - **D10:** la cascada del guard de autenticación se documenta como causa, pero no se corrige.
+  - **Pendiente de instalar:** las skills core-web-vitals y performance, en F2.
+- **F1 — medición inicial**, registro completo en `audit/before/runs.md`:
+  - **Entorno:**
+    - el sitio con `node uis/serve-website.mjs` en el 3000;
+    - el backoffice con `npm run build` + `npm run start -- -p 3003`; `API_INTERNAL_URL` y las `NEXT_PUBLIC_*` solo en la sesión de PowerShell;
+    - el contenedor `ui` parado durante la medición;
+    - commit medido `fb3cb15`.
+  - **Herramientas:** Lighthouse 13.4.1 y Chrome 155; `@tailwindcss/browser@4` resuelve a la 4.3.3.
+  - **Alcance:** 12 casos en `audit/before/<app>/<página>/<página>-<modo>.{png,json}`. Son los 8 previstos más el login en frío y suppliers e inventory/products en mobile. `audit/after/` mantiene la misma estructura.
+  - **Comprobado en los 12 JSON:**
+    - `finalDisplayedUrl` es la URL pedida, sin redirección a `/login`;
+    - el `formFactor` es el esperado;
+    - el `benchmarkIndex` va de 3569,5 a 3892,5;
+    - la Performance no varía más de 1 punto entre ejecuciones.
+  - **Discrepancia sin efecto:** el JSON de suppliers desktop es de las 23:52:20 y no de la ejecución anotada a las 23:51:14; sus cifras son idénticas.
+  - **Fuera de umbral:**
+    - incident-manager mobile: Perf 82 y CLS 0,373;
+    - suppliers mobile: CLS 0,136;
+    - inventory/products mobile: CLS 0,135.
+
+    El sitio no incumple ningún umbral (LCP mobile máximo 2,1 s). La parte del criterio que depende de la skill queda para F2–F3.
+  - **Material para F3** («Observado, sin causa raíz todavía»):
+    - el script del CDN bloquea el render (hasta 1150 ms estimados en mobile);
+    - la foto de 1920×1156 se muestra a 576×347;
+    - en index desktop, el LCP es `logo.svg`, sin `width`/`height`;
+    - en mobile, las tres vistas del backoffice repiten el mismo desplazamiento de `main` (0,1337);
+    - en incident-manager, la sección del listado añade 0,234 más;
+    - en desktop, 0,032, con `main` en incident-manager y el header en las otras dos vistas;
+    - en el login mobile, el hueco FCP→LCP de 900 ms solo aparece en la simulación.
+  - **Artefactos del servidor local**, documentados y no corregidos: compresión, `no-store`, HTTP/1.1 y TTFB.
+  - **Cierre:**
+    - servidores parados;
+    - `uis/backoffice/.next` reconstruido sin variables (rewrites vacíos en el `routes-manifest`);
+    - `docker compose start ui` (website 200; `/backend/health` OK).
+  - **Siguiente:** F2 (skills), F3 (`AUDIT.md`) y después una corrección por commit, volviendo a medir la misma URL.
+- **Memory-bank:** se corrige la entrada de #infra-40, que seguía como «pendiente de PR».
+
 ## 2026-10-22 — #infra-40 (Docker para desarrollo; el despliegue en el VPS quedó fuera): F0–F7
 
-**Estado: hecho, pendiente de PR** (F0 y F1 en `6a49d6f`, F2 en `daede5e`, F3 en `0883f3d`, F4 en `cbeac39`, el tracker en `fe56224`, F5 en `f498ef5` y F7 en el commit `docs(infra-40)`; sin F6; sin push de F7), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
+**Estado: integrado en `main` con la PR #24 (merge `6877599`, 2026-10-25).** Historial: F0 y F1 en `6a49d6f`, F2 en `daede5e`, F3 en `0883f3d`, F4 en `cbeac39`, el tracker en `fe56224`, F5 en `f498ef5` y F7 en el commit `docs(infra-40)`; sin F6; sin push de F7), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
 
 - **F0 — análisis, aprobado por el usuario con cambios:**
   - brief literal en `docs/infra-40-brief.md`, con una nota de equivalencias (`uis/website` es HTML estático, no Next.js; `/services` es `services/api`);
