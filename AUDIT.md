@@ -544,20 +544,19 @@ La duplicación se documenta como deuda; no se corrige en esta auditoría.
 
 Orden aprobado. Primero lo que incumple umbral, en el backoffice: es el CLS, y es lo que afecta de verdad a quien usa la herramienta a diario en el móvil. Después, lo que solo es requerido por el criterio de la skill, en el sitio. Por último, las refactorizaciones y la medición final.
 
-Un problema por commit. Tras cada paso, el usuario vuelve a ejecutar Lighthouse en las mismas condiciones de §1:
+Un problema por commit. Las condiciones de medición son las de §1, con la guía de [`audit/after/runs.md`](audit/after/runs.md): el build del backoffice siempre desde PowerShell, e incógnito sin extensiones.
 
-- **Ejecuciones:** **1 por caso**, solo en los casos afectados.
-- **Qué se guarda:** solo el JSON, en `audit/after/steps/<paso>/<página>-<modo>.json`, sin capturas. El CLS es determinista y la Performance varió ≤ 1 punto entre ejecuciones en la medición inicial.
+Tras cada corrección se hace **una sola ejecución en la URL clave**, y se guarda solo el JSON en `audit/after/steps/<paso>/<página>-<modo>.json`, sin capturas. El CLS es determinista y la Performance varió ≤ 1 punto entre ejecuciones en la medición inicial. El resto de los casos (el control del login, inventory/products, suppliers desktop y las demás vistas) se cubre en la medición final.
 
-| Paso | Qué | Se vuelve a medir (URL · modo) | Qué se espera |
+| Paso | Qué | Medición intermedia (URL · modo) | Qué se espera |
 |---|---|---|---|
-| 1 | **H1**: reservar el espacio de la navegación mientras se valida la sesión | `/suppliers`, `/inventory/products` e `/incident-manager` · mobile y desktop; `/login` · mobile y desktop como control | Sin el desplazamiento de `main`: suppliers e inventory mobile con CLS < 0,1; incident-manager mobile aún por encima; login sin cambios. Además, en Network, ninguna precarga de rutas protegidas antes de `/auth/me` |
-| 2 | **H2**: reservar el espacio del resumen de incidencias | `/incident-manager` · mobile y desktop | CLS < 0,1 y Performance ≥ 90 en mobile |
-| 3 | **H3**: Tailwind precompilado (D3) | `/` y `/application.html` · mobile y desktop, más la comparación visual en desktop y a 375 px | Sin el script del CDN en `render-blocking-insight`; FCP/LCP mobile más bajos; CLS 0 |
-| 4 | **H4**: foto en tamaños adaptados y WebP (D4) | `/` · mobile y desktop | `image-delivery-insight` sin ahorro pendiente y menos peso total; puntuación sin cambio esperado |
-| 5 | **S1**: dimensiones del logo y `fetchpriority`, si tras H3 sigue teniendo sentido | `/` y `/application.html` · mobile y desktop | `unsized-images` y `lcp-discovery-insight` pasan |
-| 6 | **R1**: `components/ui/table-scroll.tsx` | `/incident-manager`, `/suppliers` e `/inventory/products` · mobile | Ninguna regresión; las tablas, igual a la vista |
-| 7 | **R2**: hook genérico de listados del inventario | `/inventory/products` · mobile y desktop | Ninguna regresión |
+| 1 | **H1**: reservar el espacio de la navegación mientras se valida la sesión | `/suppliers` · mobile y `/incident-manager` · mobile | Sin el desplazamiento de `main`: suppliers mobile con CLS < 0,1; incident-manager mobile aún por encima. Además, en Network, ninguna precarga de rutas protegidas antes de `/auth/me` |
+| 2 | **H2**: reservar el espacio del resumen de incidencias | `/incident-manager` · mobile | CLS < 0,1 y Performance ≥ 90 |
+| 3 | **H3**: Tailwind precompilado (D3) | `/` · mobile, más la comparación visual en desktop y a 375 px | Sin el script del CDN en `render-blocking-insight`; FCP/LCP más bajos; CLS 0 |
+| 4 | **H4**: foto en tamaños adaptados y WebP (D4) | Ninguna: su efecto (bytes) se valida en la medición final | `image-delivery-insight` sin ahorro pendiente y menos peso total; puntuación sin cambio esperado |
+| 5 | **S1**: dimensiones del logo y `fetchpriority`, si tras H3 sigue teniendo sentido | Ninguna (medición final) | `unsized-images` y `lcp-discovery-insight` pasan |
+| 6 | **R1**: `components/ui/table-scroll.tsx` | Ninguna (medición final) | Ninguna regresión; las tablas, igual a la vista |
+| 7 | **R2**: hook genérico de listados del inventario | Ninguna (medición final) | Ninguna regresión |
 | 8 | **Medición final** | Los 12 casos, con 3 ejecuciones, capturas y JSON en `audit/after/<app>/<página>/`, igual que `audit/before/` | Base de la comparativa de `REPORT.md` |
 
 URLs completas: el sitio en `http://localhost:3000` y el backoffice en `http://localhost:3003` (`npm run build` + `npm run start -- -p 3003`).

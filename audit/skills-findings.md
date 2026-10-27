@@ -419,34 +419,31 @@ Tampoco se tratan:
 
 **Orden aprobado por el usuario (revisión de F2):** H1 → H2 → H3 → H4 → S1 → R1 → R2 → medición final.
 
-Primero lo que incumple umbral (criterio a), en el backoffice. Después lo que solo cumple el criterio b, en el sitio. Un problema por commit; tras cada uno, el usuario vuelve a medir las mismas URLs en las mismas condiciones de F1:
+Primero lo que incumple umbral (criterio a), en el backoffice. Después lo que solo cumple el criterio b, en el sitio. Un problema por commit. Todas las mediciones siguen la guía de [`audit/after/runs.md`](after/runs.md):
 
-- el backoffice con `npm run build` + `npm run start -- -p 3003`;
+- el backoffice con `npm run build` + `npm run start -- -p 3003`, **siempre desde PowerShell**;
 - con sesión, «Clear storage» desmarcado y una ejecución de calentamiento en las vistas con datos;
-- «Clear storage» marcado en el sitio y en el login.
+- «Clear storage» marcado en el sitio y en el login;
+- ventana de incógnito **sin extensiones**.
 
-**Cómo se guarda cada medición** (decisión del usuario):
+**Cómo se mide tras cada paso.** El usuario cambió el plan tras H1 (2026-10-28) para no alargar el ticket:
 
-- **Tras cada corrección:** 1 ejecución por caso, solo en los casos afectados (columna «Qué se vuelve a medir»). Se guarda únicamente el JSON, en `audit/after/steps/<paso>/` (`H1`…`H4`, `S1`, `R1`, `R2`), sin capturas. El CLS es determinista y la Performance varió ≤ 1 punto entre ejecuciones en F1.
-- **Medición final:** la completa, igual que el *before*. Son los 12 casos, con 3 ejecuciones cada uno, capturas y JSON en `audit/after/<app>/<página>/`.
+- tras cada corrección, **1 sola ejecución en la URL clave**, guardando solo el JSON en `audit/after/steps/<paso>/`, sin capturas;
+- el resto de los casos (el control del login, inventory/products, suppliers desktop y las demás vistas) se cubre en la medición final.
 
-| Orden | Corrección | Commit (propuesto) | Qué se vuelve a medir (URL · modo) | Qué se espera ver |
+| Orden | Paso | Commit | Medición intermedia (URL · modo) | Qué se espera ver |
 |---|---|---|---|---|
-| 1 | **H1** — espacio reservado de la navegación con sesión | `perf(backoffice): reserva el espacio de la navegación mientras se valida la sesión` | `localhost:3003/suppliers` · mobile y desktop<br>`localhost:3003/inventory/products` · mobile y desktop<br>`localhost:3003/incident-manager` · mobile y desktop<br>Control: `localhost:3003/login` · mobile y desktop (ruta pública, no debe cambiar) | Desaparece el desplazamiento de `main` (0,1337 mobile, 0,032 desktop). suppliers e inventory mobile, CLS < 0,1. incident-manager mobile todavía por encima (falta H2). Login sin cambios (CLS 0 / 0,003) |
-| 2 | **H2** — espacio reservado del panel de resumen | `perf(backoffice): reserva el espacio del resumen de incidencias mientras carga` | `localhost:3003/incident-manager` · mobile y desktop | Desaparece el desplazamiento de la sección del listado (0,2344). CLS < 0,1 y Performance ≥ 90 en mobile |
-| 3 | **H3** — Tailwind precompilado (D3) | `perf(website): Tailwind precompilado con su CLI en lugar del Play CDN` | `localhost:3000/` · mobile y desktop<br>`localhost:3000/application.html` · mobile y desktop<br>Además, la comparación visual de D3 en desktop y a 375 px | `render-blocking-insight` sin el script del CDN; FCP/LCP mobile por debajo de 1,9 / 2,1 s; desaparecen `unused-javascript` y la entrada del CDN en `cache-insight`. CLS 0. Comprobar qué elemento es ahora el LCP del index desktop (S1) |
-| 4 | **H4** — foto redimensionada en WebP (D4) | `perf(website): foto del index en tamaños adaptados y WebP` | `localhost:3000/` · mobile y desktop | `image-delivery-insight` sin ahorro pendiente; `total-byte-weight` por debajo de los 377 KiB. Performance y LCP, sin cambio esperado |
+| 1 | **H1**: espacio reservado de la navegación con sesión | `perf(backoffice): reserva el espacio de la navegación mientras se valida la sesión` | `localhost:3003/suppliers` · mobile<br>`localhost:3003/incident-manager` · mobile | Desaparece el desplazamiento de `main` (0,1337). Suppliers mobile, CLS < 0,1; incident-manager mobile todavía por encima (falta H2) |
+| 2 | **H2**: espacio reservado del panel de resumen | `perf(backoffice): reserva el espacio del resumen de incidencias mientras carga` | `localhost:3003/incident-manager` · mobile | Desaparece el desplazamiento de la sección del listado (0,2344). CLS < 0,1 y Performance ≥ 90 |
+| 3 | **H3**: Tailwind precompilado (D3) | `perf(website): Tailwind precompilado con su CLI en lugar del Play CDN` | `localhost:3000/` · mobile. Además, la comparación visual de D3 en desktop y a 375 px | `render-blocking-insight` sin el script del CDN; FCP/LCP más bajos que 1,9 / 2,1 s; CLS 0. Comprobar qué elemento es ahora el LCP del index (S1) |
+| 4 | **H4**: foto en tamaños adaptados y WebP (D4) | `perf(website): foto del index en tamaños adaptados y WebP` | Ninguna. Su efecto (bytes) se valida en la medición final | `image-delivery-insight` sin ahorro pendiente y `total-byte-weight` por debajo de 377 KiB. Performance y LCP, sin cambio esperado |
+| 5 | **S1**: `width`/`height` del logo y `fetchpriority`. Con su propio commit, y solo si tras H3 sigue teniendo sentido | — | Ninguna (lectura del agente: el plan del usuario no la incluye) | `unsized-images` y `lcp-discovery-insight` pasan, en la medición final |
+| 6 | **R1**: `components/ui/table-scroll.tsx` (`AUDIT.md` §4) | — | Ninguna (ídem) | Sin regresión, en la medición final |
+| 7 | **R2**: hook genérico de listados del inventario (`AUDIT.md` §4) | — | Ninguna (ídem) | Sin regresión, en la medición final |
+| 8 | **Medición final** completa | — | Los 12 casos, 3 ejecuciones cada uno, capturas y JSON en `audit/after/<app>/<página>/`, igual que el *before* | Base de `REPORT.md` |
 
-- **Orden de H1 y H2.** H1 primero porque afecta a las tres vistas y, sin él, H2 no basta para que incident-manager baje de 0,1. El orden inverso no aislaría mejor el efecto de cada uno.
+- **Orden de H1 y H2.** H1 primero porque afecta a las tres vistas y, sin él, H2 no basta para que incident-manager baje de 0,1.
 - **El sitio después.** Hoy no incumple ningún umbral. Sus dos correcciones son requeridas por el criterio (b).
-**Después de H4** (aprobado por el usuario):
-
-| Orden | Paso | Qué se vuelve a medir |
-|---|---|---|
-| 5 | **S1**: `width`/`height` del logo y `fetchpriority`. Con su propio commit, y solo si tras H3 sigue teniendo sentido (el LCP del index desktop puede haber cambiado) | `localhost:3000/` · mobile y desktop; `localhost:3000/application.html` · mobile y desktop |
-| 6 | **R1**: `components/ui/table-scroll.tsx` (análisis de código, `AUDIT.md` §4) | `localhost:3003/incident-manager`, `/suppliers` e `/inventory/products` · mobile (control de no regresión) |
-| 7 | **R2**: hook genérico de listados del inventario (`AUDIT.md` §4) | `localhost:3003/inventory/products` · mobile y desktop (control de no regresión) |
-| 8 | **Medición final** completa | Los 12 casos, como el *before* |
 
 S2–S5 no se aplican.
 

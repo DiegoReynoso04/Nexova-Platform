@@ -4,9 +4,37 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-28 — Auditoría de rendimiento: medición intermedia de H1 y cambio de plan
+
+**Estado: H1 cerrada** (código en `4e23d91`, arreglo de CRLF en `126d067`, medición en `audit/after/runs.md` §2). Rama `feature/perf-audit`. Sin push. **No se empieza H2 hasta que el usuario revise esta medición.**
+
+- **Cambio de plan del usuario:**
+  - **Intermedias:** tras cada corrección, 1 sola ejecución en la URL clave, solo el JSON:
+    - H1: `/suppliers` mobile e `/incident-manager` mobile;
+    - H2: `/incident-manager` mobile;
+    - H3: `/` mobile;
+    - H4: sin intermedia.
+  - **Medición final:** el control del login, inventory/products, suppliers desktop y el resto, con 12 casos, 3 ejecuciones y capturas.
+  - **Lectura del agente, no confirmada:** S1, R1 y R2 tampoco tienen intermedia; se cubren en la final.
+  - **Dónde consta:** `audit/skills-findings.md` §7, `AUDIT.md` §5 y la guía de `audit/after/runs.md` §1.
+- **Medición de H1** (`audit/after/steps/H1/`, 2 JSON, Lighthouse 13.4.1, URLs correctas):
+  - **suppliers mobile:** CLS 0,136 → **0,003** y Perf 95 → 100;
+  - **incident-manager mobile:** CLS 0,373 → **0,240** y Perf 82 → 88;
+  - en `layout-shifts` desaparece el `main.mx-auto` de 0,1337 y los demás quedan igual. El 0,2344 del listado queda para H2.
+- **El FCP sube de 0,6 a 0,9 s en los dos casos por las condiciones de la medición, no por H1:**
+  - las dos ejecuciones tienen 3 extensiones de Chrome activas (`eppiocem…`, `gighmmpi…`, `npclhjbd…`); `eppiocem…` inyecta 5 scripts (20 624 B) antes del FCP, más un `ad-blocker/content.js` de unos 115 ms de CPU;
+  - el FCP observado pasa de 93 a 188 ms y de 60 a 178 ms;
+  - en el antes no había ninguna extensión (0 peticiones `chrome-extension://` en los 12 JSON);
+  - la caché, el TTFB y el *throttling* son iguales. H1 añade 1794 B al HTML (`resourceSize`), pero el `transferSize` del documento es el mismo (373 B);
+  - repetir las 2 ejecuciones sin extensiones lo decide el usuario. La guía de `audit/after/runs.md` exige ahora incógnito sin extensiones y comprobarlo en el JSON.
+- **Accessibility de DevTools:** **no verificado**. El usuario aún no lo ha confirmado (sus mensajes dejaban el marcador sin rellenar).
+- **Build siempre desde PowerShell**, en la guía de `audit/after/runs.md` §1: Git Bash convirtió `/backend` en `C:/Program Files/Git/backend`.
+- **Cuenta de prueba de la TinyDB de desarrollo** (creada para verificar H1, con credenciales solo en el scratchpad de la sesión): **se mantiene hasta la medición final y se borra al cerrar el ticket, con la confirmación del usuario.**
+- **Cierre:** 3003 parado, `npm run build` sin variables (rewrites vacíos en el `routes-manifest`) y `docker compose start ui` (website 200; `/backend/health` OK en el 3001).
+
 ## 2026-10-27 — Auditoría de rendimiento: H1 (espacio reservado de la navegación)
 
-**Estado: código hecho y comiteado; medición intermedia pendiente (la hace el usuario).** Rama `feature/perf-audit`. Sin push. **No se empieza H2 hasta que el usuario revise la medición de H1.**
+**Estado: hecho** (código en `4e23d91`; medición intermedia y cierre en la entrada de arriba). Rama `feature/perf-audit`. Sin push.
 
 - **Código (`uis/backoffice`):**
   - **`lib/auth-routes.ts`:** función pura `headerNavMode(pathname, status)` → `session` | `reserved` | `access` | `none`. Es `reserved` en `initializing`/`checking` solo si `routeAccess(...) === 'wait'`.
