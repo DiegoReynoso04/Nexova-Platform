@@ -4,9 +4,9 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
-## 2026-10-27 — Auditoría de rendimiento: F2 (skills), en curso
+## 2026-10-27 — Auditoría de rendimiento: F2 (skills)
 
-**Estado: pasos 1–2 hechos (instalación comiteada); pasos 3–5 pendientes tras reiniciar la sesión.** La sesión en la que se instalaron no detecta skills nuevas en `.claude/skills/` (`Unknown skill: core-web-vitals`); el usuario reinicia y se retoma desde aquí. Rama `feature/perf-audit`. Sin push.
+**Estado: hecha.** Instalación comiteada en `8871787` y hallazgos en `audit/skills-findings.md`. Rama `feature/perf-audit`. Sin push. **Siguiente: el usuario revisa la lista y el orden de `audit/skills-findings.md` §7–§8 antes de aplicar ninguna corrección.** La sesión de la instalación no detectaba skills nuevas en `.claude/skills/` (`Unknown skill: core-web-vitals`); los pasos 3–5 se hicieron tras reiniciarla.
 
 - **D4, decidida tras F1:** la imagen sobredimensionada (`uis/website/src/img/ambiente-trabajo-nexova.jpg`) se corrige solo si la skill la señala como causa de una auditoría fallida (criterio de «requerida»). En ese caso, en una fase de corrección posterior, con `npx sharp-cli@<versión fija>` puntual y sin añadir dependencias.
 - **Paso 1 — ensayo en el scratchpad, fuera del repo:**
@@ -24,31 +24,27 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
     - además, sería un archivo nuevo en la raíz fuera de la convención de carpetas.
 
     La evidencia del origen es el SHA del cuerpo del commit, junto con los dos `computedHash`.
-- **Pendiente, en la sesión nueva:**
-  1. **Paso 3 — ejecutar las skills:**
-     - invocar `core-web-vitals` y después `performance` sobre los dos frontends, con los 12 JSON de `audit/before/` como evidencia, sin volver a medir;
-     - en cada hallazgo, citar el JSON y la auditoría o métrica, inspeccionar el código (archivo y líneas) y proponer la causa probable;
-     - cubrir como mínimo:
-       - en mobile, el desplazamiento de `main` (0,1337) y el de la sección del listado de `/incident-manager` (0,234);
-       - el 0,032 de desktop (`main` en incident-manager; el header en suppliers e inventory);
-       - el Play CDN de Tailwind que bloquea el render;
-       - la imagen de 1920×1156 mostrada a 576×347;
-       - `logo.svg` como LCP en desktop, sin `width`/`height`;
-       - los polyfills del backoffice;
-       - el hueco FCP→LCP del login (real o artefacto);
-     - listar como descartados, con su motivo, los artefactos del servidor local: compresión, caché, HTTP/2 y TTFB.
-  2. **Paso 4 — `audit/skills-findings.md`.** Por hallazgo:
-     - la skill y la sección que lo respalda;
-     - la evidencia;
-     - el código implicado;
-     - la corrección propuesta;
-     - la clasificación (requerida o sugerencia);
-     - el riesgo (reestructuración, AUTH-02).
-
-     Al final, el orden de las correcciones (una por commit, primero los KPI principales) y la URL y el modo que se vuelven a medir tras cada una.
-  3. **Paso 5 — cierre:** `progress.md` (y `techContext.md` si procede), `git status` y `git diff --stat`, y el commit `docs(perf-audit): hallazgos de las skills (F2)`. Sin push.
-
-  No se implementa ninguna corrección hasta que el usuario revise la lista y el orden.
+- **Paso 3 — ejecución de las skills:**
+  - `core-web-vitals` y después `performance`, invocadas con la herramienta de skills, leyendo también `CLS.md` y `LCP.md`. `INP.md` no aplica: TBT máximo de 80 ms y ninguna interacción lenta;
+  - evidencia: solo los 12 JSON de `audit/before/`, sin volver a medir y sin CLI de Lighthouse ni PageSpeed;
+  - desviaciones del flujo de las skills, documentadas en `skills-findings.md` §1: sin CrUX (local) y sin traza nueva; las causas que no confirma el JSON van como «causa probable».
+- **Paso 4 — `audit/skills-findings.md`** (nuevo):
+  - **Requeridas:**
+    - **H1**, la cabecera del backoffice crece al validarse la sesión. `AccountNav` devuelve `null` en `initializing`/`checking` y después pinta 8 elementos: 53 → 170 px en mobile (0,936 × 117/823 ≈ 0,133, la cifra medida) y 53 → 134 px en desktop (el 0,032). La corrección reserva la navegación invisible e inerte en las rutas protegidas; no toca el guard (D10);
+    - **H2**, el resumen de `/incident-manager` pasa de una fila «Cargando resumen…» a 4 listas apiladas en mobile (0,2344). La corrección reserva las filas desde el vocabulario, porque `readCounts` garantiza una por valor;
+    - **H3**, el Play CDN de Tailwind (D3);
+    - **H4**, la foto (D4), como caso límite.
+  - **Sugerencias:**
+    - S1, `logo.svg` sin dimensiones o sin `fetchpriority`; se decide tras H3;
+    - S2, el CSS bloqueante del login (caso límite: la skill exige un *render delay* largo y hay 71 ms; `inlineCss` es experimental);
+    - S3, los polyfills: el chunk `0zutzion2550z.js` empieza con el `polyfill-module` de Next, no con código de la app. No es accionable;
+    - S4, `validations.js` sin minificar;
+    - S5, los desplazamientos residuales de los filtros.
+  - **Documentados sin corrección:** N1, el *render delay* por el guard (D10), y N2, el hueco FCP→LCP del login, que es un artefacto de la simulación (observado FCP = LCP = 78 ms).
+  - **Descartados:** X1–X4, los artefactos del servidor local.
+  - **Orden propuesto (§7):** H1 → H2 → H3 → H4, con las URLs y los modos que se vuelven a medir tras cada uno. Tres decisiones abiertas para el usuario (§8).
+- **Regla:** `.agents/rules/monorepo-structure.md` (fila `audit/`) admite ahora `skills-findings.md` en la raíz de `audit/`.
+- **Sin impacto técnico:** no cambia código de las apps; `techContext.md` no se toca.
 
 ## 2026-10-27 — Auditoría de rendimiento de los dos frontends: F0–F1
 

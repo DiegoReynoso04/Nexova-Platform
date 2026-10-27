@@ -29,7 +29,7 @@ scope: always-active
 | `infra/` | Docker, Terraform, CI/CD |
 | `scripts/` | Automatización puntual, archivos sueltos |
 | `internal/` | CLIs y herramientas con su propio `package.json`/tests |
-| `audit/` | Solo evidencias de auditorías (hoy, la de rendimiento con Lighthouse): `before/` y `after/`, con una subcarpeta por app y por página (`<app>/<página>/<página>-<modo>.{png,json}`) y el registro de ejecuciones (`runs.md`). Sin código ni herramientas. El análisis y el informe (`AUDIT.md`, `REPORT.md`) van en la raíz |
+| `audit/` | Solo evidencias de auditorías (hoy, la de rendimiento con Lighthouse): `before/` y `after/`, con una subcarpeta por app y por página (`<app>/<página>/<página>-<modo>.{png,json}`) y el registro de ejecuciones (`runs.md`), más el registro de los hallazgos de las skills de agente (`skills-findings.md`, en la raíz de `audit/`). Sin código ni herramientas. El análisis y el informe (`AUDIT.md`, `REPORT.md`) van en la raíz |
 
 ## Reglas duras
 
