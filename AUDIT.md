@@ -324,7 +324,17 @@ Las dos skills recomiendan compresión, HTTP/2, caché de los estáticos y un TT
 
 El brief pide identificar al menos dos casos de componentes o lógica repetidos que puedan extraerse en un componente compartido o un Custom Hook.
 
-Los tres casos de esta sección se han verificado en el código actual: archivos, líneas y cuánto se repite. Los dos primeros (R1 y R2) son los aprobados en F0 para implementar. R3 sigue siendo válido, pero queda como candidato sin aplicar. Los tres son del backoffice; el caso del sitio se descarta (R4).
+Todos los casos de esta sección se han verificado en el código actual: archivos, líneas y cuánto se repite.
+
+| Caso | Qué | Origen | Decisión |
+|---|---|---|---|
+| R1 | Contenedor de las tablas con scroll horizontal | F0 | Se aplica |
+| R2 | Hook genérico de listados del inventario | F0 | Se aplica |
+| R3 | Lista de errores por campo de los avisos de error | F0 | Candidato, no se aplica |
+| R4 | Bloque «Cargando…» de los listados | Encontrado en F3 | Candidato, no se aplica |
+| R5 | Cabecera y pie copiados en los 3 HTML del sitio | F0 | Descartado |
+
+R1–R4 son del backoffice; R5 es del sitio.
 
 ### R1 — `components/ui/table-scroll.tsx`: el contenedor de las tablas con scroll horizontal
 
@@ -438,7 +448,53 @@ Las mismas `assets`/`orders`, `view`, `loaded`, `load` y `reload` que hoy. Así 
 - el Historial;
 - la API parada, con «Reintentar».
 
-### R3 — Bloque de «Cargando…» de los listados (candidato, no se aplica)
+### R3 — Lista de errores por campo en los avisos de error (candidato, no se aplica)
+
+**Dónde aparece.** Tres avisos de error pintan, debajo del texto, la lista de errores de validación con el mismo marcado:
+
+```tsx
+<ul className="mt-2 list-disc pl-5">
+  {errors.map((fieldError, index) => (
+    <li key={`${fieldError.field ?? 'general'}-${index}`}>{describeFieldError(fieldError)}</li>
+  ))}
+</ul>
+```
+
+| Archivo | La lista | Texto de cada error («Etiqueta: mensaje») |
+|---|---|---|
+| [`components/suppliers/supplier-error.tsx`](uis/backoffice/components/suppliers/supplier-error.tsx) | líneas 73–77 | `describeFieldError`, líneas 58–60 |
+| [`components/incident-manager/incident-error.tsx`](uis/backoffice/components/incident-manager/incident-error.tsx) | líneas 78–84 | en línea, en la propia lista (línea 81) |
+| [`components/auth/auth-error.tsx`](uis/backoffice/components/auth/auth-error.tsx) | líneas 91–95 | `describeFieldError`, líneas 69–71 (copia de la de proveedores) |
+
+**Qué se repite:**
+
+- la misma clave, `field ?? 'general'` más el índice;
+- el mismo texto: el mensaje solo si el error no tiene campo, y «Etiqueta: mensaje» si lo tiene, con un `Record` de etiquetas por campo;
+- la forma de los errores: `{ field: X | null; message: string }`, con otro nombre en cada dominio (`FieldError` en `types/suppliers.ts:89`, `IncidentFieldError` en `types/incident-manager.ts:118`, `AuthFieldError` en `types/auth.ts:89`).
+
+Solo cambian dos cosas: el tipo de campo y el diccionario de etiquetas. `IncidentError` además filtra con `hideFieldErrors`, para no repetir los errores que ya se muestran junto a su campo.
+
+**Por qué es candidato.** Un cambio en cómo se presentan los errores (el formato, la accesibilidad de la lista) hay que hacerlo tres veces. `describeFieldError` ya existe dos veces y una tercera vez en línea.
+
+**Cómo quedaría:** `components/ui/field-error-list.tsx`.
+
+```tsx
+export interface FieldErrorListProps<F extends string> {
+  errors: readonly { field: F | null; message: string }[];
+  /** Nombre visible de cada campo (los mismos que sus etiquetas). */
+  labels: Readonly<Record<F, string>>;
+}
+
+export function FieldErrorList<F extends string>({ errors, labels }: FieldErrorListProps<F>): JSX.Element | null;
+```
+
+- **Qué hace:** no pinta nada si la lista está vacía.
+- **Quién la usaría:** `SupplierError` (con `FIELD_LABELS`), `IncidentError` (con `FIELD_LABELS`, tras su propio filtro) y `AuthError` (con `AUTH_FIELD_LABELS`).
+- **Qué queda en cada aviso:** los textos de cada error (`copyFor`), porque son distintos por dominio. Lo que se comparte es solo la lista.
+
+**Por qué no se aplica.** No toca ninguna métrica: los avisos de error no aparecen en ninguna de las cargas medidas. Y el brief pide al menos un caso extraído, que R1 y R2 ya cubren. Además, `auth-error.tsx` es de AUTH-02: cambiarlo amplía el riesgo de la rama sin ninguna mejora de rendimiento. Queda como candidato documentado.
+
+### R4 — Bloque de «Cargando…» de los listados (candidato, no se aplica)
 
 **Dónde aparece.** El mismo bloque de carga está copiado literalmente en 4 vistas:
 
@@ -463,7 +519,7 @@ El estado vacío repite el mismo marco discontinuo (`rounded-lg border border-da
 
 **Por qué no se aplica.** Son 4 líneas de marcado sin lógica, y el brief pide al menos un caso extraído (R1 y R2 ya lo cubren). Además, este bloque está en las vistas que tocan H1 y H2: hacerlo a la vez mezclaría efectos en las mediciones. Queda como candidato documentado.
 
-### R4 (descartado) — Cabecera y pie copiados en los 3 HTML del sitio
+### R5 (descartado) — Cabecera y pie copiados en los 3 HTML del sitio
 
 **Dónde aparece:**
 

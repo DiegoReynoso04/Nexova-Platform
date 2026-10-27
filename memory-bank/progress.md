@@ -29,8 +29,9 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - **Refactorización, verificada en el código:**
     - **R1 (`components/ui/table-scroll.tsx`):** 4 tablas con el mismo armazón y `px-3 py-2 font-semibold` repetido 25 veces. A `supplier-table.tsx` le falta `relative`, que la lista de excepciones del test (`production-source.test.mjs:413-418`) lleva como pendiente. Las 3 tablas de `/incidents` quedan fuera (otro estilo). Hay que ajustar el test de `:354`;
     - **R2 (`hooks/use-inventory-list.ts`):** `use-inventory-assets.ts` y `use-inventory-orders.ts`, de 159 líneas cada uno, solo difieren en nombres. Los envoltorios conservan su API: los 6 componentes de activos y el del historial no cambian;
-    - **R3 (candidato, no se aplica):** el bloque «Cargando…» es idéntico en 4 vistas. En la repo no constaba ningún R3 de F0; este se identificó ahora;
-    - **R4 (descartado):** la cabecera (87 líneas) y el pie (25) se repiten en los 3 HTML del sitio. Solo se compartirían inyectándolos con JS (empeora el SEO y añade CLS) o con un build (reestructura).
+    - **R3 (de F0, candidato, no se aplica):** la lista de errores por campo de los avisos se repite en `supplier-error.tsx:73-77`, `incident-error.tsx:78-84` y también en `auth-error.tsx:91-95`. Sería `components/ui/field-error-list.tsx`, genérico en el tipo de campo, con su `Record` de etiquetas. No se aplica porque no toca ninguna métrica y amplía el riesgo de AUTH-02. El R3 de F0 no constaba en la repo (era otra sesión); el usuario lo recuperó al revisar F3 y se añadió en un commit propio de documentación;
+    - **R4 (candidato, no se aplica):** el bloque «Cargando…» es idéntico en 4 vistas. Se identificó en F3;
+    - **R5 (descartado):** la cabecera (87 líneas) y el pie (25) se repiten en los 3 HTML del sitio. Solo se compartirían inyectándolos con JS (empeora el SEO y añade CLS) o con un build (reestructura).
 - **Sin impacto técnico:** no cambia código de las apps; `techContext.md` no se toca.
 
 ## 2026-10-27 — Auditoría de rendimiento: F2 (skills)
