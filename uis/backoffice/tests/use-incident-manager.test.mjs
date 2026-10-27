@@ -18,12 +18,21 @@ import {
 } from '../hooks/use-incident-form.ts';
 import {
   INITIAL_INCIDENT_SUMMARY_STATE,
+  SUMMARY_PLACEHOLDER,
   createIncidentSummarySession,
   incidentSummaryReducer,
+  summaryDisplay,
 } from '../hooks/use-incident-summary.ts';
 import { ApiAbortError } from '../lib/api-client.ts';
 import { IncidentServiceError } from '../services/incident-manager.service.ts';
-import { formValues, incident } from './support/incident-fakes.mjs';
+import { normalizeIncidentSummary } from '../services/normalizers.ts';
+import {
+  INCIDENT_BRANCHES,
+  INCIDENT_CATEGORIES,
+  INCIDENT_ORIGINS,
+  INCIDENT_STATUSES,
+} from '../types/incident-manager.ts';
+import { formValues, incident, summaryBody } from './support/incident-fakes.mjs';
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -328,5 +337,38 @@ describe('resumen independiente del listado', () => {
     await tick();
     assert.equal(summary.calls[0].aborted, true);
     assert.deepEqual(s.actions.map((action) => action.type), ['summary_started']);
+  });
+});
+
+// H2 (AUDIT.md): mientras el resumen carga por primera vez, el panel pinta la
+// misma rejilla con una fila por valor del vocabulario y sin números, para no
+// crecer (y desplazar el listado) al llegar los datos.
+describe('resumen: esqueleto mientras carga', () => {
+  const LISTS = ['by_status', 'by_category', 'by_origin', 'by_branch'];
+  const values = (list) => list.map((item) => item.value);
+
+  test('una fila por valor del vocabulario, en su orden, sin números ni total', () => {
+    assert.deepEqual(values(SUMMARY_PLACEHOLDER.by_status), [...INCIDENT_STATUSES]);
+    assert.deepEqual(values(SUMMARY_PLACEHOLDER.by_category), [...INCIDENT_CATEGORIES]);
+    assert.deepEqual(values(SUMMARY_PLACEHOLDER.by_origin), [...INCIDENT_ORIGINS]);
+    assert.deepEqual(values(SUMMARY_PLACEHOLDER.by_branch), [...INCIDENT_BRANCHES]);
+    assert.equal(SUMMARY_PLACEHOLDER.total, null);
+    for (const list of LISTS) {
+      assert.ok(SUMMARY_PLACEHOLDER[list].every((item) => item.count === null), list);
+    }
+  });
+
+  test('tiene exactamente las mismas filas que un resumen recibido (misma altura del panel)', () => {
+    // summaryBody trae las claves literales de la API, independientes de las constantes del frontend.
+    const received = normalizeIncidentSummary(summaryBody({ total: 97 }));
+    for (const list of LISTS) {
+      assert.deepEqual(values(SUMMARY_PLACEHOLDER[list]), values(received[list]), list);
+    }
+  });
+
+  test('sin resumen se pinta el esqueleto; con resumen, el resumen tal cual', () => {
+    assert.equal(summaryDisplay(null), SUMMARY_PLACEHOLDER);
+    const received = normalizeIncidentSummary(summaryBody({ total: 3 }));
+    assert.equal(summaryDisplay(received), received);
   });
 });

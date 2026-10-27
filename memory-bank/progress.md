@@ -4,6 +4,32 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-28 — Auditoría de rendimiento: H2 (esqueleto del resumen de `/incident-manager`)
+
+**Estado: código hecho y comiteado; medición intermedia pendiente (la hace el usuario, en ventana de invitado sin extensiones).** Rama `feature/perf-audit`. Sin push. **No se empieza H3 hasta que el usuario revise la medición de H2.** El usuario aprovechará ese build para la comprobación de Accessibility de H1 (JS desactivado en `/suppliers`), todavía no verificada.
+
+- **Decisiones de la revisión de H1 (usuario):**
+  - no se repiten las 2 ejecuciones de H1: el CLS no depende de las extensiones, y la contaminación queda documentada en `audit/after/runs.md`;
+  - S1, R1 y R2 van sin medición intermedia;
+  - se mide en una ventana de invitado de Chrome, y en cada JSON se comprueba que no hay peticiones `chrome-extension://`.
+- **Código (`uis/backoffice`):**
+  - **`hooks/use-incident-summary.ts`:** lo puro va junto al reducer: `SummaryDisplay` (`count: number | null`), `SUMMARY_PLACEHOLDER` (una fila por valor de `INCIDENT_STATUSES`/`CATEGORIES`/`ORIGINS`/`BRANCHES`, sin números ni total) y `summaryDisplay(summary)`.
+  - **`components/incident-manager/incident-summary-panel.tsx`:** en la primera carga pinta la misma rejilla y las mismas `CountList` con `display`: «—» en un `<dd aria-hidden>` y «Cargando resumen…» (`role="status"`, con un spinner `sm`) en el sitio del total. Sin cambios en el error aislado, en la recarga tras un cambio de estado (con la opacidad de siempre), en el listado, en los filtros (S5) ni en la API.
+  - **`uis/backoffice/CLAUDE.md`:** la regla del esqueleto y su residual, en «Resumen».
+- **Tests:**
+  - 3 nuevos en `tests/use-incident-manager.test.mjs`: las filas del esqueleto salen del vocabulario (una por valor, en orden, `count` `null` y sin total); coinciden con las de un resumen normalizado a partir de `summaryBody` (claves literales de la API); y `summaryDisplay` elige entre esqueleto y resumen;
+  - mutaciones de control: falta una categoría (2 fallos) y números a 0 en lugar de `null` (1 fallo).
+- **Validación:** `tsc` y `lint` limpios; `build` desde PowerShell, sin `Program Files` en los chunks; `node:test` 502/502; Jest 239/239.
+- **Verificación en el navegador, con el build de producción en el 3003.** El resumen se retuvo envolviendo `window.fetch` y navegando dentro de la app desde `/suppliers` (Next llama a `fetch` con un `URL`: el envoltorio tiene que aceptarlo, o la navegación pasa a ser completa).
+  - **Altura del panel, cargando frente a cargado:**
+    - a 1024 px, 298 frente a 298 px, con el listado en 605 en los dos casos;
+    - a 375 px, 654 frente a 654 px, listado en 1057;
+    - a 412 px, 654 frente a 654 px, listado en 1037;
+    - 0 `layout-shift` al llegar los datos.
+  - **Fallo aislado** (resumen con 500 simulado; también por *timeout* al retenerlo demasiado): aparece el aviso con «Reintentar resumen» y el listado sigue funcionando (97 filas; filtro `open` → 27). Es el residual conocido: el panel pasa a 206 px a 412 (−448, el listado sube de 1037 a 589) y a 202 px a 1024 (−96, de 605 a 509). «Reintentar resumen» lo recupera.
+  - **Cambio de estado:** «Synthetic ticket 028» pasó de `open` a `in_progress` en la TinyDB de desarrollo. El resumen se recarga (`open` 27 → 26, `in_progress` 1 → 2) sin errores; el panel sigue en 654 px y no hay `layout-shift`. **El dato de la TinyDB queda cambiado**, pero el listado sigue teniendo 97 filas.
+  - **A 375 y 412 px:** sin scroll horizontal.
+
 ## 2026-10-28 — Auditoría de rendimiento: medición intermedia de H1 y cambio de plan
 
 **Estado: H1 cerrada** (código en `4e23d91`, arreglo de CRLF en `126d067`, medición en `audit/after/runs.md` §2). Rama `feature/perf-audit`. Sin push. **No se empieza H2 hasta que el usuario revise esta medición.**
