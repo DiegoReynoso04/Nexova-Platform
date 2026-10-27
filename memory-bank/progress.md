@@ -4,6 +4,52 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-27 — Auditoría de rendimiento: F2 (skills), en curso
+
+**Estado: pasos 1–2 hechos (instalación comiteada); pasos 3–5 pendientes tras reiniciar la sesión.** La sesión en la que se instalaron no detecta skills nuevas en `.claude/skills/` (`Unknown skill: core-web-vitals`); el usuario reinicia y se retoma desde aquí. Rama `feature/perf-audit`. Sin push.
+
+- **D4, decidida tras F1:** la imagen sobredimensionada (`uis/website/src/img/ambiente-trabajo-nexova.jpg`) se corrige solo si la skill la señala como causa de una auditoría fallida (criterio de «requerida»). En ese caso, en una fase de corrección posterior, con `npx sharp-cli@<versión fija>` puntual y sin añadir dependencias.
+- **Paso 1 — ensayo en el scratchpad, fuera del repo:**
+  - **CLI:** `skills` 1.7.4 con `DISABLE_TELEMETRY=1`. El CLI lo respeta: `dist/cli.mjs` desactiva la telemetría con `DISABLE_TELEMETRY` o `DO_NOT_TRACK`.
+  - **Flags reales:** existen `-a/--agent`, `--copy`, `-s/--skill`, `-y` y `-l/--list`.
+  - **Qué crea:** con `-a claude-code --copy`, solo `.claude/skills/<skill>/` (`SKILL.md` y `references/`), sin enlaces simbólicos y sin `.agents/`, más un `skills-lock.json` en la raíz.
+  - **Revisión del contenido:** 7 archivos Markdown, unos 48 KB. No hay scripts ni nada que se ejecute, y ninguna instrucción pide acciones fuera del análisis de rendimiento. Solo contienen enlaces a documentación y fragmentos de ejemplo (un service worker, `sendBeacon` para RUM, `PerformanceObserver`). RUM.md pide autorización antes de añadir telemetría.
+  - **Conflicto con nuestras reglas:** MEASUREMENT.md propone el CLI de Lighthouse o PageSpeed como alternativa. Aquí no se usan.
+  - **Origen:** `addyosmani/web-quality-skills` en `afa8da942115f2961fdbfa80807ea0b232ff6c00` (merge de la PR #19, «web-quality-skills-v2», 2026-08-24). Los 7 archivos son idénticos a los de ese commit en GitHub, salvo los finales de línea (CRLF en la copia).
+- **Paso 2 — instalación en el repo:**
+  - **Ubicación:** `.claude/skills/core-web-vitals/` y `.claude/skills/performance/`, como copias. `.agents/skills/` y los `package.json` siguen sin cambios (comprobado con md5), y `.gitignore` no excluye `.claude/`.
+  - **`skills-lock.json` no se versiona:**
+    - solo guarda el repositorio, la ruta y un `computedHash` del contenido, sin SHA ni ref, así que no documenta la versión;
+    - restaurar con él (`experimental_install`) descargaría el `main` de ese momento;
+    - además, sería un archivo nuevo en la raíz fuera de la convención de carpetas.
+
+    La evidencia del origen es el SHA del cuerpo del commit, junto con los dos `computedHash`.
+- **Pendiente, en la sesión nueva:**
+  1. **Paso 3 — ejecutar las skills:**
+     - invocar `core-web-vitals` y después `performance` sobre los dos frontends, con los 12 JSON de `audit/before/` como evidencia, sin volver a medir;
+     - en cada hallazgo, citar el JSON y la auditoría o métrica, inspeccionar el código (archivo y líneas) y proponer la causa probable;
+     - cubrir como mínimo:
+       - en mobile, el desplazamiento de `main` (0,1337) y el de la sección del listado de `/incident-manager` (0,234);
+       - el 0,032 de desktop (`main` en incident-manager; el header en suppliers e inventory);
+       - el Play CDN de Tailwind que bloquea el render;
+       - la imagen de 1920×1156 mostrada a 576×347;
+       - `logo.svg` como LCP en desktop, sin `width`/`height`;
+       - los polyfills del backoffice;
+       - el hueco FCP→LCP del login (real o artefacto);
+     - listar como descartados, con su motivo, los artefactos del servidor local: compresión, caché, HTTP/2 y TTFB.
+  2. **Paso 4 — `audit/skills-findings.md`.** Por hallazgo:
+     - la skill y la sección que lo respalda;
+     - la evidencia;
+     - el código implicado;
+     - la corrección propuesta;
+     - la clasificación (requerida o sugerencia);
+     - el riesgo (reestructuración, AUTH-02).
+
+     Al final, el orden de las correcciones (una por commit, primero los KPI principales) y la URL y el modo que se vuelven a medir tras cada una.
+  3. **Paso 5 — cierre:** `progress.md` (y `techContext.md` si procede), `git status` y `git diff --stat`, y el commit `docs(perf-audit): hallazgos de las skills (F2)`. Sin push.
+
+  No se implementa ninguna corrección hasta que el usuario revise la lista y el orden.
+
 ## 2026-10-27 — Auditoría de rendimiento de los dos frontends: F0–F1
 
 **Estado: en curso** (F1 hecha), en `feature/perf-audit`, creada desde `main` en `6877599`. Brief literal en `docs/perf-audit-brief.md` (`fb3cb15`). Sin push.

@@ -307,6 +307,12 @@ Detalle en `progress.md` (entradas del 2026-10-10). Decisiones técnicas permane
 - `skills/_template/`, `skills/research/`, `skills/code-review/` — solo estructura de la plantilla (`.gitkeep`/`SKILL.md` de ejemplo), sin contenido propio.
 - `agents/` — solo `_template/` y `tools/` de la plantilla; no hay agentes propios.
 - `.agents/skills/memory-bank-sync/` — añadida el 2026-09-14 (PR #4), ver `AGENTS.md` y la propia `SKILL.md`.
+- `.claude/skills/core-web-vitals/` y `.claude/skills/performance/` — skills de terceros para la auditoría de rendimiento (2026-10-27, F2 de `feature/perf-audit`):
+  - **Origen:** `addyosmani/web-quality-skills` en el commit `afa8da942115f2961fdbfa80807ea0b232ff6c00`, versión 2.0 de las dos skills, licencia MIT.
+  - **Instalación:** `npx skills add … --skill <nombre> -a claude-code --copy -y` (CLI `skills` 1.7.4, con `DISABLE_TELEMETRY=1`). Son copias, no enlaces simbólicos.
+  - **Contenido:** solo Markdown, sin scripts.
+  - **Ámbito:** solo para Claude Code; no están en `.agents/skills/`.
+  - **Recordatorio:** sus referencias proponen el CLI de Lighthouse como alternativa; en este repo la regla del usuario lo excluye (se mide con el panel de DevTools).
 
 ## Cómo verificar este documento
 
