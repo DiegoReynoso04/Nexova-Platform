@@ -1,0 +1,13 @@
+/*
+ * Entrada de Tailwind CSS v4 para el sitio. No se publica enlazada: el sitio
+ * enlaza el resultado, styles.css. Regenerarlo con el comando de
+ * uis/website/README.md cada vez que cambien las clases del HTML o de src/js/.
+ *
+ * source(none): sin detección automática; solo se escanea lo que se declara
+ * aquí. Los 3 HTML y los scripts, que añaden clases en tiempo de ejecución
+ * (hidden, border-red-700, el aviso de formStatus de validations.js…).
+ */
+@import "tailwindcss" source(none);
+
+@source "../../*.html";
+@source "../js/*.js";
