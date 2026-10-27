@@ -4,6 +4,35 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-27 — Auditoría de rendimiento: H1 (espacio reservado de la navegación)
+
+**Estado: código hecho y comiteado; medición intermedia pendiente (la hace el usuario).** Rama `feature/perf-audit`. Sin push. **No se empieza H2 hasta que el usuario revise la medición de H1.**
+
+- **Código (`uis/backoffice`):**
+  - **`lib/auth-routes.ts`:** función pura `headerNavMode(pathname, status)` → `session` | `reserved` | `access` | `none`. Es `reserved` en `initializing`/`checking` solo si `routeAccess(...) === 'wait'`.
+  - **`components/ui/nav-link.tsx`:** `NavLinkPlaceholders` (contexto). Dentro, cada `NavLink` se pinta como `<span>` con las mismas clases y el mismo texto, sin `href`.
+  - **`components/auth/account-nav.tsx`:** la pieza `SessionLinks({ placeholder })` tiene la única lista de enlaces. La rama `reserved` es un `<div aria-hidden="true" inert className="invisible …">` con `SessionLinks placeholder`, un hueco `w-40` en el lugar del email y el mismo `Button` deshabilitado con `tabIndex={-1}`.
+  - **Sin tocar:** el guard, `use-auth-session.ts` y la estrategia de sesión (D10, AUTH-02).
+  - **Por qué un contexto y no una prop en cada `NavLink`:** el test del único enlace «Inventario» exige el literal `<NavLink href={INVENTORY_PRODUCTS_PATH} activePrefix={INVENTORY_PATH}>`, sin otros props.
+- **Tests:**
+  - Jest, en `__tests__/auth/auth-routes.test.ts`: los casos de `headerNavMode` (`auth-routes.ts` sigue al 100 %);
+  - `tests/production-source.test.mjs`: una regla nueva, «la navegación reservada es invisible, inerte y sin enlaces». La hacen fallar 4 mutaciones: sin `placeholder`, sin `inert`, un `NavLink` en la rama y el `NavLink` sin `span`.
+- **Validación:**
+  - `tsc` y `lint` limpios;
+  - `build` correcto;
+  - Jest, 239/239;
+  - `node:test`, 496/499.
+
+  Los 3 fallos de `node:test` son de `tests/inventory-contract.test.mjs` (categorías, oficinas y tipos de salida) y **ocurren igual sin H1** (comprobado con `git stash`). La regex del test espera `\n` tras `class X(StrEnum):`, y en esta copia de trabajo `services/api/app/modules/inventory/vocabulary.py` tiene finales CRLF. Fuera del alcance de H1; pendiente de decidir.
+- **Verificación con el build de producción en el 3003** (variables desde PowerShell; desde Git Bash, MSYS convirtió `NEXT_PUBLIC_API_URL=/backend` en `C:/Program Files/Git/backend` dentro del bundle, así que el build se repitió desde PowerShell):
+  - `curl.exe` sin token: el HTML de `/suppliers` ya trae la navegación reservada (6 `span`, el hueco y el botón deshabilitado), sin más `href` en la cabecera que el de la marca (`/`), que ya estaba. `/login` no cambia;
+  - Network: con token, en `/suppliers`, ninguna precarga `_rsc` antes de `/backend/auth/me`; las de las rutas protegidas solo aparecen después, con los enlaces reales. Sin token, las únicas precargas son `/login`, `/register`, `/forgot-password` y `/`, esta última del enlace de la marca y anterior a H1;
+  - foco: con el HTML del servidor sin scripts, el botón reservado no recibe el foco (`inert`) y el enlace de la marca sí. La vista Accessibility de DevTools no se pudo comprobar desde las herramientas del agente (su árbol no aplica `aria-hidden`, comprobado con un control); queda para el usuario;
+  - altura de la cabecera reservada frente a la final: 134,4 frente a 134,4 px a 1024 px de ancho, y 170,4 frente a 170,4 px a 375 y 412 px;
+  - AUTH-02: login incorrecto (aviso, sin token), login correcto, logout (token borrado, `/login`, cabecera pública de 52,8 px), sin token → `/login`, token manipulado → 401 en `/auth/me`, token borrado y `/login`;
+  - a 375 px, sin scroll horizontal en las tres vistas;
+  - para la verificación se creó una cuenta de prueba en la TinyDB de desarrollo, con credenciales generadas en el scratchpad de la sesión, fuera de la repo.
+
 ## 2026-10-27 — Auditoría de rendimiento: revisión de F2 y F3 (`AUDIT.md`)
 
 **Estado: F3 hecha.** Rama `feature/perf-audit`. Sin push. Solo documentación: no se ha tocado código de las apps. **Siguiente: H1.**

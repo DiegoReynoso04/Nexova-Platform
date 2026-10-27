@@ -174,6 +174,21 @@ describe('código de producción', () => {
     assert.doesNotMatch(header, /Entrada de activos|Salida de activos|Historial/);
   });
 
+  // H1 (AUDIT.md): mientras se valida la sesión, la cabecera reserva el hueco de
+  // la navegación con sesión. Ese hueco no lleva enlaces: Next precarga los
+  // <Link> visibles y el HTML sin sesión no debe contener rutas protegidas.
+  test('la navegación reservada de la cabecera es invisible, inerte y sin enlaces', () => {
+    const header = codeWithoutComments('components/auth/account-nav.tsx');
+    const reserved = header.match(/if \(mode === 'reserved'\) \{([\s\S]*?)\n  \}/);
+    assert.ok(reserved, 'rama reservada');
+    assert.match(reserved[1], /<div aria-hidden="true" inert className=\{`invisible /);
+    assert.match(reserved[1], /<SessionLinks placeholder \/>/);
+    assert.doesNotMatch(reserved[1], /<(NavLink|Link|a)\b|href=/);
+
+    const navLink = codeWithoutComments('components/ui/nav-link.tsx');
+    assert.match(navLink, /if \(placeholder\) return <span className=\{className\}>\{children\}<\/span>;/);
+  });
+
   test('cada fila de activos enlaza a registrar una entrada y una salida de ese activo', () => {
     const table = codeWithoutComments('components/inventory/asset-table.tsx');
     assert.match(table, /href=\{inboundOrderHref\(asset\.id\)\}[^>]*>\s*Registrar entrada/);

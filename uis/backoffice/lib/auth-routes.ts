@@ -66,3 +66,23 @@ export function routeAccess(pathname: string, session: SessionStatus['status']):
       return 'wait';
   }
 }
+
+export type HeaderNavMode =
+  /** Navegación con sesión: vistas protegidas, perfil, email y logout. */
+  | 'session'
+  /**
+   * Hueco de la navegación con sesión, invisible e inerte, mientras se valida
+   * la sesión en una ruta protegida: sin él, la cabecera crece al llegar
+   * `GET /auth/me` y desplaza toda la página (CLS, H1 de AUDIT.md).
+   */
+  | 'reserved'
+  /** Sin sesión: solo acceso y registro. */
+  | 'access'
+  | 'none';
+
+/** Qué pinta la cabecera (components/auth/account-nav.tsx) en cada ruta según la sesión. */
+export function headerNavMode(pathname: string, session: SessionStatus['status']): HeaderNavMode {
+  if (session === 'authenticated') return 'session';
+  if (session === 'anonymous') return 'access';
+  return routeAccess(pathname, session) === 'wait' ? 'reserved' : 'none';
+}
