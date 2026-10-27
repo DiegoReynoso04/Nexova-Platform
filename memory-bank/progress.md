@@ -4,9 +4,38 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-27 — Auditoría de rendimiento: revisión de F2 y F3 (`AUDIT.md`)
+
+**Estado: F3 hecha.** Rama `feature/perf-audit`. Sin push. Solo documentación: no se ha tocado código de las apps. **Siguiente: H1.**
+
+- **Revisión de F2 (decisiones del usuario, ya en `audit/skills-findings.md` §3, §7 y §8):**
+  - **§8.1:** H4 sigue como requerida, en último lugar. En `REPORT.md` se dirá que su impacto es en bytes, no en la puntuación.
+  - **§8.2:** S2 sigue como sugerencia.
+  - **§8.3, H1 aprobado con una condición:** la navegación reservada se pinta con `<span>`, con las mismas clases y el mismo texto, `invisible`, `aria-hidden` e `inert`, sin `Link` ni `href`. Así Next no precarga rutas protegidas y no hay enlaces protegidos en el HTML sin sesión. La pieza compartida de `account-nav.tsx` elige con una prop entre enlace y `span`; el test del único enlace «Inventario» debe seguir pasando. Se verifica en Network, con el build de producción: ninguna precarga de esas rutas antes de que `/auth/me` responda.
+  - **H3:** el comando del CSS se documenta en un `uis/website/README.md` nuevo, que se crea en el commit de H3. Motivos: la regla pide un README por app y el sitio no lo tenía, y el paso de generación es solo de esta app. `uis/README.md` sigue como índice y se corrige su fila del sitio («Play CDN, no build step»).
+  - **S1:** se aplica tras H3, en su propio commit, si sigue teniendo sentido.
+  - **Orden final:** H1 → H2 → H3 → H4 → S1 → R1 → R2 → medición final.
+  - **Mediciones:**
+    - tras cada paso, 1 ejecución por caso afectado; solo el JSON, en `audit/after/steps/<paso>/`, sin capturas;
+    - la medición final, completa (12 casos, 3 ejecuciones, capturas y JSON en `audit/after/<app>/<página>/`);
+    - la fila `audit/` de `.agents/rules/monorepo-structure.md` lo recoge.
+- **F3 — `AUDIT.md` (raíz, nuevo):**
+  - **Contenido:**
+    - §1, alcance y método, con por qué esas páginas (`/` y `/incidents` del backoffice no se miden), el criterio y las limitaciones;
+    - §2, los 12 casos con enlace a cada captura;
+    - §3, H1–H4 con su causa raíz (en H1, la cuenta de la geometría: la víctima es `main` y la causa es la cabecera) y, en breve, S1–S5, N1–N2 y X1–X4;
+    - §4, la refactorización;
+    - §5, el plan.
+  - **Refactorización, verificada en el código:**
+    - **R1 (`components/ui/table-scroll.tsx`):** 4 tablas con el mismo armazón y `px-3 py-2 font-semibold` repetido 25 veces. A `supplier-table.tsx` le falta `relative`, que la lista de excepciones del test (`production-source.test.mjs:413-418`) lleva como pendiente. Las 3 tablas de `/incidents` quedan fuera (otro estilo). Hay que ajustar el test de `:354`;
+    - **R2 (`hooks/use-inventory-list.ts`):** `use-inventory-assets.ts` y `use-inventory-orders.ts`, de 159 líneas cada uno, solo difieren en nombres. Los envoltorios conservan su API: los 6 componentes de activos y el del historial no cambian;
+    - **R3 (candidato, no se aplica):** el bloque «Cargando…» es idéntico en 4 vistas. En la repo no constaba ningún R3 de F0; este se identificó ahora;
+    - **R4 (descartado):** la cabecera (87 líneas) y el pie (25) se repiten en los 3 HTML del sitio. Solo se compartirían inyectándolos con JS (empeora el SEO y añade CLS) o con un build (reestructura).
+- **Sin impacto técnico:** no cambia código de las apps; `techContext.md` no se toca.
+
 ## 2026-10-27 — Auditoría de rendimiento: F2 (skills)
 
-**Estado: hecha.** Instalación comiteada en `8871787` y hallazgos en `audit/skills-findings.md`. Rama `feature/perf-audit`. Sin push. **Siguiente: el usuario revisa la lista y el orden de `audit/skills-findings.md` §7–§8 antes de aplicar ninguna corrección.** La sesión de la instalación no detectaba skills nuevas en `.claude/skills/` (`Unknown skill: core-web-vitals`); los pasos 3–5 se hicieron tras reiniciarla.
+**Estado: hecha y revisada por el usuario** (decisiones en la entrada de arriba). Instalación comiteada en `8871787` y hallazgos en `audit/skills-findings.md`. Rama `feature/perf-audit`. Sin push. La sesión de la instalación no detectaba skills nuevas en `.claude/skills/` (`Unknown skill: core-web-vitals`); los pasos 3–5 se hicieron tras reiniciarla.
 
 - **D4, decidida tras F1:** la imagen sobredimensionada (`uis/website/src/img/ambiente-trabajo-nexova.jpg`) se corrige solo si la skill la señala como causa de una auditoría fallida (criterio de «requerida»). En ese caso, en una fase de corrección posterior, con `npx sharp-cli@<versión fija>` puntual y sin añadir dependencias.
 - **Paso 1 — ensayo en el scratchpad, fuera del repo:**

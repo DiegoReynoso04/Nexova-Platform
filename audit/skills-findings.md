@@ -2,7 +2,7 @@
 
 Registro de la ejecución de las dos skills de agente sobre los dos frontends: qué señalan, con qué evidencia, qué código lo causa y qué corrección proponen. Es la evidencia del uso de las skills que pide el brief ([`docs/perf-audit-brief.md`](../docs/perf-audit-brief.md)) y el material de entrada de `AUDIT.md` (F3).
 
-**Aquí no se corrige nada.** Las correcciones se aplican después, una por commit y en el orden de §7, cuando el usuario haya revisado esta lista.
+**Aquí no se corrige nada.** Las correcciones se aplican después, una por commit y en el orden de §7. El usuario revisó y aprobó esta lista; sus decisiones y ajustes están en §8.
 
 ## 1. Cómo se ejecutaron
 
@@ -34,7 +34,7 @@ Todo lo demás es **sugerencia**.
 | **H2** | backoffice | El panel de resumen de `/incident-manager` crece al llegar los datos y empuja el listado | CLS +0,2344 en incident-manager mobile (total 0,373, Perf 82) | **Requerida** (a) | Bajo |
 | **H3** | website | Play CDN de Tailwind: JavaScript síncrono que bloquea el render | `render-blocking-insight`: hasta 1150 ms en FCP/LCP (mobile) | **Requerida** (b) | Medio (visual) |
 | **H4** | website | Foto de 1920×1156 (308 KB) mostrada a 576×347 | `image-delivery-insight`: 274–295 KiB | **Requerida** (b), caso límite (§8) | Bajo |
-| S1 | website | `logo.svg` sin `width`/`height` y, en desktop, LCP sin `fetchpriority` | `unsized-images`, `lcp-discovery-insight`, sin ahorro | Sugerencia | Muy bajo |
+| S1 | website | `logo.svg` sin `width`/`height` y, en desktop, LCP sin `fetchpriority` | `unsized-images`, `lcp-discovery-insight`, sin ahorro | Sugerencia; se aplica tras H3 si sigue teniendo sentido (§8) | Muy bajo |
 | S2 | backoffice | CSS bloqueante en el login en frío | `render-blocking-insight`: 150 ms (solo mobile, en frío) | Sugerencia, caso límite (§8) | Medio (flag experimental) |
 | S3 | backoffice | Polyfills y JS sin usar del chunk del framework | `legacy-javascript-insight` 13–14 KiB, `unused-javascript` 26 KiB; FCP/LCP 0 | Sugerencia, no accionable | — |
 | S4 | website | `validations.js` sin minificar | `unminified-javascript`: 4 KiB; sin ahorro | Sugerencia | — |
@@ -87,10 +87,11 @@ Todo lo demás es **sugerencia**.
 - **Cuándo:** en `initializing` y `checking`, y solo cuando `routeAccess(pathname, status) === 'wait'` ([`lib/auth-routes.ts:50`](../uis/backoffice/lib/auth-routes.ts)).
 - **Cómo:**
   - `AccountNav` pinta la misma navegación, pero no visible y no interactiva: `invisible`, `aria-hidden` e `inert`;
+  - **condición del usuario (revisión de F2):** la navegación reservada no usa `Link` ni `href`. Cada entrada es un `<span>` con las mismas clases y el mismo texto. Motivo: `NavLink` usa `next/link`, y en producción Next precarga los enlaces visibles en el viewport. Con `span` no hay precargas de rutas protegidas durante la carga ni enlaces protegidos en el HTML sin sesión;
   - en lugar del email, un marcador de ancho parecido;
   - como `usePathname` y el estado `initializing` existen también en el servidor, el HTML inicial ya trae la cabecera con su altura final.
 - **Donde no cambia nada:** en las rutas públicas (`/login`, `/register`, `/forgot-password`) se mantiene lo de hoy.
-- **Para no duplicar el marcado:** la lista de enlaces se saca a una única pieza interna de `account-nav.tsx`, que usan los dos estados. Así sigue pasando el test estático que exige un solo enlace «Inventario» ([`tests/production-source.test.mjs:170-175`](../uis/backoffice/tests/production-source.test.mjs)).
+- **Para no duplicar el marcado:** la lista de entradas se saca a una única pieza interna de `account-nav.tsx`, que usan los dos estados, con una prop que elige entre enlace (`NavLink`) y `span`. Así sigue pasando el test estático que exige un solo enlace «Inventario» ([`tests/production-source.test.mjs:170-175`](../uis/backoffice/tests/production-source.test.mjs)).
 
 **Alternativas descartadas:**
 
@@ -107,7 +108,10 @@ Todo lo demás es **sugerencia**.
   - **Residual 1, token caducado o inválido en una ruta protegida:** el hueco reservado se cierra al pasar a `anonymous`, justo antes de la redirección a `/login`. Ese caso no se mide.
   - **Residual 2, error de red al validar:** la navegación desaparece y la cabecera encoge.
   - **Residual 3, email más largo que el marcador:** puede cambiar el número de líneas en mobile y dejar un desplazamiento pequeño.
-- **Verificación:** la fila de `uis/backoffice` de `AGENTS.md`, más el recorrido AUTH-02 en el navegador: login correcto e incorrecto, redirección sin token y tras un 401, y logout.
+- **Verificación:**
+  - la fila de `uis/backoffice` de `AGENTS.md`;
+  - el recorrido AUTH-02 en el navegador: login correcto e incorrecto, redirección sin token y tras un 401, y logout;
+  - en la pestaña Network, con el build de producción: ninguna precarga de las rutas protegidas antes de que `/auth/me` responda.
 
 **Efecto esperado** (estimación, no medición). Desaparece el desplazamiento de `main`:
 
@@ -206,7 +210,10 @@ Con el throttling de mobile, eso son 1,1–1,15 s del LCP estimado.
 - **Sin dependencias:** no se añade ningún `package.json` ni dependencia.
 - **Versionado:** el CSS generado se versiona, porque Netlify publica `uis/website` sin build.
 - **Qué escanea el CLI:** también `src/js/*.js`, por las clases que añade el JavaScript (`hidden`, `border-red-700`, `border-slate-400`, el HTML de `formStatus` en `validations.js`).
-- **Documentación:** el comando va en el `README.md` de `uis/website`.
+- **Documentación:** el comando va en un `uis/website/README.md` nuevo, que se crea en el commit de H3. Se descarta `uis/README.md` por tres motivos:
+  - la regla del monorepo pide un README por app (`.agents/rules/monorepo-structure.md`, «Cada app/servicio/agente nuevo lleva su propia subcarpeta con README»), y el sitio es la única app de `uis/` que no lo tiene;
+  - el paso de generación del CSS solo afecta al sitio: qué archivos escanea, la versión fijada y cuándo regenerarlo. Es documentación de la app, no del índice de interfaces;
+  - `uis/README.md` sigue siendo el índice. Su fila del sitio («Play CDN, no build step») se corrige en ese mismo commit y enlaza al README nuevo.
 
 **Riesgo:**
 
@@ -410,11 +417,18 @@ Tampoco se tratan:
 
 ## 7. Orden propuesto de correcciones
 
-Primero lo que incumple umbral (criterio a), en el backoffice. Después lo que solo cumple el criterio b, en el sitio. Un problema por commit; tras cada uno, el usuario vuelve a medir las mismas URLs en las mismas condiciones de F1, guardando en `audit/after/`:
+**Orden aprobado por el usuario (revisión de F2):** H1 → H2 → H3 → H4 → S1 → R1 → R2 → medición final.
+
+Primero lo que incumple umbral (criterio a), en el backoffice. Después lo que solo cumple el criterio b, en el sitio. Un problema por commit; tras cada uno, el usuario vuelve a medir las mismas URLs en las mismas condiciones de F1:
 
 - el backoffice con `npm run build` + `npm run start -- -p 3003`;
 - con sesión, «Clear storage» desmarcado y una ejecución de calentamiento en las vistas con datos;
 - «Clear storage» marcado en el sitio y en el login.
+
+**Cómo se guarda cada medición** (decisión del usuario):
+
+- **Tras cada corrección:** 1 ejecución por caso, solo en los casos afectados (columna «Qué se vuelve a medir»). Se guarda únicamente el JSON, en `audit/after/steps/<paso>/` (`H1`…`H4`, `S1`, `R1`, `R2`), sin capturas. El CLS es determinista y la Performance varió ≤ 1 punto entre ejecuciones en F1.
+- **Medición final:** la completa, igual que el *before*. Son los 12 casos, con 3 ejecuciones cada uno, capturas y JSON en `audit/after/<app>/<página>/`.
 
 | Orden | Corrección | Commit (propuesto) | Qué se vuelve a medir (URL · modo) | Qué se espera ver |
 |---|---|---|---|---|
@@ -425,14 +439,23 @@ Primero lo que incumple umbral (criterio a), en el backoffice. Después lo que s
 
 - **Orden de H1 y H2.** H1 primero porque afecta a las tres vistas y, sin él, H2 no basta para que incident-manager baje de 0,1. El orden inverso no aislaría mejor el efecto de cada uno.
 - **El sitio después.** Hoy no incumple ningún umbral. Sus dos correcciones son requeridas por el criterio (b).
-- **Tras el paso 4.** La medición final completa de los 12 casos en `audit/after/` cierra el ciclo. Las sugerencias S1–S5 solo se aplican si el usuario lo decide, y cada una con su propio commit y su propia medición.
-- **Refactorizaciones.** R1 (`table-scroll`) y R2 (el hook de listados) son del análisis de código y no de las skills. Su orden respecto a esta tabla lo decide el usuario. Si van antes que H1, el *before* de H1 debería volver a medirse, para no mezclar efectos.
+**Después de H4** (aprobado por el usuario):
 
-## 8. Decisiones abiertas para la revisión del usuario
+| Orden | Paso | Qué se vuelve a medir |
+|---|---|---|
+| 5 | **S1**: `width`/`height` del logo y `fetchpriority`. Con su propio commit, y solo si tras H3 sigue teniendo sentido (el LCP del index desktop puede haber cambiado) | `localhost:3000/` · mobile y desktop; `localhost:3000/application.html` · mobile y desktop |
+| 6 | **R1**: `components/ui/table-scroll.tsx` (análisis de código, `AUDIT.md` §4) | `localhost:3003/incident-manager`, `/suppliers` e `/inventory/products` · mobile (control de no regresión) |
+| 7 | **R2**: hook genérico de listados del inventario (`AUDIT.md` §4) | `localhost:3003/inventory/products` · mobile y desktop (control de no regresión) |
+| 8 | **Medición final** completa | Los 12 casos, como el *before* |
 
-1. **H4 como requerida.**
+S2–S5 no se aplican.
+
+## 8. Decisiones del usuario sobre esta lista (revisión de F2)
+
+1. **H4 sigue como requerida, en último lugar** de las correcciones de las skills. `REPORT.md` dirá que su impacto es en bytes, no en la puntuación.
    - **A favor:** cumple el criterio (b) al pie de la letra (auditoría fallida, 274–295 KiB de ahorro, y la sección *Image optimization* de `performance` prescribe exactamente esta corrección). D4 la condicionaba a eso.
    - **En contra:** el paso 3 de *How it works* limita los cambios a cuellos de botella medidos, y su `metricSavings` es 0.
-   - Si se prefiere tratarla como sugerencia, sale del orden de §7.
-2. **S2 como sugerencia.** Cumple la forma del criterio (b): auditoría fallida con 150 ms de ahorro. Se clasifica como sugerencia porque la propia skill (`LCP.md`) exige además un *render delay* largo, que no hay (71 ms), y porque el flag de Next es experimental y empeora las visitas recurrentes.
-3. **Diseño de H1:** la navegación reservada invisible e inerte, solo en las rutas protegidas, frente a las alternativas descartadas en §3.
+2. **S2 sigue como sugerencia**, por los motivos de §4: la skill (`LCP.md`) exige además un *render delay* largo y hay 71 ms; el flag de Next es experimental y empeora las visitas recurrentes.
+3. **El diseño de H1 se aprueba con una condición:** la navegación reservada se pinta con `<span>`, sin `Link` ni `href`, para que no haya precargas de rutas protegidas. Se verifica en la pestaña Network (§3, H1).
+4. **H3:** el comando del CSS se documenta en un `uis/website/README.md` nuevo (§3, H3).
+5. **S1** se aplica después de H3, con su propio commit, si sigue teniendo sentido.
