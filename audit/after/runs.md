@@ -142,4 +142,53 @@ El FCP sube en los dos casos: 614 → 912 ms y 613 → 922 ms. Los JSON lo expli
 - el recorrido AUTH-02 funciona;
 - a 375 px, sin scroll horizontal.
 
-**Accessibility de DevTools: no verificado.** El usuario no ha confirmado todavía la vista *Accessibility* de DevTools con JavaScript desactivado en `/suppliers`.
+**Accessibility, comprobada por el usuario en el DOM servido** (2026-10-28, con el build de H2 en el 3003, ventana sin extensiones y JavaScript desactivado en `/suppliers`):
+
+- **DOM:** el contenedor del hueco es `<div aria-hidden="true" inert class="invisible …">`, con 6 `<span>` sin `href` ni `<a>`, el hueco del email (`span.w-40`) y el botón «Cerrar sesión» `disabled` con `tabindex="-1"`.
+- **Panel Accessibility de DevTools:** no consultado.
+- **Prueba del Tab:** no confirmada; el mensaje del usuario dejó esa opción sin rellenar. Lo que consta es la comprobación del agente en H1 sobre el HTML del servidor sin scripts: el foco programático no entra en el botón reservado y sí en el enlace de la marca.
+
+### H2 — esqueleto del resumen de `/incident-manager` (`4039279`)
+
+El build medido es el de `4039279`, compilado desde PowerShell. 1 ejecución en la URL clave, en una ventana de invitado de Chrome.
+
+**Comprobaciones:**
+
+| Archivo | `finalDisplayedUrl` | `formFactor` | LH | `fetchTime` (UTC → local) | `benchmarkIndex` | `disableStorageReset` | `runWarnings` | `chrome-extension://` |
+|---|---|---|---|---|---|---|---|---|
+| `steps/H2/incident-manager-mobile.json` | `http://localhost:3003/incident-manager` | mobile | 13.4.1 | 2026-10-27 23:39:03Z → 2026-10-28 00:39:03 | 3640 | `true` (con sesión) | vacío | **0** |
+
+**Resultados frente al antes y a H1:**
+
+| | Perf | FCP | LCP | TBT | CLS | SI | FCP observado |
+|---|---|---|---|---|---|---|---|
+| antes | 82 | 0,6 s (613 ms) | 1,0 s (958 ms) | 24 ms | 0,373 | 0,6 s | 60 ms |
+| H1 (con extensiones) | 88 | 0,9 s (922 ms) | 1,1 s (1132 ms) | 9 ms | 0,240 | 0,9 s | 178 ms |
+| **H2** | **100** | 0,6 s (625 ms) | 0,9 s (917 ms) | 51 ms | **0** (0,0000449) | 0,6 s | 58 ms |
+
+Accessibility, Best Practices y SEO: 100. El elemento LCP sigue siendo `main.mx-auto > div.flex > p.text-sm`, la descripción de la página.
+
+**`layout-shifts`:**
+
+| Medición | Desplazamientos |
+|---|---|
+| antes | sección del listado 0,2344 + `main.mx-auto` 0,1337 + filtros 0,0052 |
+| H1 | sección del listado 0,2344 + filtros 0,0052 |
+| **H2** | solo `div.flex > dl.flex > div.flex > dd.tabular-nums`, de **0,0000449** |
+
+**Conclusión: H2 hace lo esperado, y algo más.**
+
+- **El desplazamiento del listado (0,2344) desaparece.** El CLS pasa de 0,373 a 0 y la Performance de 82 a 100. Cumple el criterio (CLS < 0,1 y Performance ≥ 90).
+- **El desplazamiento de los filtros (0,0052) también desaparece; no es un redondeo.** Ya no figura en `layout-shifts`. La causa probable es que la fila de filtros, dentro de la sección del listado, se recolocaba con el mismo empuje del resumen. El 0,0052 de suppliers (S5) es otro caso y no lo toca H2.
+- **El único desplazamiento que queda vale 0,0000449,** y Lighthouse lo muestra como 0. Está en un `<dd>` del resumen: al cambiar «—» por el número, el ancho de la celda varía y se mueve unos píxeles en horizontal (`justify-between`). No requiere corrección.
+- **El FCP vuelve a 0,6 s** (625 ms simulado, 58 ms observado), como en el antes. Confirma que la subida de H1 a 0,9 s se debía a las extensiones (§2, H1).
+
+**Datos de desarrollo: «Synthetic ticket 028».** Durante la verificación de H2, el agente pasó esta incidencia de `open` a `in_progress` en la TinyDB de desarrollo. **No se puede restaurar**: el ciclo de vida solo permite `in_progress → resolved` o `in_progress → discarded`. Así lo fijan:
+
+- `ALLOWED_TRANSITIONS` en `packages/shared/nexova_shared/incidents/rules.py`;
+- `INCIDENT_TRANSITIONS` en `uis/backoffice/types/incident-manager.ts`;
+- `docs/centralized-incident-manager.md`.
+
+No se ha tocado el archivo de la base.
+
+Desde entonces, los totales del resumen difieren del antes en ese ticket: `open` 26 en lugar de 27 e `in_progress` 2 en lugar de 1. `resolved` (56), `discarded` (13) y el total (97) no cambian. **No afecta al CLS ni a la altura:** el listado sigue con 97 filas y el resumen tiene las mismas 19 filas; solo cambian dos números.

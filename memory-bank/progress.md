@@ -6,7 +6,16 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-10-28 — Auditoría de rendimiento: H2 (esqueleto del resumen de `/incident-manager`)
 
-**Estado: código hecho y comiteado; medición intermedia pendiente (la hace el usuario, en ventana de invitado sin extensiones).** Rama `feature/perf-audit`. Sin push. **No se empieza H3 hasta que el usuario revise la medición de H2.** El usuario aprovechará ese build para la comprobación de Accessibility de H1 (JS desactivado en `/suppliers`), todavía no verificada.
+**Estado: H2 cerrada** (código en `4039279`, medición en `audit/after/runs.md` §2). Rama `feature/perf-audit`. Sin push. **No se empieza H3 hasta que el usuario revise esta medición.**
+
+- **Medición de H2** (`audit/after/steps/H2/incident-manager-mobile.json`, ventana de invitado, 0 peticiones `chrome-extension://`):
+  - **Perf** 82 → **100** (88 en H1);
+  - **CLS** 0,373 → **0** (0,0000449; 0,240 en H1);
+  - **FCP** 0,6 s (625 ms; 58 ms observado), como en el antes: confirma que el 0,9 s de H1 fue por las extensiones;
+  - **`layout-shifts`:** desaparecen el 0,2344 del listado y también el 0,0052 de los filtros (no es un redondeo). Solo queda un `dd.tabular-nums` del resumen (0,0000449, al cambiar «—» por el número).
+- **Accessibility de H1, comprobada por el usuario en el DOM servido** (JavaScript desactivado en `/suppliers`): `<div aria-hidden="true" inert class="invisible …">` con 6 `<span>` sin `href`, `span.w-40` y el botón `disabled` con `tabindex="-1"`. **Panel Accessibility de DevTools: no consultado. Prueba del Tab: no confirmada** (el mensaje del usuario dejó la opción sin rellenar).
+- **«Synthetic ticket 028», sin restaurar:** el ciclo de vida no permite `in_progress → open` (`ALLOWED_TRANSITIONS` en `nexova_shared`, `INCIDENT_TRANSITIONS` en el frontend). No se forzó el archivo. Los totales del resumen difieren del antes: `open` 26 en lugar de 27 e `in_progress` 2 en lugar de 1, con el mismo total (97). No afecta al CLS: mismas 97 filas y mismas 19 filas del resumen. Documentado en `audit/after/runs.md`.
+- **Cierre:** 3003 parado, build sin variables (rewrites vacíos) y `docker compose start ui` (website 200; `/backend/health` OK en el 3001).
 
 - **Decisiones de la revisión de H1 (usuario):**
   - no se repiten las 2 ejecuciones de H1: el CLS no depende de las extensiones, y la contaminación queda documentada en `audit/after/runs.md`;
