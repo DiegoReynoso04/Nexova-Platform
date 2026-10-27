@@ -216,12 +216,21 @@
         </h2>
 
         <div class="mt-10 grid grid-cols-1 gap-10 lg:grid-cols-2 lg:items-center lg:gap-16">
-          <img
-            src="src/img/ambiente-trabajo-nexova.jpg"
-            alt="Equipo de Nexova reunido en una sala de juntas, revisando gráficos de resultados en varios portátiles durante una sesión de trabajo colaborativa"
-            width="1920" height="1156"
-            loading="lazy" decoding="async"
-            class="h-auto w-full rounded-lg object-cover" />
+          <!-- Variantes de src/img/ambiente-trabajo-nexova.jpg (1920×1156) generadas con
+               sharp-cli 6.1.0 (comando en README.md). `sizes` sigue la rejilla: 1 columna
+               hasta lg y 2 columnas (máx. 576 px) desde lg. -->
+          <picture>
+            <source
+              type="image/webp"
+              srcset="src/img/ambiente-trabajo-nexova-768.webp 768w, src/img/ambiente-trabajo-nexova-1152.webp 1152w"
+              sizes="(min-width: 1280px) 576px, (min-width: 1024px) calc(50vw - 64px), (min-width: 768px) calc(100vw - 48px), calc(100vw - 32px)" />
+            <img
+              src="src/img/ambiente-trabajo-nexova-1152.jpg"
+              alt="Equipo de Nexova reunido en una sala de juntas, revisando gráficos de resultados en varios portátiles durante una sesión de trabajo colaborativa"
+              width="1920" height="1156"
+              loading="lazy" decoding="async"
+              class="h-auto w-full rounded-lg object-cover" />
+          </picture>
 
           <dl class="grid grid-cols-1 gap-8 md:grid-cols-2">
             <div>

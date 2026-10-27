@@ -52,6 +52,18 @@ Desde la auditoría de rendimiento (H3 de [`AUDIT.md`](../../AUDIT.md)), el siti
 - comprobar a la vista las tres páginas en desktop y a 375 px, con el menú móvil abierto y cerrado y el formulario en estado de error y de éxito;
 - comitear `styles.css` junto con el cambio de HTML o JS que lo motivó.
 
+## Foto del index en tamaños adaptados
+
+Desde la auditoría (H4 de [`AUDIT.md`](../../AUDIT.md)), la foto de «Por qué Nexova» se sirve con `<picture>`, `srcset` y `sizes`. Hay dos WebP, de 768 y 1152 px, y un JPEG de 1152 px de respaldo, en lugar del original de 1920×1156 (308 KB). Las variantes salen del original, que se conserva en `src/img/ambiente-trabajo-nexova.jpg`. Se regeneran desde `uis/website` con `sharp-cli` en versión fija, sin dependencias:
+
+```bash
+npx --yes sharp-cli@6.1.0 -i src/img/ambiente-trabajo-nexova.jpg -o src/img/ambiente-trabajo-nexova-768.webp -f webp -q 80 resize 768
+npx --yes sharp-cli@6.1.0 -i src/img/ambiente-trabajo-nexova.jpg -o src/img/ambiente-trabajo-nexova-1152.webp -f webp -q 80 resize 1152
+npx --yes sharp-cli@6.1.0 -i src/img/ambiente-trabajo-nexova.jpg -o src/img/ambiente-trabajo-nexova-1152.jpg -f jpeg -q 80 --mozjpeg resize 1152
+```
+
+**Si cambia la rejilla de esa sección** (`lg:grid-cols-2`, los `px-*`, `lg:gap-16`), hay que revisar `sizes` en `index.html`.
+
 ## Validación
 
 No tiene build ni tests propios (`AGENTS.md` §4): se verifica a mano, en el navegador. El servidor de desarrollo sí tiene tests, que se ejecutan desde la raíz con `node --test "uis/tests/*.test.mjs"`.
