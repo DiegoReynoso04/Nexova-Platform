@@ -29,9 +29,13 @@ function contextValues(field) {
   return [...row.matchAll(/`"([^"]+)"`/g)].map((match) => match[1]);
 }
 
-/** Valores de una enumeración `class Name(StrEnum)` del backend. */
+/**
+ * Valores de una enumeración `class Name(StrEnum)` del backend. `\r?\n`: con
+ * `core.autocrlf=true` (Windows), la copia de trabajo de vocabulary.py tiene CRLF
+ * aunque el índice esté en LF.
+ */
 function backendEnum(name) {
-  const block = new RegExp(`class ${name}\\(StrEnum\\):\\n((?:    .+\\n)+)`).exec(BACKEND);
+  const block = new RegExp(`class ${name}\\(StrEnum\\):\\r?\\n((?:    .+\\r?\\n)+)`).exec(BACKEND);
   assert.ok(block, `${name} not found in vocabulary.py`);
   return [...block[1].matchAll(/= "([^"]+)"/g)].map((match) => match[1]);
 }

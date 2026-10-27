@@ -23,7 +23,13 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - Jest, 239/239;
   - `node:test`, 496/499.
 
-  Los 3 fallos de `node:test` son de `tests/inventory-contract.test.mjs` (categorías, oficinas y tipos de salida) y **ocurren igual sin H1** (comprobado con `git stash`). La regex del test espera `\n` tras `class X(StrEnum):`, y en esta copia de trabajo `services/api/app/modules/inventory/vocabulary.py` tiene finales CRLF. Fuera del alcance de H1; pendiente de decidir.
+  Los 3 fallos de `node:test` son de `tests/inventory-contract.test.mjs` (categorías, oficinas y tipos de salida) y **ocurren igual sin H1** (comprobado con `git stash`). La regex del test esperaba `\n` tras `class X(StrEnum):`, y en esta copia de trabajo `services/api/app/modules/inventory/vocabulary.py` tiene finales CRLF (`core.autocrlf=true`; el índice está en LF).
+
+  **Corregido en un commit propio, aprobado por el usuario** (`test(backoffice): el contrato del inventario tolera finales de línea CRLF`): `\r?\n` en la regex de `backendEnum`. Solo cambia el test; no toca código de producción ni invalida el build de H1 del 3003.
+  - el contrato pasa 7/7 con `vocabulary.py` en CRLF y en LF;
+  - la mutación de control (`'hardware'` alterado en `types/inventory.ts`) hace fallar 1 test;
+  - `node:test` completo vuelve a 499/499.
+- **Medición intermedia:** pendiente. El usuario avisa cuando los 5 JSON estén en `audit/after/steps/H1/`. La comprobación de la vista Accessibility de DevTools también está pendiente: no se anota nada hasta que el usuario la confirme.
 - **Verificación con el build de producción en el 3003** (variables desde PowerShell; desde Git Bash, MSYS convirtió `NEXT_PUBLIC_API_URL=/backend` en `C:/Program Files/Git/backend` dentro del bundle, así que el build se repitió desde PowerShell):
   - `curl.exe` sin token: el HTML de `/suppliers` ya trae la navegación reservada (6 `span`, el hueco y el botón deshabilitado), sin más `href` en la cabecera que el de la marca (`/`), que ya estaba. `/login` no cambia;
   - Network: con token, en `/suppliers`, ninguna precarga `_rsc` antes de `/backend/auth/me`; las de las rutas protegidas solo aparecen después, con los enlaces reales. Sin token, las únicas precargas son `/login`, `/register`, `/forgot-password` y `/`, esta última del enlace de la marca y anterior a H1;
