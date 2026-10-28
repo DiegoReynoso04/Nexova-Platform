@@ -25,6 +25,7 @@ Desde `services/api` (comprobado en Windows con PowerShell):
 **Jest (lógica TypeScript de auth en `uis/backoffice`):** ver §10.
 **Extras:** proveedores y gestor de incidencias con pytest (API-042) en §11; utilidades del frontend con Jest (FE-019) en §12.
 **Inventario (Hito 5):** §13.
+**Si el Control de aplicaciones de Windows bloquea el venv** (DLL de SQLAlchemy): las dos suites en un contenedor efímero, §14.
 
 ## 3. Plan de pruebas
 
@@ -285,3 +286,22 @@ uv run --no-sync python -m unittest tests.test_inventory_database tests.test_inv
 | Seed sin buscar el SKU; salidas del seed sin la regla del stock; órdenes duplicadas en la segunda ejecución; lifespan sin `dispose()` | `test_first_run_inserts_everything_and_second_run_inserts_nothing`; `test_seed_data_that_breaks_the_stock_rule_writes_nothing`; `test_existing_assets_with_orders_are_not_duplicated`; `test_shutdown_disposes_the_engine` |
 
 **Totales tras el Hito 5:** `unittest` 409 OK (312 + 97) y `uv run pytest` 612 OK (515 + 97).
+
+## 14. Ejecución en un contenedor efímero (cuando Windows bloquea el venv)
+
+Desde la auditoría de serialización (2026-10-28), el Control de aplicaciones de Windows bloquea en el venv del host una DLL compilada de SQLAlchemy (`ImportError: DLL load failed while importing _util_cy: Una directiva de Control de aplicaciones bloqueó este archivo`): ninguno de los dos comandos de §2 llega a importar la app. Alternativa sin tocar `pyproject.toml`, `uv.lock`, `requirements.txt` ni el Dockerfile: un contenedor de un solo uso (`--rm`) con la imagen de `api` que construye `docker compose` (`nexova-api:latest`; si no existe, `docker compose build api`).
+
+- **Qué se monta:** el monorepo entero en **solo lectura** (`/repo:ro`), no solo `services/api/tests`. La imagen excluye los tests (`services/.dockerignore`) y además ellos leen fuera de `services/api` a partir de `REPO_ROOT` (`tests/support.py`): fixtures de `packages/incident-analyzer/tests/fixtures/`, `scripts/seed_incidents.py`, `docs/ligthweight-storage-api.md`, `uv.lock`. Así se prueba el código del árbol de trabajo (no la copia de `app/` de la imagen) y el contenedor no puede escribir en el repositorio; las bases temporales van a `/tmp` del contenedor. `PYTHONDONTWRITEBYTECODE=1` (de la imagen) y `-p no:cacheprovider` evitan `__pycache__` y `.pytest_cache`.
+- **Paquetes del monorepo:** por `PYTHONPATH` desde `/repo/packages`, como hace la imagen.
+- **Dependencias de test:** solo dentro del contenedor y se pierden al salir, con `--no-deps` y las versiones exactas del grupo `dev` de `uv.lock` y sus transitivas que no están en `requirements.txt`: `httpx==0.28.1 httpcore==1.0.9 certifi==2026.7.22 pytest==9.1.1 pytest-cov==7.1.0 coverage==7.16.2 pluggy==1.6.0 iniconfig==2.3.1 packaging==26.3 pygments==2.21.0`. Hacen falta también para `unittest`: `TestClient` necesita `httpx`, y el descubrimiento de `unittest` importa los módulos de estilo pytest (`import pytest`), que en el venv del host sí lo tienen. Sin pytest, `unittest` da 10 errores de importación.
+- **Sin variables del `.env`:** los tests inyectan su propia `Settings`; no se pasa `--env-file` ni ningún secreto.
+
+Desde la raíz, en PowerShell:
+
+```powershell
+docker run --rm -v "${PWD}:/repo:ro" -w /repo/services/api -e PYTHONPATH=/repo/packages/shared:/repo/packages/incident-analyzer nexova-api:latest sh -c "uv pip install --system --no-cache --no-deps -q httpx==0.28.1 httpcore==1.0.9 certifi==2026.7.22 pytest==9.1.1 pytest-cov==7.1.0 coverage==7.16.2 pluggy==1.6.0 iniconfig==2.3.1 packaging==26.3 pygments==2.21.0 && python -m unittest discover -s tests -t . && python -m pytest -q -p no:cacheprovider"
+```
+
+En Git Bash, lo mismo con `MSYS_NO_PATHCONV=1` delante y `"$(pwd -W):/repo:ro"` como volumen (sin ello Git Bash reescribe las rutas `/repo/…`).
+
+**Cifras de partida** con este procedimiento, sobre `main` en `d987a06` (2026-10-28): `unittest` **415 OK** y `pytest` **618 passed** (3164 subtests). Un aviso esperado: `StarletteDeprecationWarning` de `starlette.testclient` por `httpx`.
