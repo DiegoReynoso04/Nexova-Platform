@@ -6,7 +6,10 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-10-28 — Auditoría de rendimiento: H3, H4, R1, medición final y REPORT.md
 
-**Estado: hecha, pendiente de la revisión del usuario antes del push.** Rama `feature/perf-audit`. Sin push. **Con el OK del usuario:** borrar la cuenta de prueba de la TinyDB de desarrollo, push y PR contra `main`.
+**Estado: hecha y revisada por el usuario; push y PR contra `main`** (ver el final de esta entrada). Rama `feature/perf-audit`.
+
+- **Ajuste tras la revisión (`510434e`):** REPORT.md §4 matiza que la subida de 88 a 100 tras H2 se debe sobre todo a que desaparece el 0,2344, y en parte a la ventana limpia (el 88 de H1 se midió con extensiones).
+- **Cuenta de prueba borrada** (2026-10-28, con el OK del usuario). Se borró con la propia API: login con la cuenta, comprobación de que `/auth/me` devuelve su email y `DELETE /users/{id}` (propio) → 204, que borra también el `Profile`. Después, el login de esa cuenta da 401 y `services/api/data/auth.json` ya no contiene su email. El archivo de credenciales del scratchpad se eliminó. «Synthetic ticket 028» sigue en `in_progress` (no se puede restaurar; ver la entrada de H2).
 
 - **Cambio de plan del usuario:**
   - S1 y R2 recortados (documentados como no aplicados);
