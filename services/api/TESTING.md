@@ -305,3 +305,5 @@ docker run --rm -v "${PWD}:/repo:ro" -w /repo/services/api -e PYTHONPATH=/repo/p
 En Git Bash, lo mismo con `MSYS_NO_PATHCONV=1` delante y `"$(pwd -W):/repo:ro"` como volumen (sin ello Git Bash reescribe las rutas `/repo/…`).
 
 **Cifras de partida** con este procedimiento, sobre `main` en `d987a06` (2026-10-28): `unittest` **415 OK** y `pytest` **618 passed** (3164 subtests). Un aviso esperado: `StarletteDeprecationWarning` de `starlette.testclient` por `httpx`.
+
+**Tras la auditoría de serialización** (`0f2ff58`, mismo procedimiento): `unittest` **436 OK** y `pytest` **639 passed** (3498 subtests). Los 21 nuevos están en `test_suppliers_api.py` (`ResponseSchemaTests`), `test_incident_manager_contract.py` y `test_serialization.py` (cobertura de `response_model` en las 32 rutas). Detalle en [`docs/serialization-audit.md`](../../docs/serialization-audit.md) §9.

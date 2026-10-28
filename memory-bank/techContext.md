@@ -283,6 +283,18 @@ Detalle en `progress.md` (entradas del 2026-10-10). Decisiones técnicas permane
 - **Rutas tipadas de Next 16:** las páginas de Entrada y Salida leen `searchParams` (promesa) con `PageProps<'/…'>`, y son dinámicas; una ruta nueva necesita `npx next typegen` antes de `tsc`. Una constante importada de un módulo `'use client'` en un Server Component llega como referencia de cliente: los ids de los títulos se pasan como props.
 - **Tests:** `node:test` (servicio, hooks, contrato y reglas estáticas) y Jest para funciones puras (`stock-level`, `stock-check`, `order-format`, validadores); sin renderizador de React.
 
+### Serialización de `services/api` (auditoría del 2026-10-28, rama `feature/serialization-audit`)
+
+Detalle y decisiones D1–D9 en [`docs/serialization-audit.md`](../docs/serialization-audit.md); contrato en `services/api/SPECS.md`.
+
+- **Tres modelos por recurso:** entrada, documento de almacenamiento y respuesta son modelos distintos.
+  - **Documentos de TinyDB** (`UserInDB`, `Profile`, `Supplier`, `Incident`): no son el `response_model` de ninguna ruta.
+  - **Respuestas** (`RegisteredUser`, `UserRead`, `CurrentUser`, `ProfileRead`, `SupplierRead`, `IncidentRead`, `IncidentListItem`, `HealthResponse`): cada campo nombrado y construidas con `.public()` / `.list_item()`.
+  - **Inventario:** ya lo cumplía (schemas Pydantic separados de los modelos SQLModel).
+- **Gestor de incidencias:** sus modelos de entrada son solo el contrato publicado en OpenAPI (`openapi_extra`); valida `nexova_shared`, para conservar los códigos del 400 de la Parte E. El 422 nativo se quita de esas rutas con `drop_native_validation_responses`. **FastAPI 0.141 guarda los routers incluidos sin aplanar**: `app.routes` no contiene sus rutas, hay que recorrerlas con `fastapi.routing.iter_route_contexts`.
+- **Regla fijada por tests:** `tests/test_serialization.py` exige `response_model` en cada decorador; la exportación CSV y los `DELETE` 204 lo declaran `None` y documentan su respuesta.
+- **Tests en contenedor:** si Windows bloquea el venv del host, las suites se ejecutan en un contenedor efímero (`services/api/TESTING.md` §14).
+
 ### Docker (#infra-40)
 
 **Implementación (2026-10-22/25, rama `feature/docker-dev-env`; brief en [`docs/infra-40-brief.md`](../docs/infra-40-brief.md), guía en [`docs/local-development.md`](../docs/local-development.md), revisión en [`docs/infra-40-review.md`](../docs/infra-40-review.md)):** decisiones técnicas permanentes, tomadas por el usuario (D1–D7 y posteriores) y pendientes de revisión por el tech lead.

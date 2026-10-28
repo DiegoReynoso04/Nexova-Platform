@@ -1,6 +1,6 @@
 # Auditoría de serialización — `services/api`
 
-**Estado: F0 (inventario y estado original).** Rama `feature/serialization-audit`, creada desde `main` en `d987a06` (merge de la PR #25), 2026-10-28. No se ha tocado código. Brief literal y nota de equivalencias en [`serialization-audit-brief.md`](./serialization-audit-brief.md). La columna «Estado final» se rellena en F1, después de que el usuario decida D1–D9 (§6).
+**Estado: F1 hecha y verificada (2026-10-28).** Rama `feature/serialization-audit`, creada desde `main` en `d987a06` (merge de la PR #25). F0 (`5b0bd38`) registró el estado original, que se conserva en las columnas «Salida actual» y «Estado original». El usuario decidió D1–D9 (§6), F1 se implementó en cuatro commits por módulo (§7) y la verificación final está en §9. Brief literal y nota de equivalencias en [`serialization-audit-brief.md`](./serialization-audit-brief.md).
 
 ## 0. Método y leyenda
 
@@ -10,7 +10,7 @@
 - **Clasificación** (la del brief): ✅ `response_model` explícito y esquema adecuado · ⚠️ tiene modelo pero incompleto, expone campos innecesarios o no coincide con el cliente · ❌ dict sin tipar u objeto ORM en crudo.
 - **Ningún endpoint devuelve hoy un objeto ORM de SQLModel** (`Asset`, `AssetEntry`, `AssetExit`): `service.py` del inventario construye siempre un schema de `schemas.py`. **Ningún endpoint devuelve `hashed_password`, tokens de restablecimiento ni su hash.** Lo que sí ocurre es que varios módulos TinyDB devuelven **el mismo modelo Pydantic con el que guardan el documento** (§1, T1).
 
-**Resumen:** 32 endpoints → **15 ✅ · 16 ⚠️ · 1 ❌**.
+**Resumen:** 32 endpoints. Estado original **15 ✅ · 16 ⚠️ · 1 ❌**; estado final **32 ✅**: cada ruta declara `response_model` y ninguna devuelve un documento de TinyDB ni un modelo ORM. Lo fija `services/api/tests/test_serialization.py`.
 
 ## 1. Hallazgos transversales
 
@@ -232,8 +232,60 @@ Un commit por módulo, en este orden. Cada uno deja la API y los dos frontends e
 
 Cierre de F1 (fuera de los cuatro commits de módulo): prueba manual de al menos tres endpoints en `/docs` comparando la respuesta con el esquema (propuesta: `POST /users`, `GET /auth/me`, `GET /api/incidents`), columna «Estado final» a ✅, `memory-bank/progress.md` y, si cambia algo técnico, `techContext.md`. Push y PR `feat: serialization audit and implementation` solo con el OK del usuario.
 
-## 8. No verificado en F0
+## 8. No verificado en F0 (resuelto en F1, ver §9)
 
 - Las respuestas reales de las rutas protegidas no se pidieron al contenedor (habría hecho falta crear una cuenta en la TinyDB de la demo): sus formas salen del código y de `openapi.json`. Se comprobará en `/docs` al cerrar F1.
 - `test_profiles.py`, `test_users.py` y `test_register.py` usan ayudantes de `auth_support.py`/`conftest.py`; qué aserciones exactas cambian se confirma al ejecutarlos en F1.
 - La suite de `services/api` no se ejecutó en F0 (no hay cambios de código). En el Python del host, importar SQLAlchemy falla hoy con «Una directiva de Control de aplicaciones bloqueó este archivo» (`_util_cy`, DLL compilada del venv): para F1 hará falta ejecutar los tests en un entorno donde Windows no bloquee esa DLL (o dentro del contenedor).
+
+## 9. Verificación final (F1, 2026-10-28)
+
+**Commits**, uno por módulo:
+
+| Commit | Qué |
+|---|---|
+| `29cd134` | Procedimiento de las suites en un contenedor efímero (`services/api/TESTING.md` §14) |
+| `e452889` | F1.1, auth, usuarios y perfiles (D1–D4); normalizadores de backoffice y tracker |
+| `112bed6` | F1.2, proveedores (`SupplierRead`, D4–D5) |
+| `1384400` | F1.3, gestor de incidencias (D4–D6, D8 B); backoffice |
+| `0f2ff58` | F1.4, `/health`, exportación y `DELETE` 204 (D7) + `test_serialization.py` |
+
+**Suites de `services/api`**, en el contenedor efímero de `TESTING.md` §14, porque el Control de aplicaciones de Windows bloquea la DLL de SQLAlchemy del venv del host:
+
+| | `unittest` | pytest |
+|---|---|---|
+| Partida (`d987a06`) | 415 OK | 618 passed |
+| Tras F1.1 | 415 OK | 618 passed |
+| Tras F1.2 | 417 OK | 620 passed |
+| Tras F1.3 | 429 OK | 632 passed |
+| Tras F1.4 | **436 OK** | **639 passed** (3498 subtests) |
+
+Los tests que cambiaron lo hicieron a propósito (D9): leían de la respuesta campos que ya no salen (`email` y `role` del registro, `user_id` del perfil) o comparaban la respuesta con el documento interno. Ninguno se borró. Los nuevos son `ResponseSchemaTests` en `test_suppliers_api.py` (incluido un documento antiguo que rompe la regla de moneda y se sigue listando), `test_incident_manager_contract.py` (coherencia D6 y OpenAPI) y `test_serialization.py` (cobertura de las 32 rutas; una mutación, quitar el `response_model` de `/health`, lo hace fallar).
+
+**Frontends** (fila de `AGENTS.md` §4):
+
+- **`uis/backoffice`:** `tsc`, `lint` (0 problemas), `build`, `node:test` 505/505 y Jest 240/240.
+- **`uis/talent-pipeline-tracker`:** `tsc`, `node:test` 55/55 y `lint` con los 4 errores `react-hooks/set-state-in-effect` anteriores a AUTH-02 (documentados en `AGENTS.md`), ninguno nuevo.
+
+**`/docs`, a mano**, con una cuenta de prueba temporal (`@example.invalid`), creada y borrada en la sesión:
+
+| Endpoint | Respuesta | Esquema |
+|---|---|---|
+| `POST /users` | 201 `{"id": "…"}` | `RegisteredUser` ✓ (sin email) |
+| *Authorize* + `GET /auth/me` | 200 `{id, email, role, created_at, profile: {name, phone, address}}` | `CurrentUser` / `ProfileRead` ✓ |
+| `GET /api/incidents` | 200, filas con `id, title, description, category, status, origin, branch, created_at` | `IncidentListItem` ✓ (sin `updated_at`) |
+
+`/docs` muestra además los esquemas de entrada del gestor y sus 400/401/404/503 sin el 422, y el 200 `text/csv` de la exportación.
+
+**Navegador, backoffice en Docker (3001)**, con la misma cuenta: login, `/account/profile` (email, nombre y guardar el teléfono → «Perfil actualizado»), `/suppliers` (15 proveedores) e `/incident-manager` (resumen y listado de 97). La primera carga de `/incident-manager` mostró «No se pudo comprobar la sesión»: un `socket hang up` puntual del proxy `/backend` (`Failed to proxy … ECONNRESET` en el log de `ui`; la API no registró ningún error). Con «Reintentar» cargó bien. No se cambió ningún estado ni proveedor de la demo.
+
+**Cuenta borrada** con la API: login, `/auth/me` con su email, `DELETE /users/{id}` → 204 (borra también el `Profile`). Después, el login da 401 y `services/api/data/auth.json` no contiene ni su email ni su id. El archivo de credenciales del scratchpad se eliminó.
+
+**Docker:** `api` sigue `healthy` con `HealthResponse` y `curl localhost:3001/backend/health` → `{"status":"ok"}`. El seed de proveedores (`docker compose exec api python -m app.seed`) inserta 0 de 15.
+
+**No verificado:**
+
+- **El tracker en el navegador.** Corre fuera de Docker (3002) y el `.env` de la raíz no incluye `http://localhost:3002` en `CORS_ALLOWED_ORIGINS`. No se tocó esa configuración. Sus cambios (normalizador y tipos de `/auth/me` y del perfil) están cubiertos por `tests/auth.test.mjs`.
+- **El registro desde la UI** (`/register`) en el navegador: crearía una segunda cuenta. Los dos frontends descartan el cuerpo del 201, y lo cubren los tests de su servicio.
+- **Trabajo futuro (D8 A):** errores documentados en `responses=` fuera del gestor.
+

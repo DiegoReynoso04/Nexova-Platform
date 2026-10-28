@@ -4,9 +4,33 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-28 — Auditoría de serialización de `services/api` (F0 + F1)
+
+**Estado: hecha y verificada; pendiente de la revisión del usuario antes del push y la PR** (`feat: serialization audit and implementation`). Rama `feature/serialization-audit`, creada desde `main` en `d987a06` (merge de la PR #25, que este banco no recogía; corregido en la entrada de la auditoría de rendimiento).
+
+- **Documentos:** brief literal con la nota de equivalencias en `docs/serialization-audit-brief.md`; auditoría en `docs/serialization-audit.md` (32 endpoints, estado original 15 ✅ · 16 ⚠️ · 1 ❌, estado final 32 ✅; decisiones D1–D9; verificación en §9).
+- **Decisiones del usuario (2026-10-28):**
+  - D1–D5, D7 y D9: las recomendadas;
+  - D6 A, con la condición de explicar el reparto: los modelos de entrada del gestor son el contrato publicado y `nexova_shared` la autoridad de validación;
+  - D8 B: esquemas de error solo en el gestor; la opción A queda como trabajo futuro.
+- **Commits:**
+  - `5b0bd38` F0;
+  - `29cd134` tests en contenedor;
+  - `e452889` auth (`RegisteredUser {id}`, `CurrentUser` sin `is_active`, `ProfileRead` sin ids; normalizadores de las dos apps);
+  - `112bed6` proveedores (`SupplierRead`; `Supplier` ya no hereda de `SupplierCreate`);
+  - `1384400` gestor (`IncidentRead`, `IncidentListItem` sin `updated_at`, contrato de entrada en OpenAPI, 400 documentado y sin el 422 nativo; backoffice);
+  - `0f2ff58` `HealthResponse`, `response_model=None` en la exportación y los `DELETE`, y `test_serialization.py`;
+  - y el de documentación de cierre.
+- **Tests de la API en un contenedor efímero** (`services/api/TESTING.md` §14): el Control de aplicaciones de Windows bloquea la DLL `_util_cy` de SQLAlchemy en el venv del host. Imagen `nexova-api:latest`, repo montado en solo lectura y dependencias de test fijadas a `uv.lock` solo dentro del contenedor. 415/618 → **436/639**.
+- **Frontends:** backoffice `tsc`, `lint`, `build`, `node:test` 505 y Jest 240; tracker `tsc`, `node:test` 55 y `lint` con los 4 errores previos.
+- **`/docs` y navegador:** `POST /users`, `GET /auth/me` y `GET /api/incidents` coinciden con sus esquemas; backoffice (login, perfil, guardar, `/suppliers`, `/incident-manager`) correcto. Cuenta temporal borrada con `DELETE /users/{id}` (204, login posterior 401, nada en `auth.json`).
+- **No verificado:** el tracker en el navegador (el `.env` no permite `http://localhost:3002` en CORS; no se tocó) y `/register` desde la UI.
+
+---
+
 ## 2026-10-28 — Auditoría de rendimiento: H3, H4, R1, medición final y REPORT.md
 
-**Estado: hecha y revisada por el usuario; push y PR contra `main`** (ver el final de esta entrada). Rama `feature/perf-audit`.
+**Estado: hecha, revisada por el usuario e integrada en `main` con la PR #25 (merge `d987a06`, 2026-10-28).** Rama `feature/perf-audit`. *Anotado al cerrar la auditoría de serialización: esta entrada se escribió antes del merge.*
 
 - **Ajuste tras la revisión (`510434e`):** REPORT.md §4 matiza que la subida de 88 a 100 tras H2 se debe sobre todo a que desaparece el 0,2344, y en parte a la ventana limpia (el 88 de H1 se midió con extensiones).
 - **Cuenta de prueba borrada** (2026-10-28, con el OK del usuario). Se borró con la propia API: login con la cuenta, comprobación de que `/auth/me` devuelve su email y `DELETE /users/{id}` (propio) → 204, que borra también el `Profile`. Después, el login de esa cuenta da 401 y `services/api/data/auth.json` ya no contiene su email. El archivo de credenciales del scratchpad se eliminó. «Synthetic ticket 028» sigue en `in_progress` (no se puede restaurar; ver la entrada de H2).
