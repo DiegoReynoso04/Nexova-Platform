@@ -24,9 +24,11 @@ class RegistrationTests(AuthTestCase):
         response = self.register(ALICE, new_password())
         self.assertEqual(response.status_code, 201, response.text)
         body = response.json()
-        self.assertEqual(set(body), {"id", "email", "role", "is_active", "created_at"})
-        self.assertEqual(body["email"], ALICE)
-        self.assertTrue(body["is_active"])
+        # Auditoría de serialización (D1): solo el `id`; el registro no reenvía el email.
+        self.assertEqual(set(body), {"id"})
+        self.assertNotIn(ALICE, response.text)
+        [user] = self.raw_users()
+        self.assertEqual((user["id"], user["email"], user["is_active"]), (body["id"], ALICE, True))
         self.assertNoCredentials(response)
 
     def test_password_is_stored_as_bcrypt_hash(self) -> None:  # [2]
@@ -61,7 +63,8 @@ class RegistrationTests(AuthTestCase):
         self.assertEqual((profile["name"], profile["phone"], profile["address"]), (None, None, None))
 
     def test_default_role_is_user(self) -> None:  # [5]
-        self.assertEqual(self.register(ALICE, new_password()).json()["role"], "user")
+        # La respuesta ya no lleva `role` (auditoría de serialización, D1): se comprueba en la base.
+        self.assertEqual(self.register(ALICE, new_password()).status_code, 201)
         self.assertEqual(self.raw_users()[0]["role"], "user")
 
     def test_public_registration_does_not_accept_role(self) -> None:  # [6]
@@ -359,18 +362,17 @@ class ProfileEndpointTests(AuthTestCase):
         self.assertUnauthorized(self.client.put(PROFILE_ME_URL, json={"name": "x"}))
 
     def test_profile_me_with_token(self) -> None:  # [23]
-        user_id, token = self.user_with_token(ALICE, name="Alice", phone="600")
+        _, token = self.user_with_token(ALICE, name="Alice", phone="600")
         response = self.client.get(PROFILE_ME_URL, headers=bearer(token))
         self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual((body["user_id"], body["name"], body["phone"], body["address"]), (user_id, "Alice", "600", None))
+        # Sin `id` ni `user_id` (auditoría de serialización, D2).
+        self.assertEqual(response.json(), {"name": "Alice", "phone": "600", "address": None})
 
     def test_update_own_profile(self) -> None:
         _, token = self.user_with_token(ALICE, name="Alice", phone="600")
         response = self.client.put(PROFILE_ME_URL, json={"name": "Alice R.", "address": "Valencia"}, headers=bearer(token))
         self.assertEqual(response.status_code, 200, response.text)
-        body = response.json()
-        self.assertEqual((body["name"], body["phone"], body["address"]), ("Alice R.", "600", "Valencia"))
+        self.assertEqual(response.json(), {"name": "Alice R.", "phone": "600", "address": "Valencia"})
         cleared = self.client.put(PROFILE_ME_URL, json={"phone": None}, headers=bearer(token)).json()
         self.assertIsNone(cleared["phone"])
 
@@ -395,12 +397,14 @@ class AuthMeTests(AuthTestCase):
         response = self.client.get(AUTH_ME_URL, headers=bearer(token))
         self.assertEqual(response.status_code, 200)
         body = response.json()
+        # Auditoría de serialización (D2, D3): sin `is_active` y el perfil sin `id` ni `user_id`.
+        self.assertEqual(set(body), {"id", "email", "role", "created_at", "profile"})
+        self.assertEqual(set(body["profile"]), {"name", "phone", "address"})
         self.assertEqual((body["id"], body["email"], body["role"]), (user_id, ALICE, "user"))
         self.assertEqual(
             (body["profile"]["name"], body["profile"]["phone"], body["profile"]["address"]),
             ("Alice", "600", "Valencia"),
         )
-        self.assertEqual(body["profile"]["user_id"], user_id)
         self.assertNoCredentials(response)
 
 

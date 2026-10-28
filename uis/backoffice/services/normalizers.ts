@@ -383,8 +383,6 @@ export function normalizeAccessToken(input: unknown): AccessToken {
 function parseProfile(input: unknown, path: string): Profile {
   const value = expectObject(input, path);
   return {
-    id: readString(value, 'id', path),
-    user_id: readString(value, 'user_id', path),
     name: readNullableString(value, 'name', path),
     phone: readNullableString(value, 'phone', path),
     address: readNullableString(value, 'address', path),
@@ -404,7 +402,6 @@ export function normalizeCurrentUser(input: unknown): CurrentUser {
     id: readString(body, 'id', root),
     email: readString(body, 'email', root),
     role: readOneOf(body, 'role', root, USER_ROLES),
-    is_active: readBoolean(body, 'is_active', root),
     created_at: readString(body, 'created_at', root),
     profile: body.profile === null ? null : parseProfile(body.profile, `${root}.profile`),
   };

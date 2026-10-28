@@ -3,8 +3,10 @@
 - `User` guarda solo credenciales: `id`, `email`, `hashed_password`,
   `is_active`, `role`, `created_at`. Nombre y datos de contacto viven en
   `Profile` (`id`, `user_id`, `name`, `phone`, `address`), uno a uno con `User`.
-- `UserInDB` es el único modelo con `hashed_password` y nunca es el
-  `response_model` de una ruta: las respuestas usan `UserRead`/`CurrentUser`.
+- `UserInDB` y `Profile` son los documentos de TinyDB. Ninguno es el
+  `response_model` de una ruta: las respuestas usan esquemas propios con cada
+  campo nombrado (`RegisteredUser`, `UserRead`, `CurrentUser`, `ProfileRead`;
+  docs/serialization-audit.md). `UserInDB` es el único con `hashed_password`.
 - Los modelos de entrada usan `extra="forbid"`: un campo no previsto
   (p. ej. `hashed_password`, `user_id` o `is_active`) responde 422.
 """
@@ -104,8 +106,45 @@ class ProfileUpdate(ProfileFields):
     """Entrada de `PUT /profiles/me`. No admite `user_id`: el dueño lo fija el token."""
 
 
+class UserInDB(BaseModel):
+    """Documento completo de TinyDB. Solo para uso interno (login y servicios)."""
+
+    id: UUID
+    email: str
+    hashed_password: str
+    is_active: bool
+    role: UserRole
+    created_at: datetime
+
+    def public(self) -> "UserRead":
+        return UserRead(id=self.id, email=self.email, role=self.role, is_active=self.is_active, created_at=self.created_at)
+
+
+class Profile(BaseModel):
+    """Documento de TinyDB. `id` y `user_id` son internos: no salen por la API (`ProfileRead`)."""
+
+    id: UUID
+    user_id: UUID
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+    def public(self) -> "ProfileRead":
+        return ProfileRead(name=self.name, phone=self.phone, address=self.address)
+
+
+class RegisteredUser(BaseModel):
+    """Respuesta de `POST /users`: solo la referencia del usuario creado.
+
+    Sin `email` (el cliente acaba de enviarlo; flujo no autenticado) ni campos
+    constantes en el registro (`role` es siempre `user`, `is_active` siempre `true`).
+    """
+
+    id: UUID
+
+
 class UserRead(BaseModel):
-    """`User` tal como sale por la API: nunca incluye `hashed_password`."""
+    """Respuesta de `/users` y `/users/{id}` (propio o admin). Nunca incluye `hashed_password`."""
 
     id: UUID
     email: str
@@ -114,27 +153,27 @@ class UserRead(BaseModel):
     created_at: datetime
 
 
-class UserInDB(UserRead):
-    """Documento completo de TinyDB. Solo para uso interno (login y servicios)."""
+class ProfileRead(BaseModel):
+    """`Profile` tal como sale por la API (`/profiles/me` y dentro de `/auth/me`), sin `id` ni `user_id`."""
 
-    hashed_password: str
+    name: str | None
+    phone: str | None
+    address: str | None
 
-    def public(self) -> UserRead:
-        return UserRead.model_validate(self.model_dump(exclude={"hashed_password"}))
 
+class CurrentUser(BaseModel):
+    """Respuesta de `GET /auth/me`: el usuario autenticado y su perfil.
 
-class Profile(BaseModel):
+    Lleva el `email` del propio llamante (lo muestra la vista de perfil). Sin
+    `is_active`: aquí sería siempre `true`, porque un usuario inactivo no pasa
+    `get_current_user` (401).
+    """
+
     id: UUID
-    user_id: UUID
-    name: str | None = None
-    phone: str | None = None
-    address: str | None = None
-
-
-class CurrentUser(UserRead):
-    """Respuesta de `GET /auth/me`: credenciales públicas + perfil vinculado."""
-
-    profile: Profile | None
+    email: str
+    role: UserRole
+    created_at: datetime
+    profile: ProfileRead | None
 
 
 class Token(BaseModel):

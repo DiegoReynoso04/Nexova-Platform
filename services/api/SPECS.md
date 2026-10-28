@@ -353,7 +353,7 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 | `role` | `admin` \| `manager` \| `user` | solo `PUT` de un admin (D-AUTH-8, §21) | `user` en todo registro público |
 | `created_at` | datetime ISO 8601 UTC | nunca (422) | lo genera el sistema |
 
-`Profile` (tabla `profiles`): `id` (UUID), `user_id` (= `User.id`), `name`, `phone`, `address` (strings opcionales, recortados, máx. 200 caracteres). Se crea en la misma operación que el usuario (con los campos opcionales de `POST /users` o vacío) y se borra con él: nunca hay un perfil sin usuario.
+`Profile` (tabla `profiles`): `id` (UUID), `user_id` (= `User.id`), `name`, `phone`, `address` (strings opcionales, recortados, máx. 200 caracteres). Se crea en la misma operación que el usuario (con los campos opcionales de `POST /users` o vacío) y se borra con él: nunca hay un perfil sin usuario. `id` y `user_id` son internos: ninguna respuesta los incluye (`ProfileRead`, §18).
 
 **User y Profile viven solo en TinyDB**, ahora y después de introducir Supabase/PostgreSQL: no existen ni se deben crear tablas de usuarios ni de perfiles en PostgreSQL. Las tablas PostgreSQL de otros módulos guardarán únicamente el `id` de TinyDB como `user_uuid`.
 
@@ -361,17 +361,24 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 
 | Método y ruta | Auth | Body | Éxito | Errores |
 |---|---|---|---|---|
-| `POST /users` | pública | `{email, password, name?, phone?, address?}` (`role` → 422) | **201** + `UserRead` (`role=user`) | 409, 422 |
+| `POST /users` | pública | `{email, password, name?, phone?, address?}` (`role` → 422) | **201** + `RegisteredUser` `{id}` (se crea con `role=user`) | 409, 422 |
 | `GET /users` | admin | — | **200** + lista de `UserRead` | 401, 403 |
 | `GET /users/{id}` | propio o admin | — | **200** + `UserRead` | 401, 403, 404 (solo admin), 422 (id no UUID) |
 | `PUT /users/{id}` | propio o admin | `{email?, password?, role?}` (`password` y `role` solo admin) | **200** + `UserRead` | 401, 403 (otro usuario, o `role`/`password` sin ser admin), 404, 409, 422 |
 | `DELETE /users/{id}` | propio o admin | — | **204** (borra también el `Profile`) | 401, 403, 404 |
 | `POST /auth/login` | pública | formulario OAuth2 `username` (= email), `password` | **200** `{access_token, token_type: "bearer", expires_in}` | 401 `invalid_credentials`, 422 |
-| `GET /auth/me` | token | — | **200** `{id, email, role, is_active, created_at, profile}` | 401 |
-| `GET /profiles/me` | token | — | **200** `Profile` | 401 |
-| `PUT /profiles/me` | token | `{name?, phone?, address?}` (`user_id` → 422) | **200** `Profile` | 401, 422 |
+| `GET /auth/me` | token | — | **200** `CurrentUser` `{id, email, role, created_at, profile}` (`profile`: `ProfileRead` o `null`) | 401 |
+| `GET /profiles/me` | token | — | **200** `ProfileRead` `{name, phone, address}` | 401 |
+| `PUT /profiles/me` | token | `{name?, phone?, address?}` (`user_id` → 422) | **200** `ProfileRead` | 401, 422 |
 
-`UserRead` = `{id, email, role, is_active, created_at}`: ninguna respuesta contiene `password` ni `hashed_password`.
+Esquemas de respuesta (auditoría de serialización, [`docs/serialization-audit.md`](../../docs/serialization-audit.md), D1–D4): cada campo nombrado en el esquema y ninguno es el documento de TinyDB (`UserInDB`, `Profile`).
+
+- `RegisteredUser` = `{id}`. El registro no reenvía el `email` (flujo no autenticado) ni campos constantes al crear (`role=user`, `is_active=true`).
+- `UserRead` = `{id, email, role, is_active, created_at}`, solo en `/users` y `/users/{id}` (el propio usuario o un admin).
+- `CurrentUser` = `{id, email, role, created_at, profile}`: el `email` es el del propio llamante (lo muestra la vista de perfil); sin `is_active`, que aquí sería siempre `true` (un inactivo recibe 401).
+- `ProfileRead` = `{name, phone, address}`, sin `id` ni `user_id`.
+
+Ninguna respuesta contiene `password` ni `hashed_password`.
 
 **503 `storage_unavailable`** (§4, §5): toda ruta que lee o escribe `auth.json` lo responde si el archivo no se puede leer o escribir o está corrupto. Incluye `POST /auth/login`, `POST /users`, las rutas de la Parte D y **cualquier ruta protegida de las Partes A, B y E**, porque `get_current_user` busca el usuario del token en esa base.
 

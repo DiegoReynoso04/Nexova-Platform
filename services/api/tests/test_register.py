@@ -65,13 +65,14 @@ def test_registration_creates_an_active_user_with_hashed_password_and_profile(
     password = secrets.token_urlsafe(12)
     created = register_user(UserCreate(email=f"ana{DOMAIN}", password=password, name="Ana"), service)
 
-    # D-AUTH-8: el registro público crea siempre `user`, activo.
-    assert (created.role, created.is_active, created.created_at) == (UserRole.USER, True, clock.now)
-    # La respuesta nunca lleva la credencial.
-    assert "hashed_password" not in created.model_dump()
+    # La respuesta es solo la referencia (auditoría de serialización, D1): ni la
+    # credencial ni el email que el cliente acaba de enviar.
+    assert set(created.model_dump()) == {"id"}
 
     stored = auth_repo.get_user(str(created.id))
     assert stored is not None
+    # D-AUTH-8: el registro público crea siempre `user`, activo.
+    assert (stored.role, stored.is_active, stored.created_at) == (UserRole.USER, True, clock.now)
     assert stored.hashed_password != password
     assert verify_password(password, stored.hashed_password)
 
@@ -84,7 +85,6 @@ def test_registration_stores_the_email_trimmed_and_lowercased(service: UserServi
     # D-AUTH-6: un solo formato guardado, para que el login y la unicidad no dependan de mayúsculas.
     created = register_user(UserCreate(email="  Ana.Lopez@EXAMPLE.invalid ", password=VALID_PASSWORD), service)
 
-    assert created.email == "ana.lopez@example.invalid"
     found = auth_repo.get_user_by_email("ana.lopez@example.invalid")
     assert found is not None and found.id == created.id
 

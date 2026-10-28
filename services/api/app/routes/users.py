@@ -3,7 +3,8 @@
 Permisos: `POST` público; `GET /users` solo admin; `GET`/`PUT`/`DELETE
 /users/{id}` el propio usuario o un admin (otro → 403). Solo un admin cambia
 `role` y, desde AUTH-03, `password` (el resto usa `POST /auth/change-password`).
-Ninguna respuesta incluye `hashed_password` (`response_model=UserRead`).
+Ninguna respuesta incluye `hashed_password` (`response_model=UserRead`), y el
+registro tampoco reenvía el `email` (`RegisteredUser`, solo el `id`).
 """
 
 from uuid import UUID
@@ -11,21 +12,22 @@ from uuid import UUID
 from fastapi import APIRouter, Response, status
 
 from app.auth.dependencies import AdminDep, CurrentUserDep, UserServiceDep, ensure_self_or_admin
-from app.auth.models import UserCreate, UserRead, UserRole, UserUpdate
+from app.auth.models import RegisteredUser, UserCreate, UserRead, UserRole, UserUpdate
 from app.core.errors import ForbiddenError
 
 router = APIRouter(tags=["users"])
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=UserRead)
-def register_user(payload: UserCreate, service: UserServiceDep) -> UserRead:
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=RegisteredUser)
+def register_user(payload: UserCreate, service: UserServiceDep) -> RegisteredUser:
     """Registro público. Crea el `User` (contraseña hasheada) y su `Profile`.
 
     `name`, `phone` y `address` son opcionales y van al `Profile`. El rol lo
-    fija el backend (siempre `user`); enviar `role` responde 422.
+    fija el backend (siempre `user`); enviar `role` responde 422. Responde
+    solo el `id`: el cliente ya tiene el email y lo siguiente es el login.
     """
     user, _ = service.create_user(payload, role=UserRole.USER)
-    return user.public()
+    return RegisteredUser(id=user.id)
 
 
 @router.get("", response_model=list[UserRead])
