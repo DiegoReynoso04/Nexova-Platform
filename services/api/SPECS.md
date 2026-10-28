@@ -142,9 +142,11 @@ Devuelve el último análisis correcto del proceso como CSV.
 
 Sin análisis previo: `404` `{"detail": "no analysis available yet", "code": "no_analysis"}`.
 
+Sin cuerpo JSON: la ruta declara `response_model=None` y documenta en OpenAPI (`responses=`) el `200 text/csv` y sus tres cabeceras (auditoría de serialización, [`docs/serialization-audit.md`](../../docs/serialization-audit.md), D7).
+
 ### 3.3 `GET /health`
 
-`200` `{"status": "ok"}`. Técnico, fuera de `/api`, sin datos.
+`200` `{"status": "ok"}` (`HealthResponse`, `status: Literal["ok"]`). Técnico, fuera de `/api`, sin datos. Lo usa el healthcheck de Docker (`docker-compose.yml`).
 
 ---
 
@@ -285,7 +287,7 @@ Las respuestas incluyen siempre los 11 campos; los opcionales ausentes van como 
 | `GET /suppliers/{id}` | — | **200** + proveedor | 404 `supplier_not_found`, 422 (id no numérico) |
 | `PATCH /suppliers/{id}/rate` | `{"monthly_rate": number}` | **200** + proveedor con `updated_at` nuevo | 404, 422 (≤ 0, no numérico, campos extra) |
 | `PATCH /suppliers/{id}/status` | `{"status": "active"}` o `{"status": "suspended"}` | **200** + proveedor (`updated_at` sin cambios) | 404, 422 |
-| `DELETE /suppliers/{id}` | — | **204** sin cuerpo | 404 |
+| `DELETE /suppliers/{id}` | — | **204** sin cuerpo (`response_model=None`, 204 documentado) | 404 |
 
 Errores con el formato común `{detail, code}` (§4); el 422 devuelve la lista `{loc, msg, type}` sin `input`. Cualquier ruta responde **503** `storage_unavailable` si `suppliers.json` no se puede leer o escribir o está corrupto (§4, §5).
 
@@ -365,7 +367,7 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 | `GET /users` | admin | — | **200** + lista de `UserRead` | 401, 403 |
 | `GET /users/{id}` | propio o admin | — | **200** + `UserRead` | 401, 403, 404 (solo admin), 422 (id no UUID) |
 | `PUT /users/{id}` | propio o admin | `{email?, password?, role?}` (`password` y `role` solo admin) | **200** + `UserRead` | 401, 403 (otro usuario, o `role`/`password` sin ser admin), 404, 409, 422 |
-| `DELETE /users/{id}` | propio o admin | — | **204** (borra también el `Profile`) | 401, 403, 404 |
+| `DELETE /users/{id}` | propio o admin | — | **204** sin cuerpo (borra también el `Profile`; `response_model=None`, 204 documentado) | 401, 403, 404 |
 | `POST /auth/login` | pública | formulario OAuth2 `username` (= email), `password` | **200** `{access_token, token_type: "bearer", expires_in}` | 401 `invalid_credentials`, 422 |
 | `GET /auth/me` | token | — | **200** `CurrentUser` `{id, email, role, created_at, profile}` (`profile`: `ProfileRead` o `null`) | 401 |
 | `GET /profiles/me` | token | — | **200** `ProfileRead` `{name, phone, address}` | 401 |

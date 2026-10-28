@@ -57,7 +57,14 @@ def update_user(user_id: UUID, payload: UserUpdate, current_user: CurrentUserDep
     return service.update_user(str(user_id), payload).public()
 
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+@router.delete(
+    "/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    # Sin cuerpo: `response_model=None` declarado (auditoría de serialización, D7).
+    response_model=None,
+    response_class=Response,
+    responses={204: {"description": "Usuario y perfil eliminados, sin cuerpo"}},
+)
 def delete_user(user_id: UUID, current_user: CurrentUserDep, service: UserServiceDep) -> Response:
     """Elimina el usuario y su `Profile` vinculado."""
     ensure_self_or_admin(current_user, user_id)

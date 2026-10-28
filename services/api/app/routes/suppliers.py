@@ -61,7 +61,14 @@ def update_supplier_status(supplier_id: int, payload: StatusUpdate, repository: 
     return _found(repository.update_status(supplier_id, payload.status))
 
 
-@router.delete("/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+@router.delete(
+    "/{supplier_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    # Sin cuerpo: `response_model=None` declarado (auditoría de serialización, D7).
+    response_model=None,
+    response_class=Response,
+    responses={204: {"description": "Proveedor eliminado, sin cuerpo"}},
+)
 def delete_supplier(supplier_id: int, repository: RepositoryDep) -> Response:
     """Elimina el proveedor. Lo exige el brief; la UI no lo expone (ver SPECS.md)."""
     if not repository.delete(supplier_id):
