@@ -280,11 +280,11 @@ Tiene bien `width`/`height` (no causa CLS) y `loading="lazy"`. Está debajo del 
 
 **Por qué es requerida.** Es requerida por el criterio (b): la auditoría falla con ahorro estimado y la sección *Image optimization* de la skill `performance` prescribe exactamente esta corrección. Es la última de las cuatro porque no mueve ningún KPI.
 
-### 3.2 Sugerencias (no se corrigen, salvo S1)
+### 3.2 Sugerencias (no se corrigen)
 
 | ID | Qué | Evidencia | Por qué no es requerida / decisión |
 |---|---|---|---|
-| S1 | `logo.svg` sin `width`/`height` en los 3 HTML (`index.html:70`, `application.html:28`, `404.html:35`). En el index desktop es el LCP y no tiene `fetchpriority="high"` | `unsized-images` y `lcp-discovery-insight` fallan, pero sin ahorro estimado (el CLS del sitio es 0) | No tiene ahorro, pero es barata y es una causa habitual que cita el brief. **Se aplicará después de H3, en su propio commit, si sigue teniendo sentido:** al quitar el script del CDN puede cambiar cuál es el LCP del index desktop |
+| S1 | `logo.svg` sin `width`/`height` en los 3 HTML (`index.html:70`, `application.html:28`, `404.html:35`). En el index desktop es el LCP y no tiene `fetchpriority="high"` | `unsized-images` y `lcp-discovery-insight` fallan, pero sin ahorro estimado (el CLS del sitio es 0) | No tiene ahorro. **No aplicado:** el usuario lo recortó para cerrar el ticket. En la medición final (desktop a 870 px), el LCP del index ya no es el logo, sino el `h1` |
 | S2 | CSS bloqueante de Next en el login en frío (`3041c5xfhjw05.css`, 4,8 KB) | `render-blocking-insight`: 150 ms en el login mobile. Con sesión, el CSS sale de la caché y no hay ahorro | La skill (`LCP.md`) pide además un *render delay* largo, y hay 71 ms. El LCP del login (1,7 s) cumple. La solución (`experimental.inlineCss`) es experimental y global, y empeora las visitas recurrentes, que es el uso diario del backoffice |
 | S3 | Polyfills (`Array.prototype.at`, `flat`, `Object.hasOwn`…) y JavaScript sin usar del chunk `0zutzion2550z.js` | `legacy-javascript-insight` (13–14 KiB) y `unused-javascript` (26 KiB, solo en el login), con ahorro FCP/LCP de 0 | No es código de la app: el chunk empieza con el `polyfill-module` del propio Next.js, y la app ya usa los navegadores modernos por defecto de Next 16. Quitarlo exigiría intervenir el build del framework |
 | S4 | `src/js/validations.js` sin minificar | `unminified-javascript`: 4 KiB, sin ahorro en métricas | Netlify lo sirve comprimido en producción, y minificarlo añadiría otro archivo generado que mantener |
@@ -328,8 +328,8 @@ Todos los casos de esta sección se han verificado en el código actual: archivo
 
 | Caso | Qué | Origen | Decisión |
 |---|---|---|---|
-| R1 | Contenedor de las tablas con scroll horizontal | F0 | Se aplica |
-| R2 | Hook genérico de listados del inventario | F0 | Se aplica |
+| R1 | Contenedor de las tablas con scroll horizontal | F0 | **Aplicado** (`bd7d084`) |
+| R2 | Hook genérico de listados del inventario | F0 | **No aplicado** (recortado por el usuario) |
 | R3 | Lista de errores por campo de los avisos de error | F0 | Candidato, no se aplica |
 | R4 | Bloque «Cargando…» de los listados | Encontrado en F3 | Candidato, no se aplica |
 | R5 | Cabecera y pie copiados en los 3 HTML del sitio | F0 | Descartado |
@@ -390,7 +390,31 @@ export function TableScroll({ caption, minWidthClass, columns, children }: Table
 - el de `production-source.test.mjs:354`, que busca el literal `className="relative overflow-x-auto` en `order-table.tsx`: pasará a comprobarlo en `table-scroll.tsx` y a exigir que la tabla lo use;
 - la lista de excepciones (`:413-418`): sale `supplier-table.tsx`.
 
-### R2 — Un hook genérico de carga de listados para el inventario
+**Diseño aplicado (`bd7d084`).** Es más sencillo que el propuesto arriba: a petición del usuario, el componente es **solo el contenedor** y lo usan **las 7 tablas**, también las 3 de `/incidents`.
+
+```tsx
+// components/ui/table-scroll.tsx
+export interface TableScrollProps {
+  children: ReactNode;
+  /** Borde, fondo y esquinas de las tablas de datos (listados). */
+  framed?: boolean;
+  /** Clases extra del contenedor (p. ej. el margen superior). */
+  className?: string;
+}
+export function TableScroll({ children, framed = false, className = '' }: TableScrollProps);
+```
+
+- **Qué pinta:** `<div className="relative overflow-x-auto …">` alrededor de la tabla. El caption, la cabecera y las filas siguen en cada tabla.
+- **Quién lo usa:** las 4 tablas de datos (`framed`) y las 3 de `/incidents` (`className="mt-4"` o `"mt-6"`). Sin cambio visual; esas 4 tablas (`/suppliers` y las 3 de `/incidents`) ganan el `relative` que les faltaba.
+- **Tests:**
+  - la lista de excepciones de `production-source.test.mjs` queda **vacía**;
+  - el test del historial exige `<TableScroll framed>`;
+  - una regla nueva exige que `overflow-x-auto` solo esté en `table-scroll.tsx` y que las 7 tablas lo usen. Se probó con 2 mutaciones.
+- **Por qué no la firma completa con `caption` y `columns`:** las cabeceras, el caption y los anchos mínimos quedan repetidos. Pero solo el contenedor tenía una regla que mantener (el `relative`), y unificar el resto tocaba el marcado de cada tabla sin mejorar ninguna métrica.
+
+### R2 — Un hook genérico de carga de listados para el inventario (no aplicado)
+
+**Decisión del usuario (2026-10-28):** recortado para cerrar el ticket. R1 cumple el «al menos un componente reutilizable o Custom Hook» del brief. El análisis de abajo sigue valiendo como trabajo futuro.
 
 **Dónde aparece:**
 
@@ -544,24 +568,27 @@ La duplicación se documenta como deuda; no se corrige en esta auditoría.
 
 Orden aprobado. Primero lo que incumple umbral, en el backoffice: es el CLS, y es lo que afecta de verdad a quien usa la herramienta a diario en el móvil. Después, lo que solo es requerido por el criterio de la skill, en el sitio. Por último, las refactorizaciones y la medición final.
 
-Un problema por commit. Las condiciones de medición son las de §1, con la guía de [`audit/after/runs.md`](audit/after/runs.md): el build del backoffice siempre desde PowerShell, e incógnito sin extensiones.
+**Plan final (decisión del usuario, 2026-10-28).** Un problema por commit. Las condiciones de medición son las de §1, con la guía de [`audit/after/runs.md`](audit/after/runs.md): el build del backoffice siempre desde PowerShell y una ventana sin extensiones.
 
-Tras cada corrección se hace **una sola ejecución en la URL clave**, y se guarda solo el JSON en `audit/after/steps/<paso>/<página>-<modo>.json`, sin capturas. El CLS es determinista y la Performance varió ≤ 1 punto entre ejecuciones en la medición inicial. El resto de los casos (el control del login, inventory/products, suppliers desktop y las demás vistas) se cubre en la medición final.
+- **Mediciones intermedias:** solo tras H1 y H2, con 1 ejecución en la URL clave y solo el JSON, en `audit/after/steps/<paso>/`.
+- **H3, H4 y R1:** se aplicaron seguidos, cada uno con su commit y su validación, sin medición intermedia.
+- **S1 y R2:** recortados, quedan documentados como no aplicados.
+- **Medición final:** los 12 casos, con 1 ejecución por caso, captura y JSON. Se aceptó una sola porque en el antes la Performance varió ≤ 1 punto entre ejecuciones y el CLS fue idéntico.
+- **Atribución del impacto:** el de H3 y H4, por sus auditorías en el JSON final; el de H1 y H2, por sus mediciones intermedias.
 
-| Paso | Qué | Medición intermedia (URL · modo) | Qué se espera |
-|---|---|---|---|
-| 1 | **H1**: reservar el espacio de la navegación mientras se valida la sesión | `/suppliers` · mobile y `/incident-manager` · mobile | Sin el desplazamiento de `main`: suppliers mobile con CLS < 0,1; incident-manager mobile aún por encima. Además, en Network, ninguna precarga de rutas protegidas antes de `/auth/me` |
-| 2 | **H2**: reservar el espacio del resumen de incidencias | `/incident-manager` · mobile | CLS < 0,1 y Performance ≥ 90 |
-| 3 | **H3**: Tailwind precompilado (D3) | `/` · mobile, más la comparación visual en desktop y a 375 px | Sin el script del CDN en `render-blocking-insight`; FCP/LCP más bajos; CLS 0 |
-| 4 | **H4**: foto en tamaños adaptados y WebP (D4) | Ninguna: su efecto (bytes) se valida en la medición final | `image-delivery-insight` sin ahorro pendiente y menos peso total; puntuación sin cambio esperado |
-| 5 | **S1**: dimensiones del logo y `fetchpriority`, si tras H3 sigue teniendo sentido | Ninguna (medición final) | `unsized-images` y `lcp-discovery-insight` pasan |
-| 6 | **R1**: `components/ui/table-scroll.tsx` | Ninguna (medición final) | Ninguna regresión; las tablas, igual a la vista |
-| 7 | **R2**: hook genérico de listados del inventario | Ninguna (medición final) | Ninguna regresión |
-| 8 | **Medición final** | Los 12 casos, con 3 ejecuciones, capturas y JSON en `audit/after/<app>/<página>/`, igual que `audit/before/` | Base de la comparativa de `REPORT.md` |
+| Paso | Qué | Commit | Medición | Resultado |
+|---|---|---|---|---|
+| 1 | **H1**: reservar el espacio de la navegación mientras se valida la sesión | `4e23d91` | Intermedia: `/suppliers` e `/incident-manager` · mobile | Desaparece el desplazamiento de `main`: suppliers mobile CLS 0,136 → 0,003; incident-manager 0,373 → 0,240. Ninguna precarga de rutas protegidas antes de `/auth/me` |
+| — | Arreglo del contrato del inventario con CRLF | `126d067` | — | `node:test` en verde |
+| 2 | **H2**: reservar el espacio del resumen de incidencias | `4039279` | Intermedia: `/incident-manager` · mobile | CLS 0,240 → 0; Performance 88 → 100 |
+| 3 | **H3**: Tailwind precompilado (D3) | `5823cf7` | Final, por auditorías, más la comparación visual de 11 estados (0 diferencias) | Sin el script del CDN en `render-blocking-insight`; FCP mobile 1,9 → 0,9 s |
+| 4 | **H4**: foto en tamaños adaptados y WebP (D4) | `1c6bc92` | Final, por auditorías | Index mobile 376 → 79 KiB; Performance sin cambio, como se esperaba |
+| 5 | **R1**: `components/ui/table-scroll.tsx` | `bd7d084` | Final | Ninguna regresión; sin scroll horizontal a 375 px |
+| 6 | **Medición final** | — | 12 casos, 1 ejecución | Ver [`REPORT.md`](REPORT.md). **Desktop no homogéneo:** ventana de 870 px frente a 1526 en el antes |
 
 URLs completas: el sitio en `http://localhost:3000` y el backoffice en `http://localhost:3003` (`npm run build` + `npm run start -- -p 3003`).
 
-Las sugerencias S2–S5 no se aplican, y N1–N2 y X1–X4 quedan documentados.
+Las sugerencias S1–S5 y las refactorizaciones R2–R4 no se aplican; R5 está descartada. N1–N2 y X1–X4 quedan documentados.
 
 Cada corrección de código se valida, además, con la validación de su subproyecto (`AGENTS.md` §4):
 

@@ -419,33 +419,35 @@ Tampoco se tratan:
 
 **Orden aprobado por el usuario (revisión de F2):** H1 → H2 → H3 → H4 → S1 → R1 → R2 → medición final.
 
-Primero lo que incumple umbral (criterio a), en el backoffice. Después lo que solo cumple el criterio b, en el sitio. Un problema por commit. Todas las mediciones siguen la guía de [`audit/after/runs.md`](after/runs.md):
+**Plan final (decisión del usuario, 2026-10-28):** H1 → CRLF → H2 → H3 → H4 → R1 → medición final.
 
-- el backoffice con `npm run build` + `npm run start -- -p 3003`, **siempre desde PowerShell**;
-- con sesión, «Clear storage» desmarcado y una ejecución de calentamiento en las vistas con datos;
-- «Clear storage» marcado en el sitio y en el login;
-- ventana de incógnito **sin extensiones**.
+- **S1 y R2:** recortados, quedan documentados como no aplicados.
+- **Mediciones intermedias:** solo tras H1 y H2.
+- **H3, H4 y R1:** se aplicaron seguidos, cada uno con su commit y su validación.
+- **Medición final:** los 12 casos con 1 ejecución por caso.
 
-**Cómo se mide tras cada paso.** El usuario cambió el plan tras H1 (2026-10-28) para no alargar el ticket:
+Primero lo que incumple umbral (criterio a), en el backoffice. Después lo que solo cumple el criterio b, en el sitio. Las condiciones de medición están en [`audit/after/runs.md`](after/runs.md) §1:
 
-- tras cada corrección, **1 sola ejecución en la URL clave**, guardando solo el JSON en `audit/after/steps/<paso>/`, sin capturas;
-- el resto de los casos (el control del login, inventory/products, suppliers desktop y las demás vistas) se cubre en la medición final.
+- el backoffice siempre desde PowerShell;
+- una ventana sin extensiones;
+- el mismo ancho de ventana que en el antes. Esta regla no se cumplió en la final desktop (870 frente a 1526 px; ver §3 de ese archivo).
 
-| Orden | Paso | Commit | Medición intermedia (URL · modo) | Qué se espera ver |
+| Orden | Paso | Commit | Medición | Resultado |
 |---|---|---|---|---|
-| 1 | **H1**: espacio reservado de la navegación con sesión | `perf(backoffice): reserva el espacio de la navegación mientras se valida la sesión` | `localhost:3003/suppliers` · mobile<br>`localhost:3003/incident-manager` · mobile | Desaparece el desplazamiento de `main` (0,1337). Suppliers mobile, CLS < 0,1; incident-manager mobile todavía por encima (falta H2) |
-| 2 | **H2**: espacio reservado del panel de resumen | `perf(backoffice): reserva el espacio del resumen de incidencias mientras carga` | `localhost:3003/incident-manager` · mobile | Desaparece el desplazamiento de la sección del listado (0,2344). CLS < 0,1 y Performance ≥ 90 |
-| 3 | **H3**: Tailwind precompilado (D3) | `perf(website): Tailwind precompilado con su CLI en lugar del Play CDN` | `localhost:3000/` · mobile. Además, la comparación visual de D3 en desktop y a 375 px | `render-blocking-insight` sin el script del CDN; FCP/LCP más bajos que 1,9 / 2,1 s; CLS 0. Comprobar qué elemento es ahora el LCP del index (S1) |
-| 4 | **H4**: foto en tamaños adaptados y WebP (D4) | `perf(website): foto del index en tamaños adaptados y WebP` | Ninguna. Su efecto (bytes) se valida en la medición final | `image-delivery-insight` sin ahorro pendiente y `total-byte-weight` por debajo de 377 KiB. Performance y LCP, sin cambio esperado |
-| 5 | **S1**: `width`/`height` del logo y `fetchpriority`. Con su propio commit, y solo si tras H3 sigue teniendo sentido | — | Ninguna (lectura del agente: el plan del usuario no la incluye) | `unsized-images` y `lcp-discovery-insight` pasan, en la medición final |
-| 6 | **R1**: `components/ui/table-scroll.tsx` (`AUDIT.md` §4) | — | Ninguna (ídem) | Sin regresión, en la medición final |
-| 7 | **R2**: hook genérico de listados del inventario (`AUDIT.md` §4) | — | Ninguna (ídem) | Sin regresión, en la medición final |
-| 8 | **Medición final** completa | — | Los 12 casos, 3 ejecuciones cada uno, capturas y JSON en `audit/after/<app>/<página>/`, igual que el *before* | Base de `REPORT.md` |
+| 1 | **H1**: espacio reservado de la navegación con sesión | `4e23d91` | Intermedia: `/suppliers` e `/incident-manager` · mobile | Desaparece el desplazamiento de `main` (0,1337): suppliers mobile CLS 0,136 → 0,003; incident-manager 0,373 → 0,240 |
+| — | Contrato del inventario con CRLF | `126d067` | — | `node:test` en verde |
+| 2 | **H2**: espacio reservado del panel de resumen | `4039279` | Intermedia: `/incident-manager` · mobile | Desaparece el 0,2344 (y el 0,0052 de los filtros): CLS 0, Performance 100 |
+| 3 | **H3**: Tailwind precompilado (D3) | `5823cf7` | Final, por auditorías | Sin el script del CDN en `render-blocking-insight`; FCP mobile 1,9 → 0,9 s y LCP 2,1 → 1,2 s en el index |
+| 4 | **H4**: foto en tamaños adaptados y WebP (D4) | `1c6bc92` | Final, por auditorías | `total-byte-weight` del index mobile 376 → 79 KiB; `image-delivery-insight` 295 → 26 KiB (residual por los dos anchos del `srcset`) |
+| 5 | **S1** | — | — | No aplicado (recortado) |
+| 6 | **R1**: `components/ui/table-scroll.tsx` | `bd7d084` | Final | Sin regresión |
+| 7 | **R2** | — | — | No aplicado (recortado) |
+| 8 | **Medición final** | — | 12 casos, 1 ejecución, capturas y JSON en `audit/after/<app>/<página>/` | [`REPORT.md`](../REPORT.md) |
 
 - **Orden de H1 y H2.** H1 primero porque afecta a las tres vistas y, sin él, H2 no basta para que incident-manager baje de 0,1.
-- **El sitio después.** Hoy no incumple ningún umbral. Sus dos correcciones son requeridas por el criterio (b).
+- **El sitio después.** No incumplía ningún umbral. Sus dos correcciones eran requeridas por el criterio (b).
 
-S2–S5 no se aplican.
+S1–S5 no se aplican.
 
 ## 8. Decisiones del usuario sobre esta lista (revisión de F2)
 
@@ -455,4 +457,4 @@ S2–S5 no se aplican.
 2. **S2 sigue como sugerencia**, por los motivos de §4: la skill (`LCP.md`) exige además un *render delay* largo y hay 71 ms; el flag de Next es experimental y empeora las visitas recurrentes.
 3. **El diseño de H1 se aprueba con una condición:** la navegación reservada se pinta con `<span>`, sin `Link` ni `href`, para que no haya precargas de rutas protegidas. Se verifica en la pestaña Network (§3, H1).
 4. **H3:** el comando del CSS se documenta en un `uis/website/README.md` nuevo (§3, H3).
-5. **S1** se aplica después de H3, con su propio commit, si sigue teniendo sentido.
+5. **S1** se aplicaría después de H3, con su propio commit, si seguía teniendo sentido. **Después, el usuario lo recortó (2026-10-28)**, igual que R2.

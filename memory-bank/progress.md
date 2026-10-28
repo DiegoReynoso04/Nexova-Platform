@@ -4,6 +4,45 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-28 — Auditoría de rendimiento: H3, H4, R1, medición final y REPORT.md
+
+**Estado: hecha, pendiente de la revisión del usuario antes del push.** Rama `feature/perf-audit`. Sin push. **Con el OK del usuario:** borrar la cuenta de prueba de la TinyDB de desarrollo, push y PR contra `main`.
+
+- **Cambio de plan del usuario:**
+  - S1 y R2 recortados (documentados como no aplicados);
+  - H3, H4 y R1 seguidos y sin mediciones intermedias;
+  - medición final con 1 ejecución por caso;
+  - el impacto de H3 y H4 se atribuye por sus auditorías y el de H1 y H2 por sus intermedias;
+  - REPORT.md es un informe general.
+- **H3 (`5823cf7`, `uis/website`): Tailwind precompilado en lugar del Play CDN.**
+  - CLI 4.3.3, la misma versión que servía el CDN. Entrada en `src/css/tailwind.css` (`source(none)` y `@source` de los 3 HTML y `src/js/*.js`); salida minificada y versionada en `src/css/styles.css` (17 555 B), enlazada en las 3 páginas (la 404, con ruta absoluta).
+  - Las 15 clases del JS y las 151 de los HTML tienen regla.
+  - `npx @tailwindcss/cli` a secas no encuentra `tailwindcss`, porque no hay `node_modules` en el árbol. El comando del `uis/website/README.md` nuevo instala el CLI en una carpeta temporal y usa `NODE_PATH`, que `@tailwindcss/node` admite; genera el mismo hash que con `npx`.
+  - Sin cambio visual: estilos calculados (50 propiedades) y caja de cada elemento, en 11 estados (3 páginas a 1280 y 375 px, menú abierto, formulario en error y en éxito). 0 diferencias, con un control positivo.
+  - También se actualizaron `uis/README.md`, `uis/README.es.md` y la fila del sitio en `AGENTS.md`. `docs/ARCHITECTURE_PROPOSAL.md` no se toca: es una foto histórica.
+- **H4 (`1c6bc92`): foto en tamaños adaptados.** `<picture>` con WebP de 768 y 1152 px (43 y 91 KB) más un JPEG de 1152 (98 KB, mozjpeg), generados con `npx sharp-cli@6.1.0`. `sizes` según la rejilla. Se conservan `width`/`height`, `lazy` y el `alt`. El original de 308 KB se queda como fuente; el comando está en el README del sitio.
+- **R1 (`bd7d084`, `uis/backoffice`): `components/ui/table-scroll.tsx` (`TableScroll`, `framed` y `className`) en las 7 tablas.**
+  - Es solo el contenedor; no es la firma con `caption` y `columns` de `AUDIT.md` §4, que se actualizó con el diseño aplicado.
+  - La lista de excepciones del `relative` en `production-source.test.mjs` queda vacía.
+  - Una regla nueva exige que `overflow-x-auto` solo esté en el componente, probada con 2 mutaciones.
+  - Verificado a 375 px, sin scroll horizontal: `/suppliers`, `/incident-manager`, las 4 de `/inventory` e `/incidents` (con el fixture sintético servido por un servidor temporal en el 3999, desde el scratchpad).
+- **Medición final** (usuario, 2026-10-28 19:08–19:25, build de `bd7d084`, 1 ejecución por caso, ventana de invitado sin extensiones, 12 casos con captura y JSON):
+  - **Móvil, homogéneo a 412 px:** CLS 0 / 0,003 / 0,001 en las tres vistas con datos, que estaban en 0,373 / 0,136 / 0,135. Performance del backoffice 99 (incident-manager desde 82). En el sitio, FCP 1,9 → 0,9 s, LCP 2,1 → 1,2 s (index) y 2,0 → 1,3 s (application), y el index pasa de 376 a 79 KiB.
+  - **Desktop, NO homogéneo:** la ventana medía 870 px en el después, frente a 1526 en el antes, sin emulación en ninguno de los dos lados.
+  - **CPU:** el `benchmarkIndex` es un 35–45 % más bajo (2080–2499 frente a 3570–3893). Explica la subida del TBT del backoffice mobile (101–134 ms, todo < 200 ms).
+  - **«Clear storage» desmarcado en el sitio:** sin efecto, por el `no-store`.
+  - **Residuales desktop, efectos del ancho y no regresiones:**
+    - suppliers 0,071: la fila de filtros pasa de línea al llegar el contador (mismo nodo que S5);
+    - inventory 0,026: el residual 3 de H1 (el email más ancho que `w-40`).
+
+    Se suma el residual de imagen de H4 (26–45 KiB). Los arreglos posibles quedan como trabajo futuro.
+- **Documentación:**
+  - `audit/after/runs.md`: guía con el plan final y la regla del ancho de ventana, §3 de la medición final y la prueba del Tab como «no hecha»;
+  - `REPORT.md`, nuevo;
+  - `AUDIT.md` §3.2, §4 y §5;
+  - `audit/skills-findings.md` §7 y §8.
+- **Pendiente con el OK del usuario:** borrar la cuenta de prueba de la TinyDB, push y PR.
+
 ## 2026-10-28 — Auditoría de rendimiento: H2 (esqueleto del resumen de `/incident-manager`)
 
 **Estado: H2 cerrada** (código en `4039279`, medición en `audit/after/runs.md` §2). Rama `feature/perf-audit`. Sin push. **No se empieza H3 hasta que el usuario revise esta medición.**
@@ -13,7 +52,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - **CLS** 0,373 → **0** (0,0000449; 0,240 en H1);
   - **FCP** 0,6 s (625 ms; 58 ms observado), como en el antes: confirma que el 0,9 s de H1 fue por las extensiones;
   - **`layout-shifts`:** desaparecen el 0,2344 del listado y también el 0,0052 de los filtros (no es un redondeo). Solo queda un `dd.tabular-nums` del resumen (0,0000449, al cambiar «—» por el número).
-- **Accessibility de H1, comprobada por el usuario en el DOM servido** (JavaScript desactivado en `/suppliers`): `<div aria-hidden="true" inert class="invisible …">` con 6 `<span>` sin `href`, `span.w-40` y el botón `disabled` con `tabindex="-1"`. **Panel Accessibility de DevTools: no consultado. Prueba del Tab: no confirmada** (el mensaje del usuario dejó la opción sin rellenar).
+- **Accessibility de H1, comprobada por el usuario en el DOM servido** (JavaScript desactivado en `/suppliers`): `<div aria-hidden="true" inert class="invisible …">` con 6 `<span>` sin `href`, `span.w-40` y el botón `disabled` con `tabindex="-1"`. **Panel Accessibility de DevTools: no consultado. Prueba del Tab: no hecha** (confirmado por el usuario el 2026-10-28).
 - **«Synthetic ticket 028», sin restaurar:** el ciclo de vida no permite `in_progress → open` (`ALLOWED_TRANSITIONS` en `nexova_shared`, `INCIDENT_TRANSITIONS` en el frontend). No se forzó el archivo. Los totales del resumen difieren del antes: `open` 26 en lugar de 27 e `in_progress` 2 en lugar de 1, con el mismo total (97). No afecta al CLS: mismas 97 filas y mismas 19 filas del resumen. Documentado en `audit/after/runs.md`.
 - **Cierre:** 3003 parado, build sin variables (rewrites vacíos) y `docker compose start ui` (website 200; `/backend/health` OK en el 3001).
 
@@ -50,7 +89,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
     - H3: `/` mobile;
     - H4: sin intermedia.
   - **Medición final:** el control del login, inventory/products, suppliers desktop y el resto, con 12 casos, 3 ejecuciones y capturas.
-  - **Lectura del agente, no confirmada:** S1, R1 y R2 tampoco tienen intermedia; se cubren en la final.
+  - **Lectura del agente, confirmada después por el usuario:** S1, R1 y R2 tampoco tienen intermedia; se cubren en la final.
   - **Dónde consta:** `audit/skills-findings.md` §7, `AUDIT.md` §5 y la guía de `audit/after/runs.md` §1.
 - **Medición de H1** (`audit/after/steps/H1/`, 2 JSON, Lighthouse 13.4.1, URLs correctas):
   - **suppliers mobile:** CLS 0,136 → **0,003** y Perf 95 → 100;

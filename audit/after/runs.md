@@ -8,11 +8,19 @@ Registro de las mediciones posteriores a cada corrección de la auditoría de re
 
 Son las mismas condiciones de la medición inicial ([`audit/before/runs.md` §1](../before/runs.md)), con dos reglas añadidas, aprendidas en H1. Ver §2 para el detalle de por qué.
 
+**Plan final (decisión del usuario, 2026-10-28).**
+
+- Mediciones intermedias solo tras H1 y H2 (§2).
+- H3, H4 y R1 se aplicaron seguidos, sin medición intermedia.
+- Una sola medición final con 1 ejecución por caso (§3). La justificación: en el antes, la Performance varió ≤ 1 punto entre ejecuciones y el CLS fue idéntico.
+- El impacto de H3 y H4 se atribuye por sus auditorías en el JSON final (`render-blocking-insight`, `image-delivery-insight`, `total-byte-weight`). El de H1 y H2, por sus mediciones intermedias.
+
 ### Herramienta y navegador
 
 - Panel Lighthouse de Chrome DevTools, ejecutado por el usuario. Nunca el CLI de Lighthouse ni PageSpeed.
 - Modo *Navigation*, *throttling* simulado y las 4 categorías.
-- **Ventana de incógnito sin extensiones.** Una extensión permitida en incógnito también se inyecta en la página y entra en la medición. Hay que desactivar «Permitir en incógnito» en todas, o usar un perfil de Chrome sin extensiones. Se comprueba en el JSON: ninguna petición `chrome-extension://` en `network-requests`.
+- **Ventana sin extensiones.** Una extensión permitida en incógnito también se inyecta en la página y entra en la medición. Desde H2 se mide en una ventana de invitado de Chrome, que no carga extensiones. Se comprueba en el JSON: ninguna petición `chrome-extension://` en `network-requests`.
+- **El mismo ancho de ventana que en el antes.** En desktop no hay emulación de pantalla: el viewport es la ventana. El antes se midió a 1526 px; la medición final desktop, a 870 px (ver §3). Para comparar desktop con desktop, la ventana tiene que tener el mismo ancho. Se comprueba en el JSON con `fullPageScreenshot.screenshot.width`.
 
 ### Backoffice (`uis/backoffice`), en el 3003
 
@@ -46,12 +54,12 @@ Son las mismas condiciones de la medición inicial ([`audit/before/runs.md` §1]
 | Sitio y `/login` | marcado (en frío) | sin sesión | no |
 | Vistas con datos | desmarcado | con sesión | 1 ejecución descartada |
 
-Para las vistas con datos se usa una cuenta de prueba de la TinyDB de desarrollo, creada en H1. Sigue en la base hasta la medición final y se borra al cerrar el ticket, con la confirmación del usuario.
+**Cuenta de prueba.** La cuenta que creó el agente en la TinyDB de desarrollo para verificar H1 y H2 en el navegador sigue en la base. Se borra al cerrar el ticket, con la confirmación del usuario. La sesión con la que el usuario mide no consta en los JSON.
 
 ### Qué se guarda
 
-- **Tras cada corrección:** 1 sola ejecución en la URL clave del paso (tabla de [`AUDIT.md` §5](../../AUDIT.md)). Solo el JSON, en `audit/after/steps/<paso>/<página>-<modo>.json`, sin capturas.
-- **Medición final:** los 12 casos, con 3 ejecuciones cada uno. Captura y JSON de la mediana en `audit/after/<app>/<página>/<página>-<modo>.{png,json}`, igual que `audit/before/`.
+- **Tras H1 y H2:** 1 sola ejecución en la URL clave del paso. Solo el JSON, en `audit/after/steps/<paso>/<página>-<modo>.json`, sin capturas.
+- **Medición final:** los 12 casos, con **1 ejecución** por caso. Captura y JSON en `audit/after/<app>/<página>/<página>-<modo>.{png,json}`, con la misma estructura que `audit/before/`.
 
 **Comprobaciones de cada JSON:**
 
@@ -146,7 +154,7 @@ El FCP sube en los dos casos: 614 → 912 ms y 613 → 922 ms. Los JSON lo expli
 
 - **DOM:** el contenedor del hueco es `<div aria-hidden="true" inert class="invisible …">`, con 6 `<span>` sin `href` ni `<a>`, el hueco del email (`span.w-40`) y el botón «Cerrar sesión» `disabled` con `tabindex="-1"`.
 - **Panel Accessibility de DevTools:** no consultado.
-- **Prueba del Tab:** no confirmada; el mensaje del usuario dejó esa opción sin rellenar. Lo que consta es la comprobación del agente en H1 sobre el HTML del servidor sin scripts: el foco programático no entra en el botón reservado y sí en el enlace de la marca.
+- **Prueba del Tab:** no hecha (confirmado por el usuario). Lo que consta es la comprobación del agente en H1 sobre el HTML del servidor sin scripts: el foco programático no entra en el botón reservado y sí en el enlace de la marca.
 
 ### H2 — esqueleto del resumen de `/incident-manager` (`4039279`)
 
@@ -192,3 +200,85 @@ Accessibility, Best Practices y SEO: 100. El elemento LCP sigue siendo `main.mx-
 No se ha tocado el archivo de la base.
 
 Desde entonces, los totales del resumen difieren del antes en ese ticket: `open` 26 en lugar de 27 e `in_progress` 2 en lugar de 1. `resolved` (56), `discarded` (13) y el total (97) no cambian. **No afecta al CLS ni a la altura:** el listado sigue con 97 filas y el resumen tiene las mismas 19 filas; solo cambian dos números.
+
+## 3. Medición final
+
+Hecha por el usuario el 2026-10-28, de 19:08 a 19:25 (hora local, UTC+1). Medida sobre el build de producción de `bd7d084`, que es el último commit de código (H1, H2, CRLF, H3, H4 y R1). 1 ejecución por caso, en una ventana de invitado de Chrome, sin extensiones.
+
+### 3.1 Comprobaciones
+
+Los 12 JSON cumplen:
+
+- `finalDisplayedUrl` es la URL pedida;
+- `formFactor` es el esperado;
+- Lighthouse 13.4.1;
+- `runWarnings` vacío;
+- **0 peticiones `chrome-extension://`**;
+- cada caso tiene su captura.
+
+| Caso | Archivo | `fetchTime` (UTC → local) | `benchmarkIndex` (antes → después) | Ancho (antes → después) | `disableStorageReset` (antes → después) |
+|---|---|---|---|---|---|
+| 1 | `website/index/index-mobile` | 18:08:58Z → 19:08:58 | 3892,5 → 2472 | 412 → 412 | `false` → **`true`** |
+| 2 | `website/index/index-desktop` | 18:10:34Z → 19:10:34 | 3728,5 → 2273,5 | **1526 → 870** | `false` → **`true`** |
+| 3 | `website/application/application-mobile` | 18:11:47Z → 19:11:47 | 3862,5 → 2329,5 | 412 → 412 | `false` → **`true`** |
+| 4 | `website/application/application-desktop` | 18:14:42Z → 19:14:42 | 3724,5 → 2136 | **1526 → 870** | `false` → **`true`** |
+| 9 | `backoffice/login/login-mobile` | 18:16:08Z → 19:16:08 | 3825,5 → 2142,5 | 412 → 412 | `false` → `false` |
+| 10 | `backoffice/login/login-desktop` | 18:17:30Z → 19:17:30 | 3730,5 → 2080,5 | **1526 → 870** | `false` → `false` |
+| 6 | `backoffice/incident-manager/incident-manager-mobile` | 18:18:33Z → 19:18:33 | 3671,5 → 2269,5 | 412 → 412 | `true` → `true` |
+| 5 | `backoffice/incident-manager/incident-manager-desktop` | 18:19:28Z → 19:19:28 | 3726,5 → 2282,5 | **1526 → 870** | `true` → `true` |
+| 11 | `backoffice/suppliers/suppliers-mobile` | 18:20:19Z → 19:20:19 | 3833,5 → 2498,5 | 412 → 412 | `true` → `true` |
+| 7 | `backoffice/suppliers/suppliers-desktop` | 18:23:08Z → 19:23:08 | 3569,5 → 2281 | **1526 → 870** | `true` → `true` |
+| 12 | `backoffice/inventory-products/inventory-products-mobile` | 18:24:59Z → 19:24:59 | 3653,5 → 2433 | 412 → 412 | `true` → `true` |
+| 8 | `backoffice/inventory-products/inventory-products-desktop` | 18:25:46Z → 19:25:46 | 3643 → 2329 | **1526 → 870** | `true` → `true` |
+
+### 3.2 Diferencias de condiciones frente al antes
+
+1. **La comparación desktop NO es homogénea.** El ancho sale de `fullPageScreenshot.screenshot.width`: 1526 px en el antes y 870 px en el después, en los 6 casos desktop. En ninguno de los dos lados hay emulación de pantalla (`screenEmulation.disabled`), así que el viewport es el ancho de la ventana. A 870 px el diseño cambia:
+   - **La foto del index pasa a una sola columna** (la rejilla es de 2 columnas a partir de `lg`, 1024 px). Se muestra a 807×486 en lugar de 576×347, y el navegador elige el WebP de 1152 en lugar del de 768.
+   - **Cambia el elemento LCP del index desktop:** antes era el logo (`img.h-10`) y ahora es el `h1` del hero.
+   - **La navegación de la cabecera y la fila de filtros de `/suppliers` parten línea** de otra manera. De ahí salen los dos desplazamientos residuales de §3.4.
+
+   Por eso la conclusión principal de la auditoría se apoya en los **6 casos móviles, que sí son homogéneos** (412 px en los dos lados). Los desktop se dan como complementarios.
+2. **CPU más lenta.** El `benchmarkIndex` del después va de 2080,5 a 2498,5, frente a 3569,5–3892,5 en el antes: entre un 35 y un 45 % menos. Lighthouse aplica el mismo multiplicador de CPU (×4 en mobile) sobre una máquina más lenta, así que todo lo que es trabajo de CPU sube:
+   - el **TBT** del backoffice mobile, de 24–78 ms a 101–134 ms. Todos siguen por debajo de 200 ms, y por eso la Performance de esas vistas es 99 y no 100;
+   - el trabajo del hilo principal y el `bootup-time`, por ejemplo en incident-manager mobile: de 772 a 1306 ms y de 341 a 595 ms.
+
+   **No dependen de la CPU** el CLS (es geometría y orden de pintado), los bytes transferidos ni el TTFB.
+3. **«Clear storage» desmarcado en el sitio.** Los 4 casos del sitio tienen `disableStorageReset: true` en el después, frente a `false` en el antes. **No tiene efecto:** el servidor local envía `Cache-Control: no-store`, y todos los recursos del sitio se transfirieron completos (`transferSize` mayor que el tamaño del recurso en los 5 del index).
+
+### 3.3 Resultados
+
+Valores de los JSON. FCP y LCP en segundos, con un decimal; TBT en ms. Accessibility, Best Practices y SEO: 100 en los 12 casos, antes y después.
+
+| # | App | Página | Modo | Perf | FCP | LCP | TBT | CLS | Peso total |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | website | index | mobile | 98 → **100** | 1,9 → **0,9** | 2,1 → **1,2** | 15 → 72 | 0 → 0 | 376 → **79 KiB** |
+| 3 | website | application | mobile | 98 → **100** | 1,9 → **0,9** | 2,0 → **1,3** | 25 → 6 | 0 → 0 | 93 → **54 KiB** |
+| 9 | backoffice | login | mobile | 100 → 99 | 0,8 → 0,8 | 1,7 → 1,6 | 23 → 101 | 0 → 0 | 174 → 175 KiB |
+| 6 | backoffice | incident-manager | mobile | 82 → **99** | 0,6 → 0,6 | 1,0 → 1,0 | 24 → 134 | 0,373 → **0** | 25 → 27 KiB |
+| 11 | backoffice | suppliers | mobile | 95 → **99** | 0,6 → 0,6 | 1,1 → 1,0 | 78 → 125 | 0,136 → **0,003** | 22 → 24 KiB |
+| 12 | backoffice | inventory/products | mobile | 95 → **99** | 0,6 → 0,7 | 0,9 → 1,0 | 58 → 122 | 0,135 → **0,001** | 26 → 29 KiB |
+| 2 | website | index | desktop* | 100 → 100 | 0,5 → 0,2 | 0,5 → 0,3 | 0 → 0 | 0 → 0 | 377 → 125 KiB |
+| 4 | website | application | desktop* | 100 → 100 | 0,5 → 0,2 | 0,5 → 0,3 | 0 → 0 | 0 → 0 | 93 → 54 KiB |
+| 10 | backoffice | login | desktop* | 100 → 100 | 0,2 → 0,2 | 0,4 → 0,4 | 0 → 0 | 0,003 → 0 | 174 → 175 KiB |
+| 5 | backoffice | incident-manager | desktop* | 100 → 100 | 0,2 → 0,2 | 0,3 → 0,3 | 0 → 0 | 0,032 → 0 | 25 → 25 KiB |
+| 7 | backoffice | suppliers | desktop* | 100 → 99 | 0,2 → 0,2 | 0,2 → 0,3 | 0 → 2 | 0,032 → 0,071 | 22 → 22 KiB |
+| 8 | backoffice | inventory/products | desktop* | 100 → 100 | 0,2 → 0,2 | 0,2 → 0,3 | 0 → 0 | 0,032 → 0,026 | 27 → 27 KiB |
+
+\* Desktop: 1526 px en el antes y 870 px en el después; comparación no homogénea (§3.2).
+
+**Atribución por auditorías:**
+
+- **H3 (Tailwind):** el script del CDN desaparece de `render-blocking-insight` en los 4 casos del sitio. El único recurso bloqueante es `styles.css`, con un ahorro estimado de 50 ms en index mobile y 0 en el resto (antes, 300–1150 ms). `unused-javascript` ya no aparece en el index (antes, 21 KiB).
+- **H4 (foto):** `total-byte-weight` del index baja de 376 a 79 KiB en mobile y de 377 a 125 KiB en desktop. Se transfiere el WebP de 768 (43 KB) en mobile y el de 1152 (91 KB) en desktop a 870 px, en lugar del JPEG de 308 KB. `image-delivery-insight` pasa de 295 a 26 KiB en mobile y de 274 a 45 KiB en desktop (residual en §3.4).
+- **H1 y H2:** se atribuyen por sus mediciones intermedias (§2). En la final, el CLS de las tres vistas móviles con datos queda en 0, 0,003 y 0,001, y en `layout-shifts` ya no aparecen ni `main.mx-auto` (H1) ni la sección del listado (H2).
+
+### 3.4 Residuales (no son regresiones de las correcciones)
+
+| Caso | Valor | Nodo (`layout-shifts`) | Causa | Posible arreglo (trabajo futuro, no aplicado) |
+|---|---|---|---|---|
+| suppliers desktop | CLS 0,071 | `div[role="group"][aria-label="Filtros del directorio"]` | La cabecera del directorio (`supplier-directory-view.tsx`) pone el título y los filtros en una fila con `flex-wrap justify-between`. Cuando llega el listado aparece el contador («15 proveedores · … con renovación…»), el bloque del título se ensancha y, a 870 px, los filtros pasan a la línea siguiente. **En el antes no iba sumado a la cabecera:** el CLS total desktop era 0,0323, exactamente el desplazamiento de la cabecera. Es el mismo nodo que el residual S5 de mobile (0,0026), que aquí pesa más porque la fila se mueve entera de línea | Reservar la línea del contador antes de que llegue el listado (un marcador con la misma altura), o poner los filtros siempre en su propia línea |
+| inventory/products desktop | CLS 0,026 | `header … nav > button` («Cerrar sesión») | Residual 3 de H1: el hueco del email en la navegación reservada mide `w-40` (160 px), y el email real de la sesión es más ancho. Al llegar `/auth/me`, el botón se desplaza dentro de la navegación, que a 870 px ocupa dos líneas | Dar al email la misma anchura que el hueco (`w-40` + `truncate`, con el email completo en `title`), para que el ancho no dependa del email |
+| index (H4) | `image-delivery-insight` 26 KiB (mobile) / 45 KiB (desktop) | Según la auditoría: el WebP de 768×462 «mostrado» a 475×286 en mobile y el de 1152×694 a 807×486 en desktop a 870 px | El `srcset` solo tiene dos anchos (768 y 1152), así que el navegador elige el más cercano por arriba al ancho que necesita | Añadir una variante intermedia (p. ej. 480 o 640 px), si el ahorro lo justifica |
+
+Ninguno supera el umbral: CLS < 0,1 y ninguna auditoría con ahorro en métricas. Los dos de CLS dependen del ancho de la ventana; con el ancho del antes (1526 px) no se sabe si aparecen, porque no se midió.
