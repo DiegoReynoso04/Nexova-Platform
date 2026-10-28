@@ -45,6 +45,7 @@ import {
   type CountItem,
   type Incident,
   type IncidentApiError,
+  type IncidentListItem,
   type IncidentSummary,
 } from '@/types/incident-manager';
 import {
@@ -423,7 +424,7 @@ export function normalizeAuthValidationErrors(input: unknown): AuthFieldError[] 
 // Gestor centralizado de incidencias (services/api/SPECS.md Parte E)
 // ---------------------------------------------------------------------------
 
-function parseIncident(input: unknown, path: string): Incident {
+function parseIncidentListItem(input: unknown, path: string): IncidentListItem {
   const value = expectObject(input, path);
   return {
     id: readString(value, 'id', path),
@@ -434,8 +435,12 @@ function parseIncident(input: unknown, path: string): Incident {
     origin: readOneOf(value, 'origin', path, INCIDENT_ORIGINS),
     branch: readOneOf(value, 'branch', path, INCIDENT_BRANCHES),
     created_at: readString(value, 'created_at', path),
-    updated_at: readString(value, 'updated_at', path),
   };
+}
+
+function parseIncident(input: unknown, path: string): Incident {
+  const item = parseIncidentListItem(input, path);
+  return { ...item, updated_at: readString(expectObject(input, path), 'updated_at', path) };
 }
 
 /** Respuesta 200/201 con una incidencia (`GET /api/incidents/{id}`, `POST`, `PATCH …/status`). */
@@ -443,10 +448,10 @@ export function normalizeIncident(input: unknown): Incident {
   return parseIncident(input, 'response');
 }
 
-/** Respuesta 200 de `GET /api/incidents`: lista de incidencias. */
-export function normalizeIncidentList(input: unknown): Incident[] {
+/** Respuesta 200 de `GET /api/incidents`: filas sin `updated_at` (la API ya no lo envía en el listado). */
+export function normalizeIncidentList(input: unknown): IncidentListItem[] {
   if (!Array.isArray(input)) throw new UnexpectedResponseError('response', 'array', describeType(input));
-  return input.map((item, index) => parseIncident(item, `response[${index}]`));
+  return input.map((item, index) => parseIncidentListItem(item, `response[${index}]`));
 }
 
 /**

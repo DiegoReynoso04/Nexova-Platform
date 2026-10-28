@@ -21,7 +21,7 @@ from nexova_shared.incidents import IncidentDraft, IncidentStatus, SeedIncident,
 
 from app.core.errors import IncidentFieldsError, IncidentNotFoundError, InvalidStatusTransitionApiError
 from app.modules.incident_manager import router
-from app.modules.incident_manager.models import Incident
+from app.modules.incident_manager.models import IncidentRead
 from app.modules.incident_manager.repository import IncidentRepository
 
 from .conftest import FakeClock
@@ -39,8 +39,14 @@ def _payload(**changes: Any) -> dict[str, Any]:
     return values
 
 
-def _create(repo: IncidentRepository, **changes: Any) -> Incident:
+def _create(repo: IncidentRepository, **changes: Any) -> IncidentRead:
     return router.create_incident(_payload(**changes), repo)
+
+
+def _stored(repo: IncidentRepository, incident_id: Any) -> IncidentRead | None:
+    """La incidencia guardada, en la forma pública que devuelven las rutas (`IncidentRead`)."""
+    stored = repo.get(incident_id)
+    return None if stored is None else stored.public()
 
 
 def _fields(error: IncidentFieldsError | InvalidStatusTransitionApiError) -> list[tuple[str, str]]:
@@ -58,7 +64,7 @@ def test_created_incident_is_open_with_trimmed_text_and_the_creation_time(
     assert incident.status == IncidentStatus.OPEN
     assert incident.title == "Synthetic incident"
     assert incident.created_at == incident.updated_at == clock.now
-    assert incident_repo.get(incident.id) == incident
+    assert _stored(incident_repo, incident.id) == incident
 
 
 @pytest.mark.parametrize(("length", "accepted"), [(120, True), (121, False)])
@@ -101,7 +107,8 @@ def test_filters_are_combined_with_and(incident_repo: IncidentRepository) -> Non
 
     found = router.list_incidents(incident_repo, origin="branch", branch="miami_office", category="sla_breach")
 
-    assert found == [target]
+    # El listado da filas sin `updated_at` (auditoría de serialización, D5).
+    assert [item.id for item in found] == [target.id]
 
 
 def test_list_is_newest_first_and_ties_are_broken_by_id(incident_repo: IncidentRepository, clock: FakeClock) -> None:
@@ -112,8 +119,10 @@ def test_list_is_newest_first_and_ties_are_broken_by_id(incident_repo: IncidentR
 
     listed = router.list_incidents(incident_repo)
 
-    assert listed[0] == newest
-    assert listed[1:] == sorted(same_time, key=lambda incident: str(incident.id), reverse=True)
+    assert listed[0].id == newest.id
+    assert [item.id for item in listed[1:]] == [
+        incident.id for incident in sorted(same_time, key=lambda incident: str(incident.id), reverse=True)
+    ]
     assert router.list_incidents(incident_repo) == listed
 
 
@@ -177,7 +186,7 @@ def test_valid_transition_changes_status_and_updated_at_only(incident_repo: Inci
         clock.now,
         incident.created_at,
     )
-    assert incident_repo.get(incident.id) == changed
+    assert _stored(incident_repo, incident.id) == changed
 
 
 def test_an_open_incident_can_be_discarded_directly_but_a_discarded_one_is_final(incident_repo: IncidentRepository) -> None:
@@ -223,7 +232,7 @@ def test_malformed_status_change_is_rejected_without_touching_the_incident(
     incident = _create(incident_repo)
     with pytest.raises(IncidentFieldsError):
         router.change_incident_status(incident.id, body, incident_repo)
-    assert incident_repo.get(incident.id) == incident
+    assert _stored(incident_repo, incident.id) == incident
 
 
 # --- Seed ---

@@ -56,8 +56,11 @@ export const INITIAL_INCIDENT_STATUS: IncidentStatus = 'open';
 /** Máximo del título (el mismo recorte que aplica el seed del CSV histórico). */
 export const TITLE_MAX_LENGTH = 120;
 
-/** Incidencia tal como la devuelve la API (`GET`, `POST`, `PATCH`). */
-export interface Incident {
+/**
+ * Una fila de `GET /api/incidents` (`IncidentListItem` de la API): lo que muestra
+ * la tabla, sin `updated_at` (auditoría de serialización, D5).
+ */
+export interface IncidentListItem {
   /** UUID v4 generado por el sistema. */
   id: string;
   title: string;
@@ -68,6 +71,10 @@ export interface Incident {
   branch: IncidentBranch;
   /** ISO 8601 UTC, generado por el sistema. */
   created_at: string;
+}
+
+/** Incidencia completa (`IncidentRead`): `GET /api/incidents/{id}`, `POST` y `PATCH …/status`. */
+export interface Incident extends IncidentListItem {
   /** ISO 8601 UTC; cambia con cada cambio de estado. */
   updated_at: string;
 }

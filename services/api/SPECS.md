@@ -539,13 +539,13 @@ Todas exigen `Authorization: Bearer <token>` (401 `not_authenticated` sin token 
 
 | Método y ruta | Body | Éxito | Errores |
 |---|---|---|---|
-| `POST /api/incidents` | `{title, description, category, origin, branch, status?}` | **201** + incidencia (`status = open`) | 400 `validation_error` |
-| `GET /api/incidents?status=&origin=&branch=&category=` | — | **200** + lista (más reciente primero; `[]` si no hay) | 400 `validation_error` (valor de filtro no permitido) |
+| `POST /api/incidents` | `{title, description, category, origin, branch, status?}` | **201** + `IncidentRead` (`status = open`) | 400 `validation_error` |
+| `GET /api/incidents?status=&origin=&branch=&category=` | — | **200** + lista de `IncidentListItem` (sin `updated_at`; más reciente primero; `[]` si no hay) | 400 `validation_error` (valor de filtro no permitido) |
 | `GET /api/incidents/summary` | — | **200** + resumen (§32) | — |
-| `GET /api/incidents/{id}` | — | **200** + incidencia | 404 `incident_not_found` (UUID inexistente) · 404 `not_found` (no es un UUID) |
+| `GET /api/incidents/{id}` | — | **200** + `IncidentRead` | 404 `incident_not_found` (UUID inexistente) · 404 `not_found` (no es un UUID) |
 | `PATCH /api/incidents/{id}/status` | `{"status": "<estado>"}` (solo `status`) | **200** + incidencia con `status` y `updated_at` nuevos | 400 `validation_error` · 400 `invalid_status_transition` · 404 como el GET |
 
-Incidencia (respuesta):
+Incidencia (`IncidentRead`: detalle, alta y cambio de estado; una fila del listado, `IncidentListItem`, es lo mismo sin `updated_at`):
 
 ```json
 {
@@ -563,6 +563,13 @@ Incidencia (respuesta):
 
 `id`, `created_at` y `updated_at` los genera el sistema (UTC); enviarlos → 400 `unknown_field`. `updated_at` cambia con cada `PATCH …/status` correcto; `created_at` nunca.
 
+**Esquemas (auditoría de serialización, [`docs/serialization-audit.md`](../../docs/serialization-audit.md), D4–D6 y D8):**
+
+- **Salida:** `Incident` es el documento de TinyDB y ninguna ruta lo devuelve. Las rutas responden `IncidentRead` (los nueve campos) o, en el listado, `IncidentListItem` (sin `updated_at`, que la tabla del backoffice no usa).
+- **Entrada, contrato publicado:** `IncidentCreateRequest` (`title` 1–120, `description`, `category`, `origin`, `branch`, `status` opcional y solo `open`) e `IncidentStatusChangeRequest` (`status`), ambos con `additionalProperties: false`, son lo que OpenAPI publica como cuerpo de `POST` y `PATCH …/status`.
+- **Entrada, autoridad de validación:** `nexova_shared` (`validate_incident_fields`, `validate_status_change`). Esos modelos no validan: el handler sigue recibiendo el objeto JSON y lo valida `nexova_shared`, que da los códigos del 400 de §31 y es el mismo que usa el seed. Validar con Pydantic cambiaría los códigos (todo error de campo saldría como `invalid_body` en `field: "body"`, y un `null` no sería `missing`) y duplicaría reglas.
+- **Coherencia:** `tests/test_incident_manager_contract.py` comprueba que el esquema publicado y `nexova_shared` aceptan los mismos campos, con el mismo vocabulario y los mismos obligatorios, y que un campo no previsto responde 400 `unknown_field`.
+
 Ciclo de vida (CONTEXT): `open → in_progress | discarded`; `in_progress → resolved | discarded`; `resolved` y `discarded` son finales. Pedir el mismo estado también es una transición no permitida.
 
 ## 31. Errores de este router
@@ -578,6 +585,8 @@ Ciclo de vida (CONTEXT): `open → in_progress | discarded`; `in_progress → re
 | 404 | `not_found` | `Not Found` (id que no es un UUID, como cualquier ruta inexistente) |
 | 503 | `storage_unavailable` | `storage is temporarily unavailable`: `incidents.json` (o `auth.json`, al validar el token) no se puede leer o escribir o está corrupto (§4, §5). Formato común `{detail, code}`, no la lista del 400 |
 | 500 | `internal_error` | `internal server error`, sin traza ni mensaje (§5) |
+
+**OpenAPI:** las cinco rutas documentan con `responses=` sus errores reales, con ejemplos construidos con los errores de `nexova_shared` y `app/core/errors.py`: 401 y 503 (`IncidentErrorResponse`, `{detail, code}`) en todas; 400 (`IncidentValidationErrorResponse`, la lista `{field, error, message}`) en el alta, el listado y el cambio de estado (este con `validation_error` e `invalid_status_transition`); 404 (`incident_not_found` y `not_found`) en el detalle y el cambio de estado. El 422 que FastAPI añade por defecto se quita de estas rutas (`drop_native_validation_responses`, en `create_app`), porque nunca lo responden. El resto de la API conserva su 422.
 
 Ejemplo (alta sin `branch`):
 

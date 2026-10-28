@@ -8,6 +8,8 @@ arranca (`InventoryStartupError`, ver app/modules/inventory/database.py).
 Solo ensambla: configuración, middlewares, handlers de error y routers.
 """
 
+from typing import Any
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -20,6 +22,7 @@ from app.core.errors import InternalErrorMiddleware, install_error_handlers
 from app.core.limits import BodySizeLimitMiddleware
 from app.database import SupplierRepository
 from app.modules.incident_manager.repository import IncidentRepository
+from app.modules.incident_manager.router import drop_native_validation_responses
 from app.modules.incident_manager.router import router as incident_manager_router
 from app.modules.incidents.router import router as incidents_router
 from app.modules.incidents.store import LastResultStore
@@ -74,6 +77,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router, prefix="/auth")
     app.include_router(users_router, prefix="/users")
     app.include_router(profiles_router, prefix="/profiles")
+
+    # OpenAPI del gestor de incidencias: sin el 422 que nunca responde (valida con 400).
+    default_openapi = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema is None:
+            drop_native_validation_responses(default_openapi(), app.routes)
+        assert app.openapi_schema is not None
+        return app.openapi_schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
 
     @app.get("/health", tags=["health"])
     def health() -> dict[str, str]:

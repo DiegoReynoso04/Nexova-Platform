@@ -40,6 +40,7 @@ import {
   type IncidentFieldError,
   type IncidentFilters,
   type IncidentFormValues,
+  type IncidentListItem,
   type IncidentStatus,
   type IncidentSummary,
   type IncidentUiError,
@@ -65,7 +66,7 @@ export interface CallOptions {
 }
 
 export interface IncidentManagerService {
-  listIncidents(filters: IncidentFilters, options?: CallOptions): Promise<Incident[]>;
+  listIncidents(filters: IncidentFilters, options?: CallOptions): Promise<IncidentListItem[]>;
   getIncidentSummary(options?: CallOptions): Promise<IncidentSummary>;
   createIncident(values: IncidentFormValues, options?: CallOptions): Promise<Incident>;
   changeIncidentStatus(id: string, status: IncidentStatus, options?: CallOptions): Promise<Incident>;
