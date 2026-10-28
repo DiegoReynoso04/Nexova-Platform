@@ -1,3 +1,4 @@
+import { TableScroll } from '@/components/ui/table-scroll';
 import type { RuleBreakdownItem } from '@/types/incidents';
 
 export interface InvalidBreakdownTableProps {
@@ -17,7 +18,7 @@ export function InvalidBreakdownTable({ items }: InvalidBreakdownTableProps) {
         Una fila puede activar varias reglas, así que la suma de esta tabla puede ser mayor que el número de registros
         inválidos.
       </p>
-      <div className="mt-4 overflow-x-auto">
+      <TableScroll className="mt-4">
         <table className="w-full text-sm">
           <caption className="sr-only">Registros que activan cada regla de invalidación</caption>
           <thead>
@@ -43,7 +44,7 @@ export function InvalidBreakdownTable({ items }: InvalidBreakdownTableProps) {
             ))}
           </tbody>
         </table>
-      </div>
+      </TableScroll>
     </section>
   );
 }

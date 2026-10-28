@@ -1,3 +1,4 @@
+import { TableScroll } from '@/components/ui/table-scroll';
 import type { DistributionItem } from '@/types/incidents';
 
 export interface DistributionTableProps {
@@ -19,7 +20,7 @@ export function DistributionTable({ headingId, title, codeLabel, items, note }: 
         {title}
       </h3>
       <p className="mt-1 text-xs text-ink-muted">{note}</p>
-      <div className="mt-4 overflow-x-auto">
+      <TableScroll className="mt-4">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-muted">
@@ -48,7 +49,7 @@ export function DistributionTable({ headingId, title, codeLabel, items, note }: 
             ))}
           </tbody>
         </table>
-      </div>
+      </TableScroll>
     </section>
   );
 }

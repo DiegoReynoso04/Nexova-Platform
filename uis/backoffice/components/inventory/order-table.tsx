@@ -1,3 +1,4 @@
+import { TableScroll } from '@/components/ui/table-scroll';
 import { formatOrderDate, orderDetail } from '@/lib/order-format';
 import type { InventoryOrder } from '@/types/inventory';
 
@@ -13,8 +14,7 @@ export interface OrderTableProps {
 
 export function OrderTable({ orders }: OrderTableProps) {
   return (
-    // `relative`: recorta los elementos sr-only absolutos de dentro (sin scroll horizontal en la página a 375 px).
-    <div className="relative overflow-x-auto rounded-lg border border-border bg-surface">
+    <TableScroll framed>
       <table className="w-full min-w-[56rem] border-collapse text-left text-sm">
         <caption className="sr-only">Historial de entradas y salidas de activos, de la más reciente a la más antigua</caption>
         <thead className="border-b border-border bg-canvas text-xs uppercase tracking-wide text-ink-muted">
@@ -50,6 +50,6 @@ export function OrderTable({ orders }: OrderTableProps) {
           ))}
         </tbody>
       </table>
-    </div>
+    </TableScroll>
   );
 }

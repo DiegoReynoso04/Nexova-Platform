@@ -10,7 +10,59 @@ import { useCallback, useEffect, useReducer, useState } from 'react';
 
 import { ApiAbortError } from '@/lib/api-client';
 import { IncidentServiceError, getIncidentSummary } from '@/services/incident-manager.service';
-import type { IncidentSummary, IncidentUiError } from '@/types/incident-manager';
+import {
+  INCIDENT_BRANCHES,
+  INCIDENT_CATEGORIES,
+  INCIDENT_ORIGINS,
+  INCIDENT_STATUSES,
+  type IncidentBranch,
+  type IncidentCategory,
+  type IncidentOrigin,
+  type IncidentStatus,
+  type IncidentSummary,
+  type IncidentUiError,
+} from '@/types/incident-manager';
+
+// ---------------------------------------------------------------------------
+// Lo que pinta el panel
+// ---------------------------------------------------------------------------
+
+/** Un total del panel; `count: null` = aún sin datos (esqueleto). */
+export interface SummaryDisplayCount<T extends string> {
+  value: T;
+  count: number | null;
+}
+
+export interface SummaryDisplay {
+  total: number | null;
+  by_status: readonly SummaryDisplayCount<IncidentStatus>[];
+  by_category: readonly SummaryDisplayCount<IncidentCategory>[];
+  by_origin: readonly SummaryDisplayCount<IncidentOrigin>[];
+  by_branch: readonly SummaryDisplayCount<IncidentBranch>[];
+}
+
+function placeholderCounts<T extends string>(values: readonly T[]): SummaryDisplayCount<T>[] {
+  return values.map((value) => ({ value, count: null }));
+}
+
+/**
+ * Esqueleto del resumen mientras carga: una fila por valor del vocabulario, sin
+ * números. El normalizador garantiza que la respuesta trae exactamente esas
+ * filas, así que el panel ocupa lo mismo cargando que cargado y no desplaza el
+ * listado al llegar los datos (CLS, H2 de AUDIT.md).
+ */
+export const SUMMARY_PLACEHOLDER: SummaryDisplay = {
+  total: null,
+  by_status: placeholderCounts(INCIDENT_STATUSES),
+  by_category: placeholderCounts(INCIDENT_CATEGORIES),
+  by_origin: placeholderCounts(INCIDENT_ORIGINS),
+  by_branch: placeholderCounts(INCIDENT_BRANCHES),
+};
+
+/** El último resumen recibido o, si aún no hay ninguno, el esqueleto. */
+export function summaryDisplay(summary: IncidentSummary | null): SummaryDisplay {
+  return summary ?? SUMMARY_PLACEHOLDER;
+}
 
 export type SummaryLoadState =
   | { status: 'idle' }

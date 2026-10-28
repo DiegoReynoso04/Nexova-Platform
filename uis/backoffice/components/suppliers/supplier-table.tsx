@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { TableScroll } from '@/components/ui/table-scroll';
 import type { RowState } from '@/hooks/use-supplier-directory';
 import { renewalInfo } from '@/lib/supplier-renewal';
 import type { Supplier, SupplierStatus } from '@/types/suppliers';
@@ -22,7 +23,7 @@ export interface SupplierTableProps {
 // (docs/ligthweight-storage-api.md, "Suspensión controlada"; SPECS §10).
 export function SupplierTable({ suppliers, rows, today, onUpdateRate, onUpdateStatus, onDismissRowError }: SupplierTableProps) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+    <TableScroll framed>
       <table className="w-full min-w-[46rem] border-collapse text-left text-sm">
         <caption className="sr-only">Directorio de proveedores</caption>
         <thead className="border-b border-border bg-canvas text-xs uppercase tracking-wide text-ink-muted">
@@ -49,7 +50,7 @@ export function SupplierTable({ suppliers, rows, today, onUpdateRate, onUpdateSt
           ))}
         </tbody>
       </table>
-    </div>
+    </TableScroll>
   );
 }
 

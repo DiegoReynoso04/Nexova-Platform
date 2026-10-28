@@ -4,9 +4,270 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-28 — Auditoría de rendimiento: H3, H4, R1, medición final y REPORT.md
+
+**Estado: hecha y revisada por el usuario; push y PR contra `main`** (ver el final de esta entrada). Rama `feature/perf-audit`.
+
+- **Ajuste tras la revisión (`510434e`):** REPORT.md §4 matiza que la subida de 88 a 100 tras H2 se debe sobre todo a que desaparece el 0,2344, y en parte a la ventana limpia (el 88 de H1 se midió con extensiones).
+- **Cuenta de prueba borrada** (2026-10-28, con el OK del usuario). Se borró con la propia API: login con la cuenta, comprobación de que `/auth/me` devuelve su email y `DELETE /users/{id}` (propio) → 204, que borra también el `Profile`. Después, el login de esa cuenta da 401 y `services/api/data/auth.json` ya no contiene su email. El archivo de credenciales del scratchpad se eliminó. «Synthetic ticket 028» sigue en `in_progress` (no se puede restaurar; ver la entrada de H2).
+
+- **Cambio de plan del usuario:**
+  - S1 y R2 recortados (documentados como no aplicados);
+  - H3, H4 y R1 seguidos y sin mediciones intermedias;
+  - medición final con 1 ejecución por caso;
+  - el impacto de H3 y H4 se atribuye por sus auditorías y el de H1 y H2 por sus intermedias;
+  - REPORT.md es un informe general.
+- **H3 (`5823cf7`, `uis/website`): Tailwind precompilado en lugar del Play CDN.**
+  - CLI 4.3.3, la misma versión que servía el CDN. Entrada en `src/css/tailwind.css` (`source(none)` y `@source` de los 3 HTML y `src/js/*.js`); salida minificada y versionada en `src/css/styles.css` (17 555 B), enlazada en las 3 páginas (la 404, con ruta absoluta).
+  - Las 15 clases del JS y las 151 de los HTML tienen regla.
+  - `npx @tailwindcss/cli` a secas no encuentra `tailwindcss`, porque no hay `node_modules` en el árbol. El comando del `uis/website/README.md` nuevo instala el CLI en una carpeta temporal y usa `NODE_PATH`, que `@tailwindcss/node` admite; genera el mismo hash que con `npx`.
+  - Sin cambio visual: estilos calculados (50 propiedades) y caja de cada elemento, en 11 estados (3 páginas a 1280 y 375 px, menú abierto, formulario en error y en éxito). 0 diferencias, con un control positivo.
+  - También se actualizaron `uis/README.md`, `uis/README.es.md` y la fila del sitio en `AGENTS.md`. `docs/ARCHITECTURE_PROPOSAL.md` no se toca: es una foto histórica.
+- **H4 (`1c6bc92`): foto en tamaños adaptados.** `<picture>` con WebP de 768 y 1152 px (43 y 91 KB) más un JPEG de 1152 (98 KB, mozjpeg), generados con `npx sharp-cli@6.1.0`. `sizes` según la rejilla. Se conservan `width`/`height`, `lazy` y el `alt`. El original de 308 KB se queda como fuente; el comando está en el README del sitio.
+- **R1 (`bd7d084`, `uis/backoffice`): `components/ui/table-scroll.tsx` (`TableScroll`, `framed` y `className`) en las 7 tablas.**
+  - Es solo el contenedor; no es la firma con `caption` y `columns` de `AUDIT.md` §4, que se actualizó con el diseño aplicado.
+  - La lista de excepciones del `relative` en `production-source.test.mjs` queda vacía.
+  - Una regla nueva exige que `overflow-x-auto` solo esté en el componente, probada con 2 mutaciones.
+  - Verificado a 375 px, sin scroll horizontal: `/suppliers`, `/incident-manager`, las 4 de `/inventory` e `/incidents` (con el fixture sintético servido por un servidor temporal en el 3999, desde el scratchpad).
+- **Medición final** (usuario, 2026-10-28 19:08–19:25, build de `bd7d084`, 1 ejecución por caso, ventana de invitado sin extensiones, 12 casos con captura y JSON):
+  - **Móvil, homogéneo a 412 px:** CLS 0 / 0,003 / 0,001 en las tres vistas con datos, que estaban en 0,373 / 0,136 / 0,135. Performance del backoffice 99 (incident-manager desde 82). En el sitio, FCP 1,9 → 0,9 s, LCP 2,1 → 1,2 s (index) y 2,0 → 1,3 s (application), y el index pasa de 376 a 79 KiB.
+  - **Desktop, NO homogéneo:** la ventana medía 870 px en el después, frente a 1526 en el antes, sin emulación en ninguno de los dos lados.
+  - **CPU:** el `benchmarkIndex` es un 35–45 % más bajo (2080–2499 frente a 3570–3893). Explica la subida del TBT del backoffice mobile (101–134 ms, todo < 200 ms).
+  - **«Clear storage» desmarcado en el sitio:** sin efecto, por el `no-store`.
+  - **Residuales desktop, efectos del ancho y no regresiones:**
+    - suppliers 0,071: la fila de filtros pasa de línea al llegar el contador (mismo nodo que S5);
+    - inventory 0,026: el residual 3 de H1 (el email más ancho que `w-40`).
+
+    Se suma el residual de imagen de H4 (26–45 KiB). Los arreglos posibles quedan como trabajo futuro.
+- **Documentación:**
+  - `audit/after/runs.md`: guía con el plan final y la regla del ancho de ventana, §3 de la medición final y la prueba del Tab como «no hecha»;
+  - `REPORT.md`, nuevo;
+  - `AUDIT.md` §3.2, §4 y §5;
+  - `audit/skills-findings.md` §7 y §8.
+- **Pendiente con el OK del usuario:** borrar la cuenta de prueba de la TinyDB, push y PR.
+
+## 2026-10-28 — Auditoría de rendimiento: H2 (esqueleto del resumen de `/incident-manager`)
+
+**Estado: H2 cerrada** (código en `4039279`, medición en `audit/after/runs.md` §2). Rama `feature/perf-audit`. Sin push. **No se empieza H3 hasta que el usuario revise esta medición.**
+
+- **Medición de H2** (`audit/after/steps/H2/incident-manager-mobile.json`, ventana de invitado, 0 peticiones `chrome-extension://`):
+  - **Perf** 82 → **100** (88 en H1);
+  - **CLS** 0,373 → **0** (0,0000449; 0,240 en H1);
+  - **FCP** 0,6 s (625 ms; 58 ms observado), como en el antes: confirma que el 0,9 s de H1 fue por las extensiones;
+  - **`layout-shifts`:** desaparecen el 0,2344 del listado y también el 0,0052 de los filtros (no es un redondeo). Solo queda un `dd.tabular-nums` del resumen (0,0000449, al cambiar «—» por el número).
+- **Accessibility de H1, comprobada por el usuario en el DOM servido** (JavaScript desactivado en `/suppliers`): `<div aria-hidden="true" inert class="invisible …">` con 6 `<span>` sin `href`, `span.w-40` y el botón `disabled` con `tabindex="-1"`. **Panel Accessibility de DevTools: no consultado. Prueba del Tab: no hecha** (confirmado por el usuario el 2026-10-28).
+- **«Synthetic ticket 028», sin restaurar:** el ciclo de vida no permite `in_progress → open` (`ALLOWED_TRANSITIONS` en `nexova_shared`, `INCIDENT_TRANSITIONS` en el frontend). No se forzó el archivo. Los totales del resumen difieren del antes: `open` 26 en lugar de 27 e `in_progress` 2 en lugar de 1, con el mismo total (97). No afecta al CLS: mismas 97 filas y mismas 19 filas del resumen. Documentado en `audit/after/runs.md`.
+- **Cierre:** 3003 parado, build sin variables (rewrites vacíos) y `docker compose start ui` (website 200; `/backend/health` OK en el 3001).
+
+- **Decisiones de la revisión de H1 (usuario):**
+  - no se repiten las 2 ejecuciones de H1: el CLS no depende de las extensiones, y la contaminación queda documentada en `audit/after/runs.md`;
+  - S1, R1 y R2 van sin medición intermedia;
+  - se mide en una ventana de invitado de Chrome, y en cada JSON se comprueba que no hay peticiones `chrome-extension://`.
+- **Código (`uis/backoffice`):**
+  - **`hooks/use-incident-summary.ts`:** lo puro va junto al reducer: `SummaryDisplay` (`count: number | null`), `SUMMARY_PLACEHOLDER` (una fila por valor de `INCIDENT_STATUSES`/`CATEGORIES`/`ORIGINS`/`BRANCHES`, sin números ni total) y `summaryDisplay(summary)`.
+  - **`components/incident-manager/incident-summary-panel.tsx`:** en la primera carga pinta la misma rejilla y las mismas `CountList` con `display`: «—» en un `<dd aria-hidden>` y «Cargando resumen…» (`role="status"`, con un spinner `sm`) en el sitio del total. Sin cambios en el error aislado, en la recarga tras un cambio de estado (con la opacidad de siempre), en el listado, en los filtros (S5) ni en la API.
+  - **`uis/backoffice/CLAUDE.md`:** la regla del esqueleto y su residual, en «Resumen».
+- **Tests:**
+  - 3 nuevos en `tests/use-incident-manager.test.mjs`: las filas del esqueleto salen del vocabulario (una por valor, en orden, `count` `null` y sin total); coinciden con las de un resumen normalizado a partir de `summaryBody` (claves literales de la API); y `summaryDisplay` elige entre esqueleto y resumen;
+  - mutaciones de control: falta una categoría (2 fallos) y números a 0 en lugar de `null` (1 fallo).
+- **Validación:** `tsc` y `lint` limpios; `build` desde PowerShell, sin `Program Files` en los chunks; `node:test` 502/502; Jest 239/239.
+- **Verificación en el navegador, con el build de producción en el 3003.** El resumen se retuvo envolviendo `window.fetch` y navegando dentro de la app desde `/suppliers` (Next llama a `fetch` con un `URL`: el envoltorio tiene que aceptarlo, o la navegación pasa a ser completa).
+  - **Altura del panel, cargando frente a cargado:**
+    - a 1024 px, 298 frente a 298 px, con el listado en 605 en los dos casos;
+    - a 375 px, 654 frente a 654 px, listado en 1057;
+    - a 412 px, 654 frente a 654 px, listado en 1037;
+    - 0 `layout-shift` al llegar los datos.
+  - **Fallo aislado** (resumen con 500 simulado; también por *timeout* al retenerlo demasiado): aparece el aviso con «Reintentar resumen» y el listado sigue funcionando (97 filas; filtro `open` → 27). Es el residual conocido: el panel pasa a 206 px a 412 (−448, el listado sube de 1037 a 589) y a 202 px a 1024 (−96, de 605 a 509). «Reintentar resumen» lo recupera.
+  - **Cambio de estado:** «Synthetic ticket 028» pasó de `open` a `in_progress` en la TinyDB de desarrollo. El resumen se recarga (`open` 27 → 26, `in_progress` 1 → 2) sin errores; el panel sigue en 654 px y no hay `layout-shift`. **El dato de la TinyDB queda cambiado**, pero el listado sigue teniendo 97 filas.
+  - **A 375 y 412 px:** sin scroll horizontal.
+
+## 2026-10-28 — Auditoría de rendimiento: medición intermedia de H1 y cambio de plan
+
+**Estado: H1 cerrada** (código en `4e23d91`, arreglo de CRLF en `126d067`, medición en `audit/after/runs.md` §2). Rama `feature/perf-audit`. Sin push. **No se empieza H2 hasta que el usuario revise esta medición.**
+
+- **Cambio de plan del usuario:**
+  - **Intermedias:** tras cada corrección, 1 sola ejecución en la URL clave, solo el JSON:
+    - H1: `/suppliers` mobile e `/incident-manager` mobile;
+    - H2: `/incident-manager` mobile;
+    - H3: `/` mobile;
+    - H4: sin intermedia.
+  - **Medición final:** el control del login, inventory/products, suppliers desktop y el resto, con 12 casos, 3 ejecuciones y capturas.
+  - **Lectura del agente, confirmada después por el usuario:** S1, R1 y R2 tampoco tienen intermedia; se cubren en la final.
+  - **Dónde consta:** `audit/skills-findings.md` §7, `AUDIT.md` §5 y la guía de `audit/after/runs.md` §1.
+- **Medición de H1** (`audit/after/steps/H1/`, 2 JSON, Lighthouse 13.4.1, URLs correctas):
+  - **suppliers mobile:** CLS 0,136 → **0,003** y Perf 95 → 100;
+  - **incident-manager mobile:** CLS 0,373 → **0,240** y Perf 82 → 88;
+  - en `layout-shifts` desaparece el `main.mx-auto` de 0,1337 y los demás quedan igual. El 0,2344 del listado queda para H2.
+- **El FCP sube de 0,6 a 0,9 s en los dos casos por las condiciones de la medición, no por H1:**
+  - las dos ejecuciones tienen 3 extensiones de Chrome activas (`eppiocem…`, `gighmmpi…`, `npclhjbd…`); `eppiocem…` inyecta 5 scripts (20 624 B) antes del FCP, más un `ad-blocker/content.js` de unos 115 ms de CPU;
+  - el FCP observado pasa de 93 a 188 ms y de 60 a 178 ms;
+  - en el antes no había ninguna extensión (0 peticiones `chrome-extension://` en los 12 JSON);
+  - la caché, el TTFB y el *throttling* son iguales. H1 añade 1794 B al HTML (`resourceSize`), pero el `transferSize` del documento es el mismo (373 B);
+  - repetir las 2 ejecuciones sin extensiones lo decide el usuario. La guía de `audit/after/runs.md` exige ahora incógnito sin extensiones y comprobarlo en el JSON.
+- **Accessibility de DevTools:** **no verificado**. El usuario aún no lo ha confirmado (sus mensajes dejaban el marcador sin rellenar).
+- **Build siempre desde PowerShell**, en la guía de `audit/after/runs.md` §1: Git Bash convirtió `/backend` en `C:/Program Files/Git/backend`.
+- **Cuenta de prueba de la TinyDB de desarrollo** (creada para verificar H1, con credenciales solo en el scratchpad de la sesión): **se mantiene hasta la medición final y se borra al cerrar el ticket, con la confirmación del usuario.**
+- **Cierre:** 3003 parado, `npm run build` sin variables (rewrites vacíos en el `routes-manifest`) y `docker compose start ui` (website 200; `/backend/health` OK en el 3001).
+
+## 2026-10-27 — Auditoría de rendimiento: H1 (espacio reservado de la navegación)
+
+**Estado: hecho** (código en `4e23d91`; medición intermedia y cierre en la entrada de arriba). Rama `feature/perf-audit`. Sin push.
+
+- **Código (`uis/backoffice`):**
+  - **`lib/auth-routes.ts`:** función pura `headerNavMode(pathname, status)` → `session` | `reserved` | `access` | `none`. Es `reserved` en `initializing`/`checking` solo si `routeAccess(...) === 'wait'`.
+  - **`components/ui/nav-link.tsx`:** `NavLinkPlaceholders` (contexto). Dentro, cada `NavLink` se pinta como `<span>` con las mismas clases y el mismo texto, sin `href`.
+  - **`components/auth/account-nav.tsx`:** la pieza `SessionLinks({ placeholder })` tiene la única lista de enlaces. La rama `reserved` es un `<div aria-hidden="true" inert className="invisible …">` con `SessionLinks placeholder`, un hueco `w-40` en el lugar del email y el mismo `Button` deshabilitado con `tabIndex={-1}`.
+  - **Sin tocar:** el guard, `use-auth-session.ts` y la estrategia de sesión (D10, AUTH-02).
+  - **Por qué un contexto y no una prop en cada `NavLink`:** el test del único enlace «Inventario» exige el literal `<NavLink href={INVENTORY_PRODUCTS_PATH} activePrefix={INVENTORY_PATH}>`, sin otros props.
+- **Tests:**
+  - Jest, en `__tests__/auth/auth-routes.test.ts`: los casos de `headerNavMode` (`auth-routes.ts` sigue al 100 %);
+  - `tests/production-source.test.mjs`: una regla nueva, «la navegación reservada es invisible, inerte y sin enlaces». La hacen fallar 4 mutaciones: sin `placeholder`, sin `inert`, un `NavLink` en la rama y el `NavLink` sin `span`.
+- **Validación:**
+  - `tsc` y `lint` limpios;
+  - `build` correcto;
+  - Jest, 239/239;
+  - `node:test`, 496/499.
+
+  Los 3 fallos de `node:test` son de `tests/inventory-contract.test.mjs` (categorías, oficinas y tipos de salida) y **ocurren igual sin H1** (comprobado con `git stash`). La regex del test esperaba `\n` tras `class X(StrEnum):`, y en esta copia de trabajo `services/api/app/modules/inventory/vocabulary.py` tiene finales CRLF (`core.autocrlf=true`; el índice está en LF).
+
+  **Corregido en un commit propio, aprobado por el usuario** (`test(backoffice): el contrato del inventario tolera finales de línea CRLF`): `\r?\n` en la regex de `backendEnum`. Solo cambia el test; no toca código de producción ni invalida el build de H1 del 3003.
+  - el contrato pasa 7/7 con `vocabulary.py` en CRLF y en LF;
+  - la mutación de control (`'hardware'` alterado en `types/inventory.ts`) hace fallar 1 test;
+  - `node:test` completo vuelve a 499/499.
+- **Medición intermedia:** pendiente. El usuario avisa cuando los 5 JSON estén en `audit/after/steps/H1/`. La comprobación de la vista Accessibility de DevTools también está pendiente: no se anota nada hasta que el usuario la confirme.
+- **Verificación con el build de producción en el 3003** (variables desde PowerShell; desde Git Bash, MSYS convirtió `NEXT_PUBLIC_API_URL=/backend` en `C:/Program Files/Git/backend` dentro del bundle, así que el build se repitió desde PowerShell):
+  - `curl.exe` sin token: el HTML de `/suppliers` ya trae la navegación reservada (6 `span`, el hueco y el botón deshabilitado), sin más `href` en la cabecera que el de la marca (`/`), que ya estaba. `/login` no cambia;
+  - Network: con token, en `/suppliers`, ninguna precarga `_rsc` antes de `/backend/auth/me`; las de las rutas protegidas solo aparecen después, con los enlaces reales. Sin token, las únicas precargas son `/login`, `/register`, `/forgot-password` y `/`, esta última del enlace de la marca y anterior a H1;
+  - foco: con el HTML del servidor sin scripts, el botón reservado no recibe el foco (`inert`) y el enlace de la marca sí. La vista Accessibility de DevTools no se pudo comprobar desde las herramientas del agente (su árbol no aplica `aria-hidden`, comprobado con un control); queda para el usuario;
+  - altura de la cabecera reservada frente a la final: 134,4 frente a 134,4 px a 1024 px de ancho, y 170,4 frente a 170,4 px a 375 y 412 px;
+  - AUTH-02: login incorrecto (aviso, sin token), login correcto, logout (token borrado, `/login`, cabecera pública de 52,8 px), sin token → `/login`, token manipulado → 401 en `/auth/me`, token borrado y `/login`;
+  - a 375 px, sin scroll horizontal en las tres vistas;
+  - para la verificación se creó una cuenta de prueba en la TinyDB de desarrollo, con credenciales generadas en el scratchpad de la sesión, fuera de la repo.
+
+## 2026-10-27 — Auditoría de rendimiento: revisión de F2 y F3 (`AUDIT.md`)
+
+**Estado: F3 hecha.** Rama `feature/perf-audit`. Sin push. Solo documentación: no se ha tocado código de las apps. **Siguiente: H1.**
+
+- **Revisión de F2 (decisiones del usuario, ya en `audit/skills-findings.md` §3, §7 y §8):**
+  - **§8.1:** H4 sigue como requerida, en último lugar. En `REPORT.md` se dirá que su impacto es en bytes, no en la puntuación.
+  - **§8.2:** S2 sigue como sugerencia.
+  - **§8.3, H1 aprobado con una condición:** la navegación reservada se pinta con `<span>`, con las mismas clases y el mismo texto, `invisible`, `aria-hidden` e `inert`, sin `Link` ni `href`. Así Next no precarga rutas protegidas y no hay enlaces protegidos en el HTML sin sesión. La pieza compartida de `account-nav.tsx` elige con una prop entre enlace y `span`; el test del único enlace «Inventario» debe seguir pasando. Se verifica en Network, con el build de producción: ninguna precarga de esas rutas antes de que `/auth/me` responda.
+  - **H3:** el comando del CSS se documenta en un `uis/website/README.md` nuevo, que se crea en el commit de H3. Motivos: la regla pide un README por app y el sitio no lo tenía, y el paso de generación es solo de esta app. `uis/README.md` sigue como índice y se corrige su fila del sitio («Play CDN, no build step»).
+  - **S1:** se aplica tras H3, en su propio commit, si sigue teniendo sentido.
+  - **Orden final:** H1 → H2 → H3 → H4 → S1 → R1 → R2 → medición final.
+  - **Mediciones:**
+    - tras cada paso, 1 ejecución por caso afectado; solo el JSON, en `audit/after/steps/<paso>/`, sin capturas;
+    - la medición final, completa (12 casos, 3 ejecuciones, capturas y JSON en `audit/after/<app>/<página>/`);
+    - la fila `audit/` de `.agents/rules/monorepo-structure.md` lo recoge.
+- **F3 — `AUDIT.md` (raíz, nuevo):**
+  - **Contenido:**
+    - §1, alcance y método, con por qué esas páginas (`/` y `/incidents` del backoffice no se miden), el criterio y las limitaciones;
+    - §2, los 12 casos con enlace a cada captura;
+    - §3, H1–H4 con su causa raíz (en H1, la cuenta de la geometría: la víctima es `main` y la causa es la cabecera) y, en breve, S1–S5, N1–N2 y X1–X4;
+    - §4, la refactorización;
+    - §5, el plan.
+  - **Refactorización, verificada en el código:**
+    - **R1 (`components/ui/table-scroll.tsx`):** 4 tablas con el mismo armazón y `px-3 py-2 font-semibold` repetido 25 veces. A `supplier-table.tsx` le falta `relative`, que la lista de excepciones del test (`production-source.test.mjs:413-418`) lleva como pendiente. Las 3 tablas de `/incidents` quedan fuera (otro estilo). Hay que ajustar el test de `:354`;
+    - **R2 (`hooks/use-inventory-list.ts`):** `use-inventory-assets.ts` y `use-inventory-orders.ts`, de 159 líneas cada uno, solo difieren en nombres. Los envoltorios conservan su API: los 6 componentes de activos y el del historial no cambian;
+    - **R3 (de F0, candidato, no se aplica):** la lista de errores por campo de los avisos se repite en `supplier-error.tsx:73-77`, `incident-error.tsx:78-84` y también en `auth-error.tsx:91-95`. Sería `components/ui/field-error-list.tsx`, genérico en el tipo de campo, con su `Record` de etiquetas. No se aplica porque no toca ninguna métrica y amplía el riesgo de AUTH-02. El R3 de F0 no constaba en la repo (era otra sesión); el usuario lo recuperó al revisar F3 y se añadió en un commit propio de documentación;
+    - **R4 (candidato, no se aplica):** el bloque «Cargando…» es idéntico en 4 vistas. Se identificó en F3;
+    - **R5 (descartado):** la cabecera (87 líneas) y el pie (25) se repiten en los 3 HTML del sitio. Solo se compartirían inyectándolos con JS (empeora el SEO y añade CLS) o con un build (reestructura).
+- **Sin impacto técnico:** no cambia código de las apps; `techContext.md` no se toca.
+
+## 2026-10-27 — Auditoría de rendimiento: F2 (skills)
+
+**Estado: hecha y revisada por el usuario** (decisiones en la entrada de arriba). Instalación comiteada en `8871787` y hallazgos en `audit/skills-findings.md`. Rama `feature/perf-audit`. Sin push. La sesión de la instalación no detectaba skills nuevas en `.claude/skills/` (`Unknown skill: core-web-vitals`); los pasos 3–5 se hicieron tras reiniciarla.
+
+- **D4, decidida tras F1:** la imagen sobredimensionada (`uis/website/src/img/ambiente-trabajo-nexova.jpg`) se corrige solo si la skill la señala como causa de una auditoría fallida (criterio de «requerida»). En ese caso, en una fase de corrección posterior, con `npx sharp-cli@<versión fija>` puntual y sin añadir dependencias.
+- **Paso 1 — ensayo en el scratchpad, fuera del repo:**
+  - **CLI:** `skills` 1.7.4 con `DISABLE_TELEMETRY=1`. El CLI lo respeta: `dist/cli.mjs` desactiva la telemetría con `DISABLE_TELEMETRY` o `DO_NOT_TRACK`.
+  - **Flags reales:** existen `-a/--agent`, `--copy`, `-s/--skill`, `-y` y `-l/--list`.
+  - **Qué crea:** con `-a claude-code --copy`, solo `.claude/skills/<skill>/` (`SKILL.md` y `references/`), sin enlaces simbólicos y sin `.agents/`, más un `skills-lock.json` en la raíz.
+  - **Revisión del contenido:** 7 archivos Markdown, unos 48 KB. No hay scripts ni nada que se ejecute, y ninguna instrucción pide acciones fuera del análisis de rendimiento. Solo contienen enlaces a documentación y fragmentos de ejemplo (un service worker, `sendBeacon` para RUM, `PerformanceObserver`). RUM.md pide autorización antes de añadir telemetría.
+  - **Conflicto con nuestras reglas:** MEASUREMENT.md propone el CLI de Lighthouse o PageSpeed como alternativa. Aquí no se usan.
+  - **Origen:** `addyosmani/web-quality-skills` en `afa8da942115f2961fdbfa80807ea0b232ff6c00` (merge de la PR #19, «web-quality-skills-v2», 2026-08-24). Los 7 archivos son idénticos a los de ese commit en GitHub, salvo los finales de línea (CRLF en la copia).
+- **Paso 2 — instalación en el repo:**
+  - **Ubicación:** `.claude/skills/core-web-vitals/` y `.claude/skills/performance/`, como copias. `.agents/skills/` y los `package.json` siguen sin cambios (comprobado con md5), y `.gitignore` no excluye `.claude/`.
+  - **`skills-lock.json` no se versiona:**
+    - solo guarda el repositorio, la ruta y un `computedHash` del contenido, sin SHA ni ref, así que no documenta la versión;
+    - restaurar con él (`experimental_install`) descargaría el `main` de ese momento;
+    - además, sería un archivo nuevo en la raíz fuera de la convención de carpetas.
+
+    La evidencia del origen es el SHA del cuerpo del commit, junto con los dos `computedHash`.
+- **Paso 3 — ejecución de las skills:**
+  - `core-web-vitals` y después `performance`, invocadas con la herramienta de skills, leyendo también `CLS.md` y `LCP.md`. `INP.md` no aplica: TBT máximo de 80 ms y ninguna interacción lenta;
+  - evidencia: solo los 12 JSON de `audit/before/`, sin volver a medir y sin CLI de Lighthouse ni PageSpeed;
+  - desviaciones del flujo de las skills, documentadas en `skills-findings.md` §1: sin CrUX (local) y sin traza nueva; las causas que no confirma el JSON van como «causa probable».
+- **Paso 4 — `audit/skills-findings.md`** (nuevo):
+  - **Requeridas:**
+    - **H1**, la cabecera del backoffice crece al validarse la sesión. `AccountNav` devuelve `null` en `initializing`/`checking` y después pinta 8 elementos: 53 → 170 px en mobile (0,936 × 117/823 ≈ 0,133, la cifra medida) y 53 → 134 px en desktop (el 0,032). La corrección reserva la navegación invisible e inerte en las rutas protegidas; no toca el guard (D10);
+    - **H2**, el resumen de `/incident-manager` pasa de una fila «Cargando resumen…» a 4 listas apiladas en mobile (0,2344). La corrección reserva las filas desde el vocabulario, porque `readCounts` garantiza una por valor;
+    - **H3**, el Play CDN de Tailwind (D3);
+    - **H4**, la foto (D4), como caso límite.
+  - **Sugerencias:**
+    - S1, `logo.svg` sin dimensiones o sin `fetchpriority`; se decide tras H3;
+    - S2, el CSS bloqueante del login (caso límite: la skill exige un *render delay* largo y hay 71 ms; `inlineCss` es experimental);
+    - S3, los polyfills: el chunk `0zutzion2550z.js` empieza con el `polyfill-module` de Next, no con código de la app. No es accionable;
+    - S4, `validations.js` sin minificar;
+    - S5, los desplazamientos residuales de los filtros.
+  - **Documentados sin corrección:** N1, el *render delay* por el guard (D10), y N2, el hueco FCP→LCP del login, que es un artefacto de la simulación (observado FCP = LCP = 78 ms).
+  - **Descartados:** X1–X4, los artefactos del servidor local.
+  - **Orden propuesto (§7):** H1 → H2 → H3 → H4, con las URLs y los modos que se vuelven a medir tras cada uno. Tres decisiones abiertas para el usuario (§8).
+- **Regla:** `.agents/rules/monorepo-structure.md` (fila `audit/`) admite ahora `skills-findings.md` en la raíz de `audit/`.
+- **Sin impacto técnico:** no cambia código de las apps; `techContext.md` no se toca.
+
+## 2026-10-27 — Auditoría de rendimiento de los dos frontends: F0–F1
+
+**Estado: en curso** (F1 hecha), en `feature/perf-audit`, creada desde `main` en `6877599`. Brief literal en `docs/perf-audit-brief.md` (`fb3cb15`). Sin push.
+
+- **F0 — análisis y decisiones del usuario:**
+  - **Ubicación:** `AUDIT.md`, `REPORT.md` y `audit/` en la raíz. `audit/` queda como carpeta de evidencias en `.agents/rules/monorepo-structure.md`.
+  - **Medición:** solo en local, sin Netlify ni URLs públicas, con el panel Lighthouse de Chrome DevTools, que ejecuta el usuario (nunca el CLI de Lighthouse).
+  - **Correcciones y refactorizaciones aprobadas:**
+    - **D3:** Tailwind precompilado con su CLI en lugar del Play CDN. El CLI escanea también `src/js/*.js`, la versión va fijada y el antes/después se compara en desktop y a 375 px.
+    - **R1:** `components/ui/table-scroll.tsx`.
+    - **R2:** un hook genérico de carga de listados bajo `use-inventory-assets` y `use-inventory-orders`.
+  - **D10:** la cascada del guard de autenticación se documenta como causa, pero no se corrige.
+  - **Pendiente de instalar:** las skills core-web-vitals y performance, en F2.
+- **F1 — medición inicial**, registro completo en `audit/before/runs.md`:
+  - **Entorno:**
+    - el sitio con `node uis/serve-website.mjs` en el 3000;
+    - el backoffice con `npm run build` + `npm run start -- -p 3003`; `API_INTERNAL_URL` y las `NEXT_PUBLIC_*` solo en la sesión de PowerShell;
+    - el contenedor `ui` parado durante la medición;
+    - commit medido `fb3cb15`.
+  - **Herramientas:** Lighthouse 13.4.1 y Chrome 155; `@tailwindcss/browser@4` resuelve a la 4.3.3.
+  - **Alcance:** 12 casos en `audit/before/<app>/<página>/<página>-<modo>.{png,json}`. Son los 8 previstos más el login en frío y suppliers e inventory/products en mobile. `audit/after/` mantiene la misma estructura.
+  - **Comprobado en los 12 JSON:**
+    - `finalDisplayedUrl` es la URL pedida, sin redirección a `/login`;
+    - el `formFactor` es el esperado;
+    - el `benchmarkIndex` va de 3569,5 a 3892,5;
+    - la Performance no varía más de 1 punto entre ejecuciones.
+  - **Discrepancia sin efecto:** el JSON de suppliers desktop es de las 23:52:20 y no de la ejecución anotada a las 23:51:14; sus cifras son idénticas.
+  - **Fuera de umbral:**
+    - incident-manager mobile: Perf 82 y CLS 0,373;
+    - suppliers mobile: CLS 0,136;
+    - inventory/products mobile: CLS 0,135.
+
+    El sitio no incumple ningún umbral (LCP mobile máximo 2,1 s). La parte del criterio que depende de la skill queda para F2–F3.
+  - **Material para F3** («Observado, sin causa raíz todavía»):
+    - el script del CDN bloquea el render (hasta 1150 ms estimados en mobile);
+    - la foto de 1920×1156 se muestra a 576×347;
+    - en index desktop, el LCP es `logo.svg`, sin `width`/`height`;
+    - en mobile, las tres vistas del backoffice repiten el mismo desplazamiento de `main` (0,1337);
+    - en incident-manager, la sección del listado añade 0,234 más;
+    - en desktop, 0,032, con `main` en incident-manager y el header en las otras dos vistas;
+    - en el login mobile, el hueco FCP→LCP de 900 ms solo aparece en la simulación.
+  - **Artefactos del servidor local**, documentados y no corregidos: compresión, `no-store`, HTTP/1.1 y TTFB.
+  - **Cierre:**
+    - servidores parados;
+    - `uis/backoffice/.next` reconstruido sin variables (rewrites vacíos en el `routes-manifest`);
+    - `docker compose start ui` (website 200; `/backend/health` OK).
+  - **Siguiente:** F2 (skills), F3 (`AUDIT.md`) y después una corrección por commit, volviendo a medir la misma URL.
+- **Memory-bank:** se corrige la entrada de #infra-40, que seguía como «pendiente de PR».
+
 ## 2026-10-22 — #infra-40 (Docker para desarrollo; el despliegue en el VPS quedó fuera): F0–F7
 
-**Estado: hecho, pendiente de PR** (F0 y F1 en `6a49d6f`, F2 en `daede5e`, F3 en `0883f3d`, F4 en `cbeac39`, el tracker en `fe56224`, F5 en `f498ef5` y F7 en el commit `docs(infra-40)`; sin F6; sin push de F7), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
+**Estado: integrado en `main` con la PR #24 (merge `6877599`, 2026-10-25).** Historial: F0 y F1 en `6a49d6f`, F2 en `daede5e`, F3 en `0883f3d`, F4 en `cbeac39`, el tracker en `fe56224`, F5 en `f498ef5` y F7 en el commit `docs(infra-40)`; sin F6; sin push de F7), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
 
 - **F0 — análisis, aprobado por el usuario con cambios:**
   - brief literal en `docs/infra-40-brief.md`, con una nota de equivalencias (`uis/website` es HTML estático, no Next.js; `/services` es `services/api`);

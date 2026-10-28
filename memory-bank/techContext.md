@@ -16,7 +16,7 @@ Una responsabilidad por carpeta de primer nivel: `uis/` (frontends), `services/`
 
 | App | Ruta | Stack real | Origen |
 |---|---|---|---|
-| Website público | `uis/website/` | HTML estático + Tailwind CSS v4 vía Play CDN (`@tailwindcss/browser@4`), sin build step, Schema.org JSON-LD | Hito 1, desplegado en Netlify (`netlify.toml` en raíz) |
+| Website público | `uis/website/` | HTML estático + Tailwind CSS v4 **precompilado** con su CLI 4.3.3 en un `src/css/styles.css` minificado y versionado (entrada `src/css/tailwind.css`, con `source(none)` y `@source` de los 3 HTML y `src/js/*.js`). Sin build en el despliegue: el CSS se regenera a mano cuando cambian las clases, con el comando de `uis/website/README.md` (CLI instalado en una carpeta temporal fuera del repo, con `NODE_PATH`). Desde la auditoría de rendimiento (H3, `5823cf7`, 2026-10-28) ya no usa el Play CDN. La foto del index va en `<picture>` (WebP de 768 y 1152 px más un JPEG de respaldo, generados con `sharp-cli` 6.1.0; H4). Schema.org JSON-LD | Hito 1, desplegado en Netlify (`netlify.toml` en raíz) |
 | Domain models / scoring | `src/` (raíz) | TypeScript estricto (`tsconfig.json` modo `strict` + `noUncheckedIndexedAccess`), tests con `node:test` nativo (sin Jest/Vitest), ejecutados vía `tsx` | Hito 2 |
 | Talent Pipeline Tracker | `uis/talent-pipeline-tracker/` | Next.js 16.3.2 (App Router) + React 19.2.8 + TypeScript estricto + Tailwind CSS v4 (`@import "tailwindcss"`, sin `tailwind.config.ts`). Solo hooks nativos de React, sin librerías de estado externas. Reglas propias detalladas en su `CLAUDE.md`/`SPECS.md` — **no duplicadas aquí, solo referenciadas** | Hito 3 |
 | Backoffice interno | `uis/backoffice/` | Next.js 16.3.2 + React 19.2.8 + TypeScript + Tailwind CSS v4, mismo patrón que `talent-pipeline-tracker` (ver decisión abajo). Desde AUTH-088 (2026-10-12), única excepción a «sin dependencias nuevas»: **jest 30.5.2 + ts-jest 29.4.14 + @types/jest 30.0.0** (`devDependencies`; `npm run test:jest`, `jest.config.mjs`, tests en `__tests__/**/*.test.ts`). Los tests de `node:test` siguen en `tests/*.test.mjs` | Monorepo AI Setup (2026-09-14, PR #4) |
@@ -307,6 +307,12 @@ Detalle en `progress.md` (entradas del 2026-10-10). Decisiones técnicas permane
 - `skills/_template/`, `skills/research/`, `skills/code-review/` — solo estructura de la plantilla (`.gitkeep`/`SKILL.md` de ejemplo), sin contenido propio.
 - `agents/` — solo `_template/` y `tools/` de la plantilla; no hay agentes propios.
 - `.agents/skills/memory-bank-sync/` — añadida el 2026-09-14 (PR #4), ver `AGENTS.md` y la propia `SKILL.md`.
+- `.claude/skills/core-web-vitals/` y `.claude/skills/performance/` — skills de terceros para la auditoría de rendimiento (2026-10-27, F2 de `feature/perf-audit`):
+  - **Origen:** `addyosmani/web-quality-skills` en el commit `afa8da942115f2961fdbfa80807ea0b232ff6c00`, versión 2.0 de las dos skills, licencia MIT.
+  - **Instalación:** `npx skills add … --skill <nombre> -a claude-code --copy -y` (CLI `skills` 1.7.4, con `DISABLE_TELEMETRY=1`). Son copias, no enlaces simbólicos.
+  - **Contenido:** solo Markdown, sin scripts.
+  - **Ámbito:** solo para Claude Code; no están en `.agents/skills/`.
+  - **Recordatorio:** sus referencias proponen el CLI de Lighthouse como alternativa; en este repo la regla del usuario lo excluye (se mide con el panel de DevTools).
 
 ## Cómo verificar este documento
 

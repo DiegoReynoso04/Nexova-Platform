@@ -1,3 +1,4 @@
+import { TableScroll } from '@/components/ui/table-scroll';
 import type { SatisfactionResult } from '@/types/incidents';
 
 export interface SatisfactionPanelProps {
@@ -33,7 +34,7 @@ export function SatisfactionPanel({ satisfaction }: SatisfactionPanelProps) {
         ))}
       </dl>
 
-      <div className="mt-6 overflow-x-auto">
+      <TableScroll className="mt-6">
         <table className="w-full text-sm">
           <caption className="sr-only">Distribución de puntuaciones de satisfacción</caption>
           <thead>
@@ -69,7 +70,7 @@ export function SatisfactionPanel({ satisfaction }: SatisfactionPanelProps) {
             })}
           </tbody>
         </table>
-      </div>
+      </TableScroll>
     </section>
   );
 }

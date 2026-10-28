@@ -2,7 +2,7 @@
 // Toda ruta es protegida salvo las públicas (/login, /register, /forgot-password)
 // y las abiertas (/reset-password).
 
-import { isOpenPath, isPublicPath, routeAccess } from '@/lib/auth-routes';
+import { headerNavMode, isOpenPath, isPublicPath, routeAccess } from '@/lib/auth-routes';
 
 describe('isPublicPath', () => {
   test.each(['/login', '/register', '/forgot-password', '/login/'])('%s is public', (path) => {
@@ -67,5 +67,39 @@ describe('routeAccess', () => {
   test('an unknown or differently cased path is protected by default', () => {
     expect(routeAccess('/LOGIN', 'anonymous')).toBe('redirect_login');
     expect(routeAccess('/vista-nueva', 'anonymous')).toBe('redirect_login');
+  });
+});
+
+// Cabecera (components/auth/account-nav.tsx): mientras se valida la sesión en
+// una ruta protegida reserva el hueco de la navegación con sesión, para que la
+// cabecera no crezca al llegar GET /auth/me y desplace la página (CLS, H1 de AUDIT.md).
+describe('headerNavMode', () => {
+  test.each(['/suppliers', '/incident-manager', '/inventory/products', '/', '/account/profile'])(
+    'a protected page %s reserves the session navigation while initializing or checking',
+    (path) => {
+      expect(headerNavMode(path, 'initializing')).toBe('reserved');
+      expect(headerNavMode(path, 'checking')).toBe('reserved');
+    }
+  );
+
+  test.each(['/login', '/register', '/forgot-password', '/reset-password'])(
+    'a public or open page %s reserves nothing while the session is unknown',
+    (path) => {
+      expect(headerNavMode(path, 'initializing')).toBe('none');
+      expect(headerNavMode(path, 'checking')).toBe('none');
+    }
+  );
+
+  test.each(['/suppliers', '/login', '/reset-password'])('a validated session shows the session navigation on %s', (path) => {
+    expect(headerNavMode(path, 'authenticated')).toBe('session');
+  });
+
+  test.each(['/suppliers', '/login', '/reset-password'])('without a session, %s shows only login and register', (path) => {
+    expect(headerNavMode(path, 'anonymous')).toBe('access');
+  });
+
+  test.each(['error', 'retrying'] as const)('a session that could not be validated (%s) shows no navigation', (session) => {
+    // El guard muestra el aviso con «Reintentar» y «Cerrar sesión»; la cabecera, solo la marca.
+    expect(headerNavMode('/suppliers', session)).toBe('none');
   });
 });
