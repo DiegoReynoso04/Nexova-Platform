@@ -2,6 +2,7 @@ import type { ChangeEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { TableScroll } from '@/components/ui/table-scroll';
 import type { BoardRowState } from '@/hooks/use-incident-board';
 import { BRANCH_LABELS, INCIDENT_TRANSITIONS, type Incident, type IncidentStatus } from '@/types/incident-manager';
 
@@ -26,11 +27,7 @@ function formatDateTime(iso: string): string {
 // transiciones del ciclo de vida; los estados finales no ofrecen selector.
 export function IncidentTable({ incidents, rows, onChangeStatus, onDismissRowError }: IncidentTableProps) {
   return (
-    // `relative`: los elementos `sr-only` de las filas (position: absolute) toman
-    // este contenedor como bloque contenedor y quedan recortados por su
-    // overflow. Sin él, ensanchaban el documento en móvil (scroll horizontal
-    // de toda la página a 375 px).
-    <div className="relative overflow-x-auto rounded-lg border border-border bg-surface">
+    <TableScroll framed>
       <table className="w-full min-w-[48rem] border-collapse text-left text-sm">
         <caption className="sr-only">Incidencias registradas</caption>
         <thead className="border-b border-border bg-canvas text-xs uppercase tracking-wide text-ink-muted">
@@ -55,7 +52,7 @@ export function IncidentTable({ incidents, rows, onChangeStatus, onDismissRowErr
           ))}
         </tbody>
       </table>
-    </div>
+    </TableScroll>
   );
 }
 

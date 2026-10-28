@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { TableScroll } from '@/components/ui/table-scroll';
 import { inboundOrderHref, outboundOrderHref } from '@/lib/inventory-routes';
 import type { Asset } from '@/types/inventory';
 
@@ -17,8 +18,7 @@ export interface AssetTableProps {
 
 export function AssetTable({ assets }: AssetTableProps) {
   return (
-    // `relative`: recorta los elementos sr-only absolutos de dentro (sin scroll horizontal en la página a 375 px).
-    <div className="relative overflow-x-auto rounded-lg border border-border bg-surface">
+    <TableScroll framed>
       <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
         <caption className="sr-only">Activos del inventario con su stock actual</caption>
         <thead className="border-b border-border bg-canvas text-xs uppercase tracking-wide text-ink-muted">
@@ -62,6 +62,6 @@ export function AssetTable({ assets }: AssetTableProps) {
           ))}
         </tbody>
       </table>
-    </div>
+    </TableScroll>
   );
 }

@@ -366,7 +366,7 @@ describe('código de producción', () => {
     assert.equal((table.match(/order\.created_at/g) ?? []).length, 2);
     // El user_uuid completo, en monoespaciada y sin desbordar.
     assert.match(table, /<td className="[^"]*\bfont-mono\b[^"]*\bbreak-all\b[^"]*">\{order\.user_uuid\}<\/td>/);
-    assert.match(table, /className="relative overflow-x-auto/);
+    assert.match(table, /<TableScroll framed>/);
     const badge = codeWithoutComments('components/inventory/order-type-badge.tsx');
     assert.match(badge, /<span aria-hidden="true">\{icon\}<\/span>\s*\{label\}/);
     const classes = badge.match(/inbound: '([^']+)',\s*outbound: '([^']+)'/);
@@ -423,12 +423,18 @@ describe('código de producción', () => {
   // con overflow que no es su bloque contenedor no queda recortado y ensancha la
   // página: en /incident-manager provocaba scroll horizontal a 375 px. Todo
   // contenedor `overflow-x-auto` de components/ debe llevar `relative`.
-  // Excepciones pendientes (mismo patrón, fuera del alcance del arreglo del
-  // gestor): si alguna se corrige, hay que quitarla de esta lista.
-  const OVERFLOW_WITHOUT_RELATIVE_PENDING = [
+  // Excepciones pendientes: ninguna desde R1 (AUDIT.md), que llevó las tablas
+  // de /suppliers y /incidents a components/ui/table-scroll.tsx. Si alguna
+  // vuelve a aparecer, se añade aquí con su motivo.
+  const OVERFLOW_WITHOUT_RELATIVE_PENDING = [];
+  const TABLE_SCROLL = 'components/ui/table-scroll.tsx';
+  const TABLES_WITH_SCROLL = [
+    'components/incident-manager/incident-table.tsx',
     'components/incidents/distribution-table.tsx',
     'components/incidents/invalid-breakdown-table.tsx',
     'components/incidents/satisfaction-panel.tsx',
+    'components/inventory/asset-table.tsx',
+    'components/inventory/order-table.tsx',
     'components/suppliers/supplier-table.tsx',
   ];
 
@@ -439,13 +445,25 @@ describe('código de producción', () => {
         .filter((classes) => /(^|\s)overflow-x-auto(\s|$)/.test(classes))
         .map((classes) => ({ file, relative: /(^|\s)relative(\s|$)/.test(classes) }))
     );
-    assert.ok(containers.some((item) => item.file === 'components/incident-manager/incident-table.tsx'));
+    assert.ok(containers.some((item) => item.file === TABLE_SCROLL));
     for (const { file, relative } of containers) {
       const pending = OVERFLOW_WITHOUT_RELATIVE_PENDING.includes(file);
       assert.equal(relative, !pending, pending ? `${file} ya lleva relative: quítalo de la lista de pendientes` : `${file}: overflow-x-auto sin relative`);
     }
     for (const file of OVERFLOW_WITHOUT_RELATIVE_PENDING) {
       assert.ok(containers.some((item) => item.file === file), `${file} ya no tiene overflow-x-auto: quítalo de la lista`);
+    }
+  });
+
+  // R1 (AUDIT.md): el contenedor con scroll de las tablas vive en un único
+  // componente, así que la regla del `relative` no se puede volver a olvidar.
+  test('el scroll horizontal de las tablas solo está en components/ui/table-scroll.tsx', () => {
+    const withOverflow = PRODUCTION_FILES.filter((file) => /(^|[\s"`])overflow-x-auto(\s|["`]|$)/m.test(codeWithoutComments(file)));
+    assert.deepEqual(withOverflow, [TABLE_SCROLL]);
+    for (const file of TABLES_WITH_SCROLL) {
+      const code = codeWithoutComments(file);
+      assert.match(code, /import \{ TableScroll \} from '@\/components\/ui\/table-scroll';/, file);
+      assert.match(code, /<TableScroll\b[^>]*>[\s\S]*<table\b[\s\S]*<\/table>\s*<\/TableScroll>/, file);
     }
   });
 
