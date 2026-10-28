@@ -123,7 +123,7 @@ Valores de los JSON: FCP y LCP en segundos, TBT en ms. Antes: 3–4 ejecuciones 
 ## 4. Qué tuvo más impacto y por qué
 
 1. **H2 y H1, en el backoffice mobile.** Eran las únicas métricas fuera de umbral, y el CLS pesa un 25 % en la Performance de Lighthouse 13.
-   - **H2** sola llevó `/incident-manager` de 88 a 100 en su medición intermedia.
+   - **H2** llevó `/incident-manager` de 88 a 100 en su medición intermedia. Pero el 88 de H1 se midió con extensiones de Chrome activas, que inflaban el FCP, así que la subida se debe sobre todo a que desaparece el desplazamiento de 0,2344 (CLS 0,240 → 0), y en parte a que la ventana ya estaba limpia.
    - **H1** quitó el 0,1337 común a las tres vistas.
 
    Las dos atacan la misma causa raíz de fondo: contenido que llega después de pintar sin espacio reservado (la sesión validada en cliente, D10, y un panel con carga propia). Por eso arreglarla en el layout corrige varias vistas a la vez.
