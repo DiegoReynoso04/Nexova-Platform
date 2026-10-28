@@ -227,7 +227,7 @@ Fuente: [`docs/ligthweight-storage-api.md`](../../docs/ligthweight-storage-api.m
 
 | Requisito | Dónde se cumple |
 |---|---|
-| Modelo de proveedor (10 campos) | `app/models.py` (`SupplierCreate`, `Supplier`) |
+| Modelo de proveedor (10 campos) | `app/models.py` (`SupplierCreate` entrada, `Supplier` documento, `SupplierRead` respuesta) |
 | 9 categorías válidas (`VALID_CATEGORIES`) y 2 estados (`VALID_STATUSES`) | `app/models.py` (`SupplierCategory`, `SupplierStatus`) |
 | Moneda por país: Spain → EUR, USA → USD; la API rechaza combinaciones inconsistentes | validador de modelo de `SupplierCreate` → 422 |
 | Trazabilidad de tarifas: cada cambio de `monthly_rate` registra `updated_at` | `app/database.py` (`update_rate`) |
@@ -274,13 +274,13 @@ Decisión del tech lead: el endpoint existe y funciona (204 / 404), pero **el fr
 | `contact_email` | string o null | opcional | — |
 | `notes` | string o null | opcional | — |
 
-Las respuestas incluyen siempre los 11 campos; los opcionales ausentes van como `null`.
+Las respuestas incluyen siempre los 11 campos; los opcionales ausentes van como `null`. El esquema de respuesta es `SupplierRead`, distinto del de entrada (`SupplierCreate`) y del documento de TinyDB (`Supplier`): las reglas de entrada (moneda por país, formato de fecha, `strict`) no se vuelven a ejecutar al leer, así que un documento antiguo que no las cumpla se sigue listando en lugar de dar un 500. El listado usa el mismo esquema que el detalle porque la tabla del backoffice muestra los 11 campos (auditoría de serialización, [`docs/serialization-audit.md`](../../docs/serialization-audit.md), D4–D5).
 
 ## 12. Endpoints
 
 | Método y ruta | Body | Éxito | Errores |
 |---|---|---|---|
-| `POST /suppliers` | `SupplierCreate` | **201** + proveedor completo con `id` | 422 |
+| `POST /suppliers` | `SupplierCreate` | **201** + `SupplierRead` | 422 |
 | `GET /suppliers?country=&category=` | — | **200** + lista (todos si no hay filtros) | 422 (valor de filtro inválido) |
 | `GET /suppliers/{id}` | — | **200** + proveedor | 404 `supplier_not_found`, 422 (id no numérico) |
 | `PATCH /suppliers/{id}/rate` | `{"monthly_rate": number}` | **200** + proveedor con `updated_at` nuevo | 404, 422 (≤ 0, no numérico, campos extra) |

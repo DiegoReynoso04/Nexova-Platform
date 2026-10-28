@@ -6,6 +6,13 @@ campos, categorías y estados son exactamente los del documento.
 
 Pydantic valida todo lo que entra: una entrada inválida se rechaza con 422
 antes de llegar a TinyDB (ver `app/database.py`).
+
+Entrada, almacenamiento y salida son modelos distintos (auditoría de
+serialización, docs/serialization-audit.md, D4): `SupplierCreate` (y los dos
+PATCH) validan lo que escribe el cliente; `Supplier` es el documento leído de
+TinyDB; `SupplierRead` es la respuesta, con cada campo nombrado. Las reglas de
+entrada no se vuelven a ejecutar al leer: un documento antiguo que no las
+cumpla no convierte un listado en un 500.
 """
 
 from datetime import datetime
@@ -94,11 +101,56 @@ class SupplierCreate(BaseModel):
         return self
 
 
-class Supplier(SupplierCreate):
-    """Proveedor tal como lo devuelve la API: `id` de TinyDB y `updated_at` del sistema."""
+class Supplier(BaseModel):
+    """Documento de TinyDB con su `id` (`doc_id`). Uso interno: las rutas responden `SupplierRead`."""
 
     id: int
+    name: str
+    country: Country
+    categories: list[SupplierCategory]
+    monthly_rate: float
+    currency: Currency
     updated_at: datetime
+    status: SupplierStatus
+    contract_renewal_date: str | None = None
+    contact_email: str | None = None
+    notes: str | None = None
+
+    def public(self) -> "SupplierRead":
+        return SupplierRead(
+            id=self.id,
+            name=self.name,
+            country=self.country,
+            categories=self.categories,
+            monthly_rate=self.monthly_rate,
+            currency=self.currency,
+            updated_at=self.updated_at,
+            status=self.status,
+            contract_renewal_date=self.contract_renewal_date,
+            contact_email=self.contact_email,
+            notes=self.notes,
+        )
+
+
+class SupplierRead(BaseModel):
+    """Proveedor tal como lo devuelve la API, en el listado y en el detalle.
+
+    Un solo esquema para los dos: la tabla del backoffice muestra los once
+    campos, `notes` y `contact_email` incluidos (D5). `id` es el de TinyDB y
+    `updated_at` lo pone el sistema.
+    """
+
+    id: int
+    name: str
+    country: Country
+    categories: list[SupplierCategory]
+    monthly_rate: float
+    currency: Currency
+    updated_at: datetime
+    status: SupplierStatus
+    contract_renewal_date: str | None
+    contact_email: str | None
+    notes: str | None
 
 
 class RateUpdate(BaseModel):
