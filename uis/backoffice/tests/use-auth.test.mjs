@@ -50,7 +50,7 @@ function recorder(reducer, initial) {
   };
 }
 
-const USER = { id: 'u-1', email: 'ana@nexova.test', role: 'user', is_active: true, created_at: 'x', profile: null };
+const USER = { id: 'u-1', email: 'ana@nexova.test', role: 'user', created_at: 'x', profile: null };
 
 describe('sesión: estado derivado', () => {
   test('sin leer el token (servidor/hidratación), sin token, validando, válida y error', () => {
@@ -258,7 +258,7 @@ describe('perfil', () => {
     return { controller, me, update, ...r };
   }
 
-  const PROFILE = { id: 'p-1', user_id: 'u-1', name: 'Ana', phone: null, address: null };
+  const PROFILE = { name: 'Ana', phone: null, address: null };
 
   test('al activarse carga GET /auth/me', async () => {
     const h = harness();

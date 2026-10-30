@@ -142,9 +142,11 @@ Devuelve el último análisis correcto del proceso como CSV.
 
 Sin análisis previo: `404` `{"detail": "no analysis available yet", "code": "no_analysis"}`.
 
+Sin cuerpo JSON: la ruta declara `response_model=None` y documenta en OpenAPI (`responses=`) el `200 text/csv` y sus tres cabeceras (auditoría de serialización, [`docs/serialization-audit.md`](../../docs/serialization-audit.md), D7).
+
 ### 3.3 `GET /health`
 
-`200` `{"status": "ok"}`. Técnico, fuera de `/api`, sin datos.
+`200` `{"status": "ok"}` (`HealthResponse`, `status: Literal["ok"]`). Técnico, fuera de `/api`, sin datos. Lo usa el healthcheck de Docker (`docker-compose.yml`).
 
 ---
 
@@ -227,7 +229,7 @@ Fuente: [`docs/ligthweight-storage-api.md`](../../docs/ligthweight-storage-api.m
 
 | Requisito | Dónde se cumple |
 |---|---|
-| Modelo de proveedor (10 campos) | `app/models.py` (`SupplierCreate`, `Supplier`) |
+| Modelo de proveedor (10 campos) | `app/models.py` (`SupplierCreate` entrada, `Supplier` documento, `SupplierRead` respuesta) |
 | 9 categorías válidas (`VALID_CATEGORIES`) y 2 estados (`VALID_STATUSES`) | `app/models.py` (`SupplierCategory`, `SupplierStatus`) |
 | Moneda por país: Spain → EUR, USA → USD; la API rechaza combinaciones inconsistentes | validador de modelo de `SupplierCreate` → 422 |
 | Trazabilidad de tarifas: cada cambio de `monthly_rate` registra `updated_at` | `app/database.py` (`update_rate`) |
@@ -274,18 +276,18 @@ Decisión del tech lead: el endpoint existe y funciona (204 / 404), pero **el fr
 | `contact_email` | string o null | opcional | — |
 | `notes` | string o null | opcional | — |
 
-Las respuestas incluyen siempre los 11 campos; los opcionales ausentes van como `null`.
+Las respuestas incluyen siempre los 11 campos; los opcionales ausentes van como `null`. El esquema de respuesta es `SupplierRead`, distinto del de entrada (`SupplierCreate`) y del documento de TinyDB (`Supplier`): las reglas de entrada (moneda por país, formato de fecha, `strict`) no se vuelven a ejecutar al leer, así que un documento antiguo que no las cumpla se sigue listando en lugar de dar un 500. El listado usa el mismo esquema que el detalle porque la tabla del backoffice muestra los 11 campos (auditoría de serialización, [`docs/serialization-audit.md`](../../docs/serialization-audit.md), D4–D5).
 
 ## 12. Endpoints
 
 | Método y ruta | Body | Éxito | Errores |
 |---|---|---|---|
-| `POST /suppliers` | `SupplierCreate` | **201** + proveedor completo con `id` | 422 |
+| `POST /suppliers` | `SupplierCreate` | **201** + `SupplierRead` | 422 |
 | `GET /suppliers?country=&category=` | — | **200** + lista (todos si no hay filtros) | 422 (valor de filtro inválido) |
 | `GET /suppliers/{id}` | — | **200** + proveedor | 404 `supplier_not_found`, 422 (id no numérico) |
 | `PATCH /suppliers/{id}/rate` | `{"monthly_rate": number}` | **200** + proveedor con `updated_at` nuevo | 404, 422 (≤ 0, no numérico, campos extra) |
 | `PATCH /suppliers/{id}/status` | `{"status": "active"}` o `{"status": "suspended"}` | **200** + proveedor (`updated_at` sin cambios) | 404, 422 |
-| `DELETE /suppliers/{id}` | — | **204** sin cuerpo | 404 |
+| `DELETE /suppliers/{id}` | — | **204** sin cuerpo (`response_model=None`, 204 documentado) | 404 |
 
 Errores con el formato común `{detail, code}` (§4); el 422 devuelve la lista `{loc, msg, type}` sin `input`. Cualquier ruta responde **503** `storage_unavailable` si `suppliers.json` no se puede leer o escribir o está corrupto (§4, §5).
 
@@ -353,7 +355,7 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 | `role` | `admin` \| `manager` \| `user` | solo `PUT` de un admin (D-AUTH-8, §21) | `user` en todo registro público |
 | `created_at` | datetime ISO 8601 UTC | nunca (422) | lo genera el sistema |
 
-`Profile` (tabla `profiles`): `id` (UUID), `user_id` (= `User.id`), `name`, `phone`, `address` (strings opcionales, recortados, máx. 200 caracteres). Se crea en la misma operación que el usuario (con los campos opcionales de `POST /users` o vacío) y se borra con él: nunca hay un perfil sin usuario.
+`Profile` (tabla `profiles`): `id` (UUID), `user_id` (= `User.id`), `name`, `phone`, `address` (strings opcionales, recortados, máx. 200 caracteres). Se crea en la misma operación que el usuario (con los campos opcionales de `POST /users` o vacío) y se borra con él: nunca hay un perfil sin usuario. `id` y `user_id` son internos: ninguna respuesta los incluye (`ProfileRead`, §18).
 
 **User y Profile viven solo en TinyDB**, ahora y después de introducir Supabase/PostgreSQL: no existen ni se deben crear tablas de usuarios ni de perfiles en PostgreSQL. Las tablas PostgreSQL de otros módulos guardarán únicamente el `id` de TinyDB como `user_uuid`.
 
@@ -361,17 +363,24 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 
 | Método y ruta | Auth | Body | Éxito | Errores |
 |---|---|---|---|---|
-| `POST /users` | pública | `{email, password, name?, phone?, address?}` (`role` → 422) | **201** + `UserRead` (`role=user`) | 409, 422 |
+| `POST /users` | pública | `{email, password, name?, phone?, address?}` (`role` → 422) | **201** + `RegisteredUser` `{id}` (se crea con `role=user`) | 409, 422 |
 | `GET /users` | admin | — | **200** + lista de `UserRead` | 401, 403 |
 | `GET /users/{id}` | propio o admin | — | **200** + `UserRead` | 401, 403, 404 (solo admin), 422 (id no UUID) |
 | `PUT /users/{id}` | propio o admin | `{email?, password?, role?}` (`password` y `role` solo admin) | **200** + `UserRead` | 401, 403 (otro usuario, o `role`/`password` sin ser admin), 404, 409, 422 |
-| `DELETE /users/{id}` | propio o admin | — | **204** (borra también el `Profile`) | 401, 403, 404 |
+| `DELETE /users/{id}` | propio o admin | — | **204** sin cuerpo (borra también el `Profile`; `response_model=None`, 204 documentado) | 401, 403, 404 |
 | `POST /auth/login` | pública | formulario OAuth2 `username` (= email), `password` | **200** `{access_token, token_type: "bearer", expires_in}` | 401 `invalid_credentials`, 422 |
-| `GET /auth/me` | token | — | **200** `{id, email, role, is_active, created_at, profile}` | 401 |
-| `GET /profiles/me` | token | — | **200** `Profile` | 401 |
-| `PUT /profiles/me` | token | `{name?, phone?, address?}` (`user_id` → 422) | **200** `Profile` | 401, 422 |
+| `GET /auth/me` | token | — | **200** `CurrentUser` `{id, email, role, created_at, profile}` (`profile`: `ProfileRead` o `null`) | 401 |
+| `GET /profiles/me` | token | — | **200** `ProfileRead` `{name, phone, address}` | 401 |
+| `PUT /profiles/me` | token | `{name?, phone?, address?}` (`user_id` → 422) | **200** `ProfileRead` | 401, 422 |
 
-`UserRead` = `{id, email, role, is_active, created_at}`: ninguna respuesta contiene `password` ni `hashed_password`.
+Esquemas de respuesta (auditoría de serialización, [`docs/serialization-audit.md`](../../docs/serialization-audit.md), D1–D4): cada campo nombrado en el esquema y ninguno es el documento de TinyDB (`UserInDB`, `Profile`).
+
+- `RegisteredUser` = `{id}`. El registro no reenvía el `email` (flujo no autenticado) ni campos constantes al crear (`role=user`, `is_active=true`).
+- `UserRead` = `{id, email, role, is_active, created_at}`, solo en `/users` y `/users/{id}` (el propio usuario o un admin).
+- `CurrentUser` = `{id, email, role, created_at, profile}`: el `email` es el del propio llamante (lo muestra la vista de perfil); sin `is_active`, que aquí sería siempre `true` (un inactivo recibe 401).
+- `ProfileRead` = `{name, phone, address}`, sin `id` ni `user_id`.
+
+Ninguna respuesta contiene `password` ni `hashed_password`.
 
 **503 `storage_unavailable`** (§4, §5): toda ruta que lee o escribe `auth.json` lo responde si el archivo no se puede leer o escribir o está corrupto. Incluye `POST /auth/login`, `POST /users`, las rutas de la Parte D y **cualquier ruta protegida de las Partes A, B y E**, porque `get_current_user` busca el usuario del token en esa base.
 
@@ -532,13 +541,13 @@ Todas exigen `Authorization: Bearer <token>` (401 `not_authenticated` sin token 
 
 | Método y ruta | Body | Éxito | Errores |
 |---|---|---|---|
-| `POST /api/incidents` | `{title, description, category, origin, branch, status?}` | **201** + incidencia (`status = open`) | 400 `validation_error` |
-| `GET /api/incidents?status=&origin=&branch=&category=` | — | **200** + lista (más reciente primero; `[]` si no hay) | 400 `validation_error` (valor de filtro no permitido) |
+| `POST /api/incidents` | `{title, description, category, origin, branch, status?}` | **201** + `IncidentRead` (`status = open`) | 400 `validation_error` |
+| `GET /api/incidents?status=&origin=&branch=&category=` | — | **200** + lista de `IncidentListItem` (sin `updated_at`; más reciente primero; `[]` si no hay) | 400 `validation_error` (valor de filtro no permitido) |
 | `GET /api/incidents/summary` | — | **200** + resumen (§32) | — |
-| `GET /api/incidents/{id}` | — | **200** + incidencia | 404 `incident_not_found` (UUID inexistente) · 404 `not_found` (no es un UUID) |
+| `GET /api/incidents/{id}` | — | **200** + `IncidentRead` | 404 `incident_not_found` (UUID inexistente) · 404 `not_found` (no es un UUID) |
 | `PATCH /api/incidents/{id}/status` | `{"status": "<estado>"}` (solo `status`) | **200** + incidencia con `status` y `updated_at` nuevos | 400 `validation_error` · 400 `invalid_status_transition` · 404 como el GET |
 
-Incidencia (respuesta):
+Incidencia (`IncidentRead`: detalle, alta y cambio de estado; una fila del listado, `IncidentListItem`, es lo mismo sin `updated_at`):
 
 ```json
 {
@@ -556,6 +565,13 @@ Incidencia (respuesta):
 
 `id`, `created_at` y `updated_at` los genera el sistema (UTC); enviarlos → 400 `unknown_field`. `updated_at` cambia con cada `PATCH …/status` correcto; `created_at` nunca.
 
+**Esquemas (auditoría de serialización, [`docs/serialization-audit.md`](../../docs/serialization-audit.md), D4–D6 y D8):**
+
+- **Salida:** `Incident` es el documento de TinyDB y ninguna ruta lo devuelve. Las rutas responden `IncidentRead` (los nueve campos) o, en el listado, `IncidentListItem` (sin `updated_at`, que la tabla del backoffice no usa).
+- **Entrada, contrato publicado:** `IncidentCreateRequest` (`title` 1–120, `description`, `category`, `origin`, `branch`, `status` opcional y solo `open`) e `IncidentStatusChangeRequest` (`status`), ambos con `additionalProperties: false`, son lo que OpenAPI publica como cuerpo de `POST` y `PATCH …/status`.
+- **Entrada, autoridad de validación:** `nexova_shared` (`validate_incident_fields`, `validate_status_change`). Esos modelos no validan: el handler sigue recibiendo el objeto JSON y lo valida `nexova_shared`, que da los códigos del 400 de §31 y es el mismo que usa el seed. Validar con Pydantic cambiaría los códigos (todo error de campo saldría como `invalid_body` en `field: "body"`, y un `null` no sería `missing`) y duplicaría reglas.
+- **Coherencia:** `tests/test_incident_manager_contract.py` comprueba que el esquema publicado y `nexova_shared` aceptan los mismos campos, con el mismo vocabulario y los mismos obligatorios, y que un campo no previsto responde 400 `unknown_field`.
+
 Ciclo de vida (CONTEXT): `open → in_progress | discarded`; `in_progress → resolved | discarded`; `resolved` y `discarded` son finales. Pedir el mismo estado también es una transición no permitida.
 
 ## 31. Errores de este router
@@ -571,6 +587,8 @@ Ciclo de vida (CONTEXT): `open → in_progress | discarded`; `in_progress → re
 | 404 | `not_found` | `Not Found` (id que no es un UUID, como cualquier ruta inexistente) |
 | 503 | `storage_unavailable` | `storage is temporarily unavailable`: `incidents.json` (o `auth.json`, al validar el token) no se puede leer o escribir o está corrupto (§4, §5). Formato común `{detail, code}`, no la lista del 400 |
 | 500 | `internal_error` | `internal server error`, sin traza ni mensaje (§5) |
+
+**OpenAPI:** las cinco rutas documentan con `responses=` sus errores reales, con ejemplos construidos con los errores de `nexova_shared` y `app/core/errors.py`: 401 y 503 (`IncidentErrorResponse`, `{detail, code}`) en todas; 400 (`IncidentValidationErrorResponse`, la lista `{field, error, message}`) en el alta, el listado y el cambio de estado (este con `validation_error` e `invalid_status_transition`); 404 (`incident_not_found` y `not_found`) en el detalle y el cambio de estado. El 422 que FastAPI añade por defecto se quita de estas rutas (`drop_native_validation_responses`, en `create_app`), porque nunca lo responden. El resto de la API conserva su 422.
 
 Ejemplo (alta sin `branch`):
 

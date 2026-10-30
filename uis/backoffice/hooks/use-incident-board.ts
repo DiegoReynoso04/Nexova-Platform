@@ -26,6 +26,7 @@ import {
   INCIDENT_TRANSITIONS,
   type Incident,
   type IncidentFilters,
+  type IncidentListItem,
   type IncidentStatus,
   type IncidentUiError,
 } from '@/types/incident-manager';
@@ -47,7 +48,7 @@ export type BoardRowState =
 export interface IncidentBoardState {
   filters: IncidentFilters;
   /** Último listado recibido (con los cambios de estado aplicados). Un fallo posterior no lo borra. */
-  incidents: readonly Incident[];
+  incidents: readonly IncidentListItem[];
   /** Si ya se recibió algún listado (distingue "vacío" de "aún no cargado"). */
   loaded: boolean;
   list: BoardListState;
@@ -57,7 +58,7 @@ export interface IncidentBoardState {
 export type IncidentBoardAction =
   | { type: 'filters_changed'; filters: IncidentFilters }
   | { type: 'list_started' }
-  | { type: 'list_succeeded'; incidents: readonly Incident[] }
+  | { type: 'list_succeeded'; incidents: readonly IncidentListItem[] }
   | { type: 'list_failed'; error: IncidentUiError }
   | { type: 'status_change_started'; id: string; status: IncidentStatus; previous: IncidentStatus }
   | { type: 'status_change_succeeded'; incident: Incident }
@@ -80,7 +81,7 @@ function withoutRow(rows: Readonly<Record<string, BoardRowState>>, id: string): 
   return next;
 }
 
-function withStatus(incidents: readonly Incident[], id: string, status: IncidentStatus): Incident[] {
+function withStatus(incidents: readonly IncidentListItem[], id: string, status: IncidentStatus): IncidentListItem[] {
   return incidents.map((incident) => (incident.id === id ? { ...incident, status } : incident));
 }
 
@@ -148,7 +149,7 @@ export interface IncidentBoardSession {
   setFilters(filters: IncidentFilters): void;
   reload(): Promise<void>;
   /** Pide la transición `incident.status → target` si el ciclo de vida la permite. */
-  changeStatus(incident: Incident, target: IncidentStatus): Promise<void>;
+  changeStatus(incident: IncidentListItem, target: IncidentStatus): Promise<void>;
   clearRow(id: string): void;
 }
 
@@ -260,7 +261,7 @@ export interface UseIncidentBoardResult extends IncidentBoardState {
   view: BoardView;
   setFilters: (filters: IncidentFilters) => void;
   reload: () => void;
-  changeStatus: (incident: Incident, target: IncidentStatus) => void;
+  changeStatus: (incident: IncidentListItem, target: IncidentStatus) => void;
   clearRow: (id: string) => void;
 }
 
@@ -277,7 +278,7 @@ export function useIncidentBoard(onStatusChanged?: () => void): UseIncidentBoard
   const setFilters = useCallback((filters: IncidentFilters) => session.setFilters(filters), [session]);
   const reload = useCallback(() => void session.reload(), [session]);
   const changeStatus = useCallback(
-    (incident: Incident, target: IncidentStatus) => void session.changeStatus(incident, target),
+    (incident: IncidentListItem, target: IncidentStatus) => void session.changeStatus(incident, target),
     [session]
   );
   const clearRow = useCallback((id: string) => session.clearRow(id), [session]);

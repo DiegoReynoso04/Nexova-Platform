@@ -9,8 +9,8 @@ import {
   normalizeProfile,
 } from '@/services/normalizers';
 
-const PROFILE = { id: 'p-1', user_id: 'u-1', name: 'Ana', phone: null, address: null };
-const ME = { id: 'u-1', email: 'ana@example.invalid', role: 'user', is_active: true, created_at: '2026-10-01T10:00:00Z', profile: PROFILE };
+const PROFILE = { name: 'Ana', phone: null, address: null };
+const ME = { id: 'u-1', email: 'ana@example.invalid', role: 'user', created_at: '2026-10-01T10:00:00Z', profile: PROFILE };
 
 describe('normalizeAccessToken', () => {
   test('accepts the login response', () => {
@@ -43,10 +43,16 @@ describe('normalizeCurrentUser', () => {
     expect(normalizeCurrentUser({ ...ME, hashed_password: '$2b$12$x' })).not.toHaveProperty('hashed_password');
   });
 
+  test('drops the fields the API no longer sends, even if an old server still does', () => {
+    // Auditoría de serialización (D2, D3): `/auth/me` sin `is_active` y el perfil sin `id` ni `user_id`.
+    const legacy = { ...ME, is_active: true, profile: { ...PROFILE, id: 'p-1', user_id: 'u-1' } };
+    expect(normalizeCurrentUser(legacy)).toEqual(ME);
+  });
+
   test.each([
     ['an unknown role', { ...ME, role: 'superadmin' }],
-    ['is_active as text', { ...ME, is_active: 'true' }],
-    ['a malformed profile', { ...ME, profile: { ...PROFILE, user_id: 7 } }],
+    ['created_at as a number', { ...ME, created_at: 0 }],
+    ['a malformed profile', { ...ME, profile: { ...PROFILE, name: 7 } }],
   ])('rejects a user with %s', (_case, body) => {
     expect(() => normalizeCurrentUser(body)).toThrow(UnexpectedResponseError);
   });

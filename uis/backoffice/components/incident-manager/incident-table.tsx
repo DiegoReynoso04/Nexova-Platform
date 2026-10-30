@@ -4,14 +4,14 @@ import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { TableScroll } from '@/components/ui/table-scroll';
 import type { BoardRowState } from '@/hooks/use-incident-board';
-import { BRANCH_LABELS, INCIDENT_TRANSITIONS, type Incident, type IncidentStatus } from '@/types/incident-manager';
+import { BRANCH_LABELS, INCIDENT_TRANSITIONS, type IncidentListItem, type IncidentStatus } from '@/types/incident-manager';
 
 import { IncidentError } from './incident-error';
 
 export interface IncidentTableProps {
-  incidents: readonly Incident[];
+  incidents: readonly IncidentListItem[];
   rows: Readonly<Record<string, BoardRowState>>;
-  onChangeStatus: (incident: Incident, target: IncidentStatus) => void;
+  onChangeStatus: (incident: IncidentListItem, target: IncidentStatus) => void;
   onDismissRowError: (id: string) => void;
 }
 
@@ -57,9 +57,9 @@ export function IncidentTable({ incidents, rows, onChangeStatus, onDismissRowErr
 }
 
 interface IncidentRowProps {
-  incident: Incident;
+  incident: IncidentListItem;
   row: BoardRowState | undefined;
-  onChangeStatus: (incident: Incident, target: IncidentStatus) => void;
+  onChangeStatus: (incident: IncidentListItem, target: IncidentStatus) => void;
   onDismissRowError: (id: string) => void;
 }
 

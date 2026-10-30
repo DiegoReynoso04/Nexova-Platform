@@ -319,8 +319,6 @@ function parseProfile(value: unknown, context: string): Profile {
     throw new ResponseShapeError(`${context}: se esperaba un objeto, se recibió ${describeType(value)}`);
   }
   return {
-    id: requireString(value, 'id', context),
-    user_id: requireString(value, 'user_id', context),
     name: requireNullableString(value, 'name', context),
     phone: requireNullableString(value, 'phone', context),
     address: requireNullableString(value, 'address', context),
@@ -349,24 +347,20 @@ export function normalizeProfile(data: unknown): Profile {
   return parseProfile(data, 'PUT /profiles/me');
 }
 
-/** GET /auth/me -> { id, email, role, is_active, created_at, profile }. */
+/** GET /auth/me -> { id, email, role, created_at, profile }. */
 export function normalizeCurrentUser(data: unknown): CurrentUser {
   const context = 'GET /auth/me';
   if (!isRecordObject(data)) {
     throw new ResponseShapeError(`${context}: se esperaba un objeto, se recibió ${describeType(data)}`);
   }
-  const { role, is_active, profile } = data;
+  const { role, profile } = data;
   if (!isUserRole(role)) {
     throw new ResponseShapeError(`${context}.role: se esperaba admin | manager | user, se recibió ${describeType(role)}`);
-  }
-  if (typeof is_active !== 'boolean') {
-    throw new ResponseShapeError(`${context}.is_active: se esperaba boolean, se recibió ${describeType(is_active)}`);
   }
   return {
     id: requireString(data, 'id', context),
     email: requireString(data, 'email', context),
     role,
-    is_active,
     created_at: requireString(data, 'created_at', context),
     profile: profile === null ? null : parseProfile(profile, `${context}.profile`),
   };

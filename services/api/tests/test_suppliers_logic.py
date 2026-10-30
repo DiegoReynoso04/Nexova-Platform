@@ -63,7 +63,8 @@ def test_created_supplier_gets_an_id_and_the_creation_time_as_updated_at(
     assert created.id == 1
     assert created.updated_at == clock.now
     assert created.name == "Synthetic Supplier"
-    assert supplier_repo.get(created.id) == created
+    stored = supplier_repo.get(created.id)
+    assert stored is not None and stored.public() == created
 
 
 @pytest.mark.parametrize(
@@ -180,7 +181,8 @@ def test_rate_change_records_the_time_of_the_change(
     updated = routes.update_supplier_rate(directory["spain_boards"], RateUpdate(monthly_rate=150.5), supplier_repo)
 
     assert (updated.monthly_rate, updated.updated_at) == (150.5, clock.now)
-    assert supplier_repo.get(directory["spain_boards"]) == updated
+    stored = supplier_repo.get(directory["spain_boards"])
+    assert stored is not None and stored.public() == updated
 
 
 @pytest.mark.parametrize("rate", [0, -10.0, "150", float("nan")])

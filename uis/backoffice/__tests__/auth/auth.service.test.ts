@@ -296,7 +296,7 @@ describe('createAuthService — passwords', () => {
 
 describe('createAuthService — account', () => {
   test('getCurrentUser returns the normalized user', async () => {
-    const me = { id: 'u-1', email: 'ana@example.invalid', role: 'user', is_active: true, created_at: '2026-10-01T10:00:00Z', profile: null };
+    const me = { id: 'u-1', email: 'ana@example.invalid', role: 'user', created_at: '2026-10-01T10:00:00Z', profile: null };
     const { service, calls } = serviceWith({ 'GET /auth/me': { status: 200, body: me } });
 
     expect(await service.getCurrentUser()).toEqual(me);
@@ -311,7 +311,7 @@ describe('createAuthService — account', () => {
   });
 
   test('updateProfile sends the trimmed fields and returns the saved profile', async () => {
-    const profile = { id: 'p-1', user_id: 'u-1', name: 'Ana', phone: null, address: null };
+    const profile = { name: 'Ana', phone: null, address: null };
     const { service, calls } = serviceWith({ 'PUT /profiles/me': { status: 200, body: profile } });
 
     expect(await service.updateProfile({ name: ' Ana ', phone: '', address: '' })).toEqual(profile);

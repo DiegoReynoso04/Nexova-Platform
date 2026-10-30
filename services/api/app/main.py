@@ -8,8 +8,11 @@ arranca (`InventoryStartupError`, ver app/modules/inventory/database.py).
 Solo ensambla: configuración, middlewares, handlers de error y routers.
 """
 
+from typing import Any, Literal
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from app.auth.dependencies import get_current_user
 from app.auth.email import DisabledEmailSender, EmailSender, ResendEmailSender
@@ -20,6 +23,7 @@ from app.core.errors import InternalErrorMiddleware, install_error_handlers
 from app.core.limits import BodySizeLimitMiddleware
 from app.database import SupplierRepository
 from app.modules.incident_manager.repository import IncidentRepository
+from app.modules.incident_manager.router import drop_native_validation_responses
 from app.modules.incident_manager.router import router as incident_manager_router
 from app.modules.incidents.router import router as incidents_router
 from app.modules.incidents.store import LastResultStore
@@ -29,6 +33,12 @@ from app.routes.auth import router as auth_router
 from app.routes.profiles import router as profiles_router
 from app.routes.suppliers import router as suppliers_router
 from app.routes.users import router as users_router
+
+
+class HealthResponse(BaseModel):
+    """Respuesta de `GET /health`: técnica, sin datos (SPECS §3.3)."""
+
+    status: Literal["ok"]
 
 
 def build_email_sender(settings: Settings) -> EmailSender:
@@ -75,9 +85,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(users_router, prefix="/users")
     app.include_router(profiles_router, prefix="/profiles")
 
-    @app.get("/health", tags=["health"])
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    # OpenAPI del gestor de incidencias: sin el 422 que nunca responde (valida con 400).
+    default_openapi = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema is None:
+            drop_native_validation_responses(default_openapi(), app.routes)
+        assert app.openapi_schema is not None
+        return app.openapi_schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
+
+    @app.get("/health", tags=["health"], response_model=HealthResponse)
+    def health() -> HealthResponse:
+        return HealthResponse(status="ok")
 
     # add_middleware apila hacia fuera: el último añadido es el más externo.
     # Orden resultante: CORS → errores internos (500) → límite de body → app.

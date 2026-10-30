@@ -54,7 +54,13 @@ def login(
 def read_current_user(current_user: CurrentUserDep, service: UserServiceDep) -> CurrentUser:
     """`email`, `role` y el `Profile` vinculado del usuario autenticado. Nunca credenciales."""
     profile = service.repository.get_profile(str(current_user.id))
-    return CurrentUser(**current_user.public().model_dump(), profile=profile)
+    return CurrentUser(
+        id=current_user.id,
+        email=current_user.email,
+        role=current_user.role,
+        created_at=current_user.created_at,
+        profile=profile.public() if profile is not None else None,
+    )
 
 
 # AUTH-03. Respuesta idéntica exista o no el email (evita la enumeración de usuarios).

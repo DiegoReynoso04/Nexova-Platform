@@ -19,7 +19,6 @@ const USER: CurrentUser = {
   id: 'u-1',
   email: 'ana@example.invalid',
   role: 'user',
-  is_active: true,
   created_at: '2026-10-01T10:00:00Z',
   profile: null,
 };

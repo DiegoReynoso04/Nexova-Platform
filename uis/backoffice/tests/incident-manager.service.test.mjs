@@ -53,6 +53,16 @@ describe('normalizadores del gestor', () => {
     assert.throws(() => normalizeIncidentList({}), UnexpectedResponseError);
   });
 
+  test('lista: las filas no llevan updated_at (auditoría de serialización, D5)', () => {
+    const row = incident();
+    delete row.updated_at;
+    assert.deepEqual(normalizeIncidentList([row]), [row]);
+    // Una API antigua que aún lo envíe no lo cuela en el estado de la tabla.
+    assert.deepEqual(normalizeIncidentList([incident()]), [row]);
+    // El detalle (POST, PATCH) sí lo exige.
+    assert.throws(() => normalizeIncident(row), UnexpectedResponseError);
+  });
+
   test('valores fuera del vocabulario o tipos incorrectos se rechazan', () => {
     for (const bad of [
       { status: 'closed' },

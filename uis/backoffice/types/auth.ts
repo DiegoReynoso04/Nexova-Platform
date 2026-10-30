@@ -12,21 +12,18 @@ export interface AccessToken {
   expires_in: number;
 }
 
-/** `Profile` (`GET /profiles/me`, `PUT /profiles/me` y dentro de `GET /auth/me`). */
+/** `Profile` (`GET /profiles/me`, `PUT /profiles/me` y dentro de `GET /auth/me`). Sin `id` ni `user_id`: la API no los expone. */
 export interface Profile {
-  id: string;
-  user_id: string;
   name: string | null;
   phone: string | null;
   address: string | null;
 }
 
-/** Respuesta 200 de `GET /auth/me`: credenciales públicas + perfil vinculado. */
+/** Respuesta 200 de `GET /auth/me`: usuario autenticado + perfil vinculado (sin `is_active`: siempre `true` aquí). */
 export interface CurrentUser {
   id: string;
   email: string;
   role: UserRole;
-  is_active: boolean;
   created_at: string;
   profile: Profile | null;
 }

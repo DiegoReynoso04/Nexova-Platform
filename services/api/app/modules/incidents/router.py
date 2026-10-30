@@ -1,6 +1,6 @@
 """Capa HTTP de incidentes: request → servicio → respuesta. Sin lógica de análisis."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.responses import Response
@@ -35,7 +35,28 @@ def analyze_incidents(
     return AnalysisResponse.from_stored(stored, export_url=request.app.url_path_for(EXPORT_ROUTE_NAME))
 
 
-@router.get("/results/export", name=EXPORT_ROUTE_NAME, response_class=Response)
+# Sin cuerpo JSON: `response_model=None` declarado y el CSV y sus cabeceras
+# documentados en `responses=` (auditoría de serialización, D7).
+EXPORT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Último análisis correcto como CSV `metric,value` (una métrica por fila), el mismo que escribe la CLI",
+        "content": {"text/csv": {"schema": {"type": "string"}}},
+        "headers": {
+            "Content-Disposition": {"description": f'attachment; filename="{EXPORT_FILENAME}"', "schema": {"type": "string"}},
+            "X-Analysis-Id": {"description": "`analysis_id` del análisis exportado", "schema": {"type": "string", "format": "uuid"}},
+            "Cache-Control": {"description": NO_STORE, "schema": {"type": "string"}},
+        },
+    },
+}
+
+
+@router.get(
+    "/results/export",
+    name=EXPORT_ROUTE_NAME,
+    response_model=None,
+    response_class=Response,
+    responses=EXPORT_RESPONSES,
+)
 def export_incident_results(service: ServiceDep) -> Response:
     stored, csv_text = service.export_latest()
     return Response(

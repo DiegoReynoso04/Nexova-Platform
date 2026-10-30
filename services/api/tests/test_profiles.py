@@ -25,7 +25,8 @@ from .conftest import MakeUser
 def test_user_reads_its_own_profile(service: UserService, make_user: MakeUser) -> None:
     user, _ = make_user(name="Ana", phone="000 000 000")
     profile = read_my_profile(user, service)
-    assert (profile.user_id, profile.name, profile.phone, profile.address) == (user.id, "Ana", "000 000 000", None)
+    # Sin `id` ni `user_id` (auditoría de serialización, D2): el dueño es siempre el del token.
+    assert profile.model_dump() == {"name": "Ana", "phone": "000 000 000", "address": None}
 
 
 def test_profile_update_changes_only_the_fields_sent(service: UserService, make_user: MakeUser) -> None:

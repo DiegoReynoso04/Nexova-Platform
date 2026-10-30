@@ -1,8 +1,9 @@
 """Directorio de proveedores: validación (422), endpoints, filtros, 404 y `updated_at`."""
 
+import json
 from datetime import datetime
 
-from app.models import VALID_CATEGORIES, VALID_STATUSES
+from app.models import VALID_CATEGORIES, VALID_STATUSES, SupplierCreate, SupplierRead
 
 from .suppliers_support import SUPPLIERS_URL, SupplierTestCase, context_definitions, valid_supplier
 
@@ -31,6 +32,31 @@ class ModelMatchesContextTests(SupplierTestCase):
                 "notes",
             },
         )
+
+
+class ResponseSchemaTests(SupplierTestCase):
+    """Auditoría de serialización (D4): la salida tiene su propio esquema, no el de la entrada."""
+
+    def test_response_schema_is_not_the_input_schema(self) -> None:
+        self.assertFalse(issubclass(SupplierRead, SupplierCreate))
+        operations = self.client.get("/openapi.json").json()["paths"]
+        ok = {("post", ""): "201", ("get", ""): "200", ("get", "/{supplier_id}"): "200",
+              ("patch", "/{supplier_id}/rate"): "200", ("patch", "/{supplier_id}/status"): "200"}
+        for (method, suffix), status in ok.items():
+            with self.subTest(method=method, path=suffix):
+                schema = operations[SUPPLIERS_URL + suffix][method]["responses"][status]["content"]["application/json"]["schema"]
+                self.assertIn("#/components/schemas/SupplierRead", json.dumps(schema))
+
+    def test_a_stored_document_that_breaks_an_input_rule_is_still_listed(self) -> None:
+        # Las reglas de entrada (moneda por país) no se ejecutan al leer: antes, un
+        # documento así convertía todo `GET /suppliers` en un 500.
+        created = self.create()
+        data = json.loads(self.db_path.read_text(encoding="utf-8"))
+        data["suppliers"][str(created["id"])]["currency"] = "USD" if created["currency"] == "EUR" else "EUR"
+        self.db_path.write_text(json.dumps(data), encoding="utf-8")
+        response = self.client.get(SUPPLIERS_URL)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([item["id"] for item in response.json()], [created["id"]])
 
 
 class ValidationTests(SupplierTestCase):

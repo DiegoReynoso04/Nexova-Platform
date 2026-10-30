@@ -25,8 +25,8 @@ const { createAuthSessionController, deriveSessionStatus } = await import('../ho
 const { isPublicPath, routeAccess } = await import('../lib/auth-routes.ts');
 
 const TOKEN = { access_token: 'jwt-nuevo', token_type: 'bearer', expires_in: 1800 };
-const PROFILE = { id: 'p-1', user_id: 'u-1', name: 'Ana', phone: null, address: null };
-const ME = { id: 'u-1', email: 'ana@nexova.test', role: 'user', is_active: true, created_at: '2026-10-01T10:00:00Z', profile: PROFILE };
+const PROFILE = { name: 'Ana', phone: null, address: null };
+const ME = { id: 'u-1', email: 'ana@nexova.test', role: 'user', created_at: '2026-10-01T10:00:00Z', profile: PROFILE };
 const PASSWORD = 'secreto-123';
 
 function jsonResponse(status, body) {

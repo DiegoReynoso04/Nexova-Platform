@@ -15,12 +15,11 @@ import {
 import { BASE_URL, LEAK, jsonResponse, recordingFetch } from './support/http-fakes.mjs';
 
 const TOKEN = { access_token: 'jwt-nuevo', token_type: 'bearer', expires_in: 1800 };
-const PROFILE = { id: 'p-1', user_id: 'u-1', name: 'Ana', phone: null, address: null };
+const PROFILE = { name: 'Ana', phone: null, address: null };
 const ME = {
   id: 'u-1',
   email: 'ana@nexova.test',
   role: 'user',
-  is_active: true,
   created_at: '2026-10-01T10:00:00Z',
   profile: PROFILE,
 };
@@ -131,7 +130,7 @@ describe('registro (POST /users + POST /auth/login)', () => {
 
   test('crea el usuario con los campos de perfil y después hace login con las mismas credenciales', async () => {
     const { service, transport, saved } = serviceWith({
-      'POST /users': () => jsonResponse(201, { id: 'u-1', email: 'ana@nexova.test', role: 'user', is_active: true, created_at: 'x' }),
+      'POST /users': () => jsonResponse(201, { id: 'u-1' }),
       'POST /auth/login': () => jsonResponse(200, TOKEN),
     });
     await service.register(VALUES);
