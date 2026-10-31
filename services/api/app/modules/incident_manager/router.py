@@ -15,6 +15,16 @@ con `openapi_extra`, sin dejar de validar con `nexova_shared`; cada ruta
 documenta sus errores reales con `responses=`, y
 `drop_native_validation_responses` quita el 422 que FastAPI añade por defecto
 y que este router nunca responde.
+
+Caché (ticket de caching, docs/caching-analysis.md D1–D4): `GET ""` y
+`GET /summary` se guardan 30 s en el espacio `incidents` de la caché de la app.
+La clave del listado son los filtros **ya normalizados** por `validate_filters`
+(`IncidentFilters`, inmutable), así que el orden de los parámetros no crea
+entradas distintas, y un filtro no válido (también uno vacío) responde 400
+antes de llegar a la caché. Es la misma respuesta para cualquier usuario autenticado, y se consulta
+después de la autenticación. `POST ""` y `PATCH /{id}/status` invalidan el
+espacio entero, solo si escriben. `scripts/seed_incidents.py` escribe
+directamente en TinyDB y no invalida: el TTL acota cuánto tarda en verse.
 """
 
 from collections.abc import Awaitable, Callable, Iterable
@@ -41,6 +51,7 @@ from nexova_shared.incidents import (
 )
 from pydantic import BaseModel
 
+from app.core.cache import CacheDep
 from app.core.errors import (
     ApiError,
     FieldErrorDetail,
@@ -92,6 +103,11 @@ def get_incident_repository(request: Request) -> IncidentRepository:
 
 
 RepositoryDep = Annotated[IncidentRepository, Depends(get_incident_repository)]
+
+CACHE_NAMESPACE = "incidents"
+# Más corto que el inventario (60 s): el gestor es una herramienta de trabajo
+# compartida y el seed escribe sin pasar por la API (D1).
+CACHE_TTL_SECONDS = 30
 # Objeto JSON libre: las reglas de campos son de nexova_shared, no de Pydantic,
 # para que la API y el seed rechacen exactamente lo mismo con los mismos códigos.
 # El contrato que ve el cliente lo publican los modelos de entrada (`_request_body`).
@@ -198,17 +214,21 @@ NOT_FOUND = _documented(
 def create_incident(
     payload: Annotated[JsonObject, Body(examples=[_CREATE_EXAMPLE])],
     repository: RepositoryDep,
+    cache: CacheDep,
 ) -> IncidentRead:
     try:
         draft = validate_incident_fields(payload)
     except IncidentValidationError as error:
         raise IncidentFieldsError(_field_errors(error.errors)) from None
-    return repository.create(draft).public()
+    incident = repository.create(draft)
+    cache.invalidate(CACHE_NAMESPACE)
+    return incident.public()
 
 
 @router.get("", response_model=list[IncidentListItem], responses={**COMMON_ERRORS, 400: VALIDATION_ERROR})
 def list_incidents(
     repository: RepositoryDep,
+    cache: CacheDep,
     status: Annotated[str | None, _filter(IncidentStatus, "Filter by status")] = None,
     origin: Annotated[str | None, _filter(IncidentOrigin, "Filter by origin")] = None,
     branch: Annotated[str | None, _filter(Branch, "Filter by branch")] = None,
@@ -218,17 +238,21 @@ def list_incidents(
         filters = validate_filters({"status": status, "origin": origin, "branch": branch, "category": category})
     except IncidentValidationError as error:
         raise IncidentFieldsError(_field_errors(error.errors)) from None
-    incidents = repository.find(
-        status=filters.status, origin=filters.origin, branch=filters.branch, category=filters.category
-    )
-    return [incident.list_item() for incident in incidents]
+
+    def compute() -> list[IncidentListItem]:
+        incidents = repository.find(
+            status=filters.status, origin=filters.origin, branch=filters.branch, category=filters.category
+        )
+        return [incident.list_item() for incident in incidents]
+
+    return cache.get_or_set(CACHE_NAMESPACE, ("list", filters), CACHE_TTL_SECONDS, compute)
 
 
 # Antes que /{incident_id}: aunque el convertidor uuid ya impide que "summary"
 # coincida con un id, el orden deja clara la intención.
 @router.get("/summary", response_model=IncidentSummary, responses=COMMON_ERRORS)
-def incident_summary(repository: RepositoryDep) -> IncidentSummary:
-    return repository.summary()
+def incident_summary(repository: RepositoryDep, cache: CacheDep) -> IncidentSummary:
+    return cache.get_or_set(CACHE_NAMESPACE, "summary", CACHE_TTL_SECONDS, repository.summary)
 
 
 # `:uuid` (convertidor de Starlette): un segmento que no es un UUID no coincide
@@ -261,6 +285,7 @@ def change_incident_status(
     incident_id: UUID,
     payload: Annotated[JsonObject, Body(examples=[{"status": IncidentStatus.IN_PROGRESS.value}])],
     repository: RepositoryDep,
+    cache: CacheDep,
 ) -> IncidentRead:
     try:
         target = validate_status_change(payload)
@@ -272,6 +297,7 @@ def change_incident_status(
         raise InvalidStatusTransitionApiError(_field_errors([error.error])) from None
     if incident is None:
         raise IncidentNotFoundError()
+    cache.invalidate(CACHE_NAMESPACE)
     return incident.public()
 
 
