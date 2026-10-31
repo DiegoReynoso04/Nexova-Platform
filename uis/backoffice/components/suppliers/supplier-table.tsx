@@ -1,9 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { memo, useMemo, useState, type FormEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { TableScroll } from '@/components/ui/table-scroll';
 import type { RowState } from '@/hooks/use-supplier-directory';
-import { renewalInfo } from '@/lib/supplier-renewal';
+import { renewalInfo, type RenewalInfo } from '@/lib/supplier-renewal';
 import type { Supplier, SupplierStatus } from '@/types/suppliers';
 
 import { formatDateTime, formatRate } from './format';
@@ -19,9 +19,46 @@ export interface SupplierTableProps {
   onDismissRowError: (id: number) => void;
 }
 
+// Lo que cada fila muestra y no depende de su estado de edición. Formatear la
+// tarifa crea un `Intl.NumberFormat` por fila: con 415 proveedores, 46–135 ms
+// frente a ~1 ms (docs/caching-analysis.md §5.2).
+interface SupplierRowView {
+  supplier: Supplier;
+  renewal: RenewalInfo;
+  rateLabel: string;
+  updatedLabel: string;
+}
+
 // Sin botón de eliminar: los proveedores se suspenden, no se borran
 // (docs/ligthweight-storage-api.md, "Suspensión controlada"; SPECS §10).
-export function SupplierTable({ suppliers, rows, today, onUpdateRate, onUpdateStatus, onDismissRowError }: SupplierTableProps) {
+//
+// `memo` (D7): la vista se re-renderiza al abrir o cerrar el alta y al cambiar
+// su estado, sin tocar la lista; con las mismas props (`suppliers` y `rows` del
+// reducer, `today` fijado al montar y callbacks con `useCallback`) la tabla no
+// se vuelve a pintar. `useMemo`: cuando sí se re-renderiza solo por `rows`
+// (guardando una tarifa o un estado), las filas derivadas no se recalculan;
+// dependen únicamente de `suppliers` y `today`.
+export const SupplierTable = memo(function SupplierTable({
+  suppliers,
+  rows,
+  today,
+  onUpdateRate,
+  onUpdateStatus,
+  onDismissRowError,
+}: SupplierTableProps) {
+  const views = useMemo(
+    () =>
+      suppliers.map(
+        (supplier): SupplierRowView => ({
+          supplier,
+          renewal: renewalInfo(supplier.contract_renewal_date, today),
+          rateLabel: formatRate(supplier.monthly_rate, supplier.currency),
+          updatedLabel: formatDateTime(supplier.updated_at),
+        })
+      ),
+    [suppliers, today]
+  );
+
   return (
     <TableScroll framed>
       <table className="w-full min-w-[46rem] border-collapse text-left text-sm">
@@ -37,12 +74,11 @@ export function SupplierTable({ suppliers, rows, today, onUpdateRate, onUpdateSt
           </tr>
         </thead>
         <tbody>
-          {suppliers.map((supplier) => (
+          {views.map((view) => (
             <SupplierRow
-              key={supplier.id}
-              supplier={supplier}
-              row={rows[supplier.id]}
-              today={today}
+              key={view.supplier.id}
+              view={view}
+              row={rows[view.supplier.id]}
               onUpdateRate={onUpdateRate}
               onUpdateStatus={onUpdateStatus}
               onDismissRowError={onDismissRowError}
@@ -52,21 +88,20 @@ export function SupplierTable({ suppliers, rows, today, onUpdateRate, onUpdateSt
       </table>
     </TableScroll>
   );
-}
+});
 
 interface SupplierRowProps {
-  supplier: Supplier;
+  view: SupplierRowView;
   row: RowState | undefined;
-  today: Date;
   onUpdateRate: (id: number, rateInput: string) => void;
   onUpdateStatus: (id: number, status: SupplierStatus) => void;
   onDismissRowError: (id: number) => void;
 }
 
-function SupplierRow({ supplier, row, today, onUpdateRate, onUpdateStatus, onDismissRowError }: SupplierRowProps) {
+function SupplierRow({ view, row, onUpdateRate, onUpdateStatus, onDismissRowError }: SupplierRowProps) {
+  const { supplier, renewal } = view;
   const isSuspended = supplier.status === 'suspended';
   const isSaving = row?.status === 'saving';
-  const renewal = renewalInfo(supplier.contract_renewal_date, today);
   const nextStatus: SupplierStatus = isSuspended ? 'active' : 'suspended';
 
   return (
@@ -98,6 +133,8 @@ function SupplierRow({ supplier, row, today, onUpdateRate, onUpdateStatus, onDis
           <RateCell
             key={supplier.updated_at}
             supplier={supplier}
+            rateLabel={view.rateLabel}
+            updatedLabel={view.updatedLabel}
             isSaving={isSaving && row?.action === 'rate'}
             disabled={isSaving}
             onSubmit={(value) => onUpdateRate(supplier.id, value)}
@@ -142,12 +179,14 @@ function SupplierRow({ supplier, row, today, onUpdateRate, onUpdateStatus, onDis
 
 interface RateCellProps {
   supplier: Supplier;
+  rateLabel: string;
+  updatedLabel: string;
   isSaving: boolean;
   disabled: boolean;
   onSubmit: (value: string) => void;
 }
 
-function RateCell({ supplier, isSaving, disabled, onSubmit }: RateCellProps) {
+function RateCell({ supplier, rateLabel, updatedLabel, isSaving, disabled, onSubmit }: RateCellProps) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(String(supplier.monthly_rate));
   const inputId = `rate-${supplier.id}`;
@@ -159,9 +198,9 @@ function RateCell({ supplier, isSaving, disabled, onSubmit }: RateCellProps) {
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="font-semibold tabular-nums text-ink">{formatRate(supplier.monthly_rate, supplier.currency)}</span>
+      <span className="font-semibold tabular-nums text-ink">{rateLabel}</span>
       <span className="text-xs text-ink-muted">
-        Actualizada: <time dateTime={supplier.updated_at}>{formatDateTime(supplier.updated_at)}</time>
+        Actualizada: <time dateTime={supplier.updated_at}>{updatedLabel}</time>
       </span>
       {editing ? (
         <form onSubmit={handleSubmit} noValidate className="mt-1 flex flex-wrap items-center gap-1">
