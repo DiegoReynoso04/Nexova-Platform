@@ -18,6 +18,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.email import DisabledEmailSender, EmailSender, ResendEmailSender
 from app.auth.repository import AuthRepository
 from app.auth.service import UserService
+from app.core.cache import ResponseCache
 from app.core.config import Settings
 from app.core.errors import InternalErrorMiddleware, install_error_handlers
 from app.core.limits import BodySizeLimitMiddleware
@@ -67,6 +68,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.user_service = UserService(AuthRepository(settings.auth_db_path))
     # Gestor centralizado de incidencias: TinyDB en INCIDENTS_DB_PATH.
     app.state.incident_repository = IncidentRepository(settings.incidents_db_path)
+    # Caché de lecturas (ticket de caching): en memoria, una por app; exige --workers 1.
+    app.state.response_cache = ResponseCache()
     # AUTH-03: envío del enlace de restablecimiento (los tests lo sustituyen).
     app.state.email_sender = build_email_sender(settings)
 
