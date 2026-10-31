@@ -4,9 +4,46 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-31 — Caching y optimización, F1: implementación, medición «después» e informe
+
+**Estado: F1 hecha y verificada; pendiente de la revisión del usuario antes del push y la PR** (`feat: caching optimisation`). Rama `feature/caching-optimisation`.
+
+- **Decisiones del usuario (2026-10-31):**
+  - D1 A, D2 A (sin la opción B), D3 A con 64 entradas por espacio, D4 y D5 como se propusieron;
+  - D6 A, D7 A (D7-B, mejora futura), D8 B;
+  - D9 y D10, trabajo futuro; D11 sí.
+- **Commits:**
+  - `1446a33` caché (`app/core/cache.py`);
+  - `248b025` inventario (60 s);
+  - `210a5ee` incidencias (30 s);
+  - `f6e8d19` `REQUEST_TIMING_LOG` y sin `/health`;
+  - `581e269` carga diferida (formulario de alta e `IncidentResults`);
+  - `d09f4fa` memo de `SupplierTable`;
+  - `a05666b` `scripts/bench_reads.py`;
+  - y el de documentación: `CACHING_REPORT.md`, `SPECS.md` Parte G, los README, `AGENTS.md`, `uis/backoffice/CLAUDE.md`, `TESTING.md` y este banco.
+- **Validación:**
+  - `services/api` en el contenedor efímero: unittest 436 → **482 OK** y pytest 639 → **685 passed**, con mutaciones de las invalidaciones detectadas;
+  - backoffice: `tsc`, `lint`, `build`, `node:test` 507 y Jest 240.
+- **Medición «después»** (mismo método que F0; TinyDB en un volumen de Docker):
+  - **aciertos:** 2,6–4,1 ms en el resumen y los listados filtrados, 13,4 ms en el listado sin filtros (2 MB) y 3,0 ms en el inventario en local;
+  - **Supabase, solo GET:** de ~400 ms a 2,4–3,0 ms;
+  - **fallos tras invalidación:** iguales al coste sin caché.
+- **Frontend:**
+  - abrir y cerrar el alta, de 162 y 112 ms a 0 ms;
+  - el `useMemo` evita 20–29 ms en los renders de «guardando»;
+  - chunks diferidos de 2,1 y 1,6 KB;
+  - el hueco reservado no desplaza nada a 375 ni a 1280 px.
+- **Limpieza:** contenedores, volúmenes y red de medición borrados; cuentas temporales solo en la TinyDB de pruebas (borrada); `ui` de Docker arrancado de nuevo. Se conserva la imagen `postgres:17.6-alpine3.22`.
+- **Pendiente:**
+  - revisión del usuario, push y PR;
+  - el usuario para el `next start -p 3003` antiguo;
+  - D9 (access log de uvicorn con query string), D10 (paginación, pool de Supabase, `auth.json` por petición) y D7-B.
+
+---
+
 ## 2026-10-31 — Caching y optimización, F0: medir y proponer
 
-**Estado: F0 cerrada; esperando que el usuario decida D1–D11** (`docs/caching-analysis.md` §7). Sin ninguna caché implementada y sin push. Rama `feature/caching-optimisation`, desde `main` en `9f312e1`.
+**Estado: F0 cerrada; el usuario decidió D1–D11 el mismo día (ver la entrada de F1, arriba).** Sin ninguna caché implementada y sin push. Rama `feature/caching-optimisation`, desde `main` en `9f312e1`.
 
 - **Commits:**
   - `1178ddf`: middleware de timing (`app/core/timing.py`; el brief decía `main.py`, pero la regla de logging de `test_architecture.py` solo admite `core/`);

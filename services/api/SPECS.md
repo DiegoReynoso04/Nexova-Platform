@@ -10,6 +10,7 @@ Una sola aplicación FastAPI (`app/main.py`) con estos dominios:
 - **Parte D (§23–§27): recuperación y cambio de contraseña (AUTH-03)** — `POST /auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`; envío con Resend.
 - **Parte E (§28–§33): gestor centralizado de incidencias** — `POST`/`GET /api/incidents`, `GET /api/incidents/summary`, `GET /api/incidents/{id}`, `PATCH /api/incidents/{id}/status`; validación con 400 propio (no 422).
 - **Parte F (§34–§40): inventario de equipos y materiales (Hito 5)** — `/inventory/products*` y `/inventory/orders*`; activos y órdenes en PostgreSQL (Supabase) con SQLModel, mientras la autenticación sigue en TinyDB.
+- **Parte G (§41–§44): caché de lecturas y timing por petición** — caché en memoria con TTL para `GET /inventory/products`, `/inventory/products/{id}`, `GET /api/incidents` y `/api/incidents/summary`; sin cambios en el contrato de ninguna ruta.
 
 Este documento distingue **dos orígenes** de requisitos. Mezclarlos sería atribuir al cliente decisiones que no tomó.
 
@@ -218,6 +219,7 @@ Variables de entorno del proceso (la API no carga archivos `.env` por sí sola; 
 | `AUTH_DB_PATH` | `services/api/data/auth.json` | archivo TinyDB de `User` y `Profile` (Parte C). La usan la API y `create-admin` |
 | `DATABASE_URL` | **ninguno (obligatoria)** | base PostgreSQL (Supabase) del inventario (Parte F). Desde el entorno solo se aceptan `postgresql://` y `postgresql+psycopg2://`; sin ella o con otro esquema, la API no arranca. El mensaje nunca repite la URL, y `repr(Settings)` no la muestra. La usan la API y `seed-inventory` |
 | `INCIDENTS_DB_PATH` | `services/api/data/incidents.json` | archivo TinyDB del gestor centralizado de incidencias (tablas `incidents` y `seed_keys`). Lo usan el repositorio `app/modules/incident_manager/` y `scripts/seed_incidents.py`. Rutas en la Parte E |
+| `REQUEST_TIMING_LOG` | `true` | `true`/`1`/`yes`/`on` o `false`/`0`/`no`/`off` (sin distinguir mayúsculas); otro valor no arranca. Con `false`, sin middleware de timing (Parte G, §44) |
 
 ---
 
@@ -774,3 +776,46 @@ Lo crea `init_db` al arrancar (`create_all` solo crea lo que falta). No hay colu
 - **CORS:** sin cambios (`GET` y `POST` ya estaban permitidos).
 - **Guía de revisión** (comandos de PowerShell, recorrido en `/docs`, trazabilidad de los requisitos y lo no verificado): [`docs/inventory-review.md`](../../docs/inventory-review.md).
 - **Fuera de alcance:** UI del inventario, filtro `?office=` (la regla 5 del CONTEXT dice «cuando sea necesario»), edición o borrado de activos y órdenes, paginación.
+
+---
+
+# Parte G — Caché de lecturas y timing por petición (ticket de caching)
+
+Brief literal: [`docs/caching-brief.md`](../../docs/caching-brief.md). Medición inicial y decisiones D1–D11 (tomadas por el usuario el 2026-10-31): [`docs/caching-analysis.md`](../../docs/caching-analysis.md). Informe final con las cifras de antes y después: [`CACHING_REPORT.md`](../../CACHING_REPORT.md). **Ninguna ruta cambia de contrato**: mismas respuestas, mismos códigos y mismos errores; solo cambia cuándo se leen de la base.
+
+## 41. Qué se cachea
+
+| Ruta | Espacio | Clave | TTL | Invalidan (solo si escriben) |
+|---|---|---|---|---|
+| `GET /inventory/products` | `inventory` | `"products"` | 60 s | `POST /inventory/products`, `POST /inventory/orders/inbound`, `POST /inventory/orders/outbound` |
+| `GET /inventory/products/{id}` | `inventory` | `("product", id)` | 60 s | las mismas |
+| `GET /api/incidents` | `incidents` | `("list", IncidentFilters)`, los filtros **ya normalizados** por `validate_filters` | 30 s | `POST /api/incidents`, `PATCH /api/incidents/{id}/status` |
+| `GET /api/incidents/summary` | `incidents` | `"summary"` | 30 s | las mismas |
+
+- **Implementación:** `app/core/cache.py` (`ResponseCache`), una instancia por app en `app.state.response_cache`. Diccionario en memoria, sin dependencias.
+- **Expulsión:** como máximo 64 entradas por espacio; al pasarse, sale la más antigua.
+- **Invalidación:** una escritura limpia su espacio entero, después de confirmar. Una escritura que falla (400, 404, 409, 422, 503) lanza antes de llegar a `invalidate` y no limpia nada.
+- **Carreras:** un contador de generación por espacio impide que una lectura que empezó antes de una invalidación guarde su valor viejo después.
+- **Qué no se guarda:** un error (404 del detalle, 400 de un filtro no válido, 503 de la base): se lanza dentro del cálculo y no se guarda.
+- **Qué se guarda:** los modelos de respuesta (`AssetRead`, `IncidentListItem`, `IncidentSummary`), que se siguen serializando con `response_model` en cada petición.
+
+## 42. Privacidad y autenticación
+
+- Las cuatro rutas devuelven **lo mismo a cualquier usuario autenticado** (medido en F0: idénticas entre una cuenta `user` y una `admin`). Por eso la clave no lleva el usuario.
+- **Nunca se cachea una respuesta personal, de sesión o sensible** (`/auth/*`, `/users*`, `/profiles/me`): una clave compartida sería una fuga de datos.
+- La caché se consulta **dentro del handler**, después de `Depends(get_current_user)`: sin token o con uno no válido sigue habiendo 401, y un acierto nunca se salta la autenticación (lo comprueban los tests).
+
+## 43. Limitaciones
+
+- **Un solo proceso:** uvicorn arranca con `--workers 1`, como ya exigen los `threading.Lock` de TinyDB. Con más workers o réplicas, cada proceso tendría su propia caché y una escritura solo limpiaría la del que la recibe: los demás servirían datos viejos hasta el TTL. **Subir el número de workers obliga a revisar esta caché** (una compartida, como Redis, necesitaría autorización y un servicio nuevo).
+- **Escrituras fuera de la API:** los seeds (`seed-inventory`, `scripts/seed_incidents.py`, `scripts/seed_volume.py`) y cualquier cambio directo en Supabase o en los archivos TinyDB no invalidan. Con la API en marcha, sus datos tardan hasta el TTL (60 s / 30 s) en verse.
+- **La regla del stock no depende de la caché:** `POST /inventory/orders/outbound` la comprueba en la base con `FOR UPDATE`. Un stock desactualizado en pantalla, como mucho, lleva a un 400 `insufficient_stock`.
+- `--reload` (desarrollo) vacía la caché en cada recarga.
+
+## 44. Timing por petición
+
+- `app/core/timing.py`, registrado en `create_app` como el middleware más externo: una línea por petición en el logger `api.timing` (`GET /inventory/products → 200 | 3.0ms`) con método, path, status y ms.
+- **Nunca registra** la query string (puede llevar emails o filtros), ni cabeceras ni cuerpo, ni `GET /health` (el healthcheck de Docker lo llama cada 5 s).
+- uvicorn solo configura sus propios loggers, así que `configure_timing_logger` le añade un `StreamHandler` una sola vez.
+- `REQUEST_TIMING_LOG=false` lo quita (§7).
+- **Pendiente (D9, fuera de este ticket):** el access log de uvicorn, que ya existía, sí registra la query string. Hoy ninguna ruta lleva datos personales en la query.

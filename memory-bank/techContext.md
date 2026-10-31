@@ -298,11 +298,18 @@ Detalle y decisiones D1–D9 en [`docs/serialization-audit.md`](../docs/serializ
 
 ### Timing por petición y caching (ticket del 2026-10-31, rama `feature/caching-optimisation`)
 
-Brief en [`docs/caching-brief.md`](../docs/caching-brief.md); medición y decisiones pendientes D1–D11 en [`docs/caching-analysis.md`](../docs/caching-analysis.md).
+Brief en [`docs/caching-brief.md`](../docs/caching-brief.md); medición inicial y decisiones D1–D11 (tomadas el 2026-10-31) en [`docs/caching-analysis.md`](../docs/caching-analysis.md); informe en [`CACHING_REPORT.md`](../CACHING_REPORT.md); contrato en `services/api/SPECS.md` Parte G (no duplicado aquí).
 
-- **Middleware de timing** (`app/core/timing.py`, registrado en `create_app` como el más externo): logger `api.timing`, una línea por petición con método, path, status y ms, **nunca la query string**. uvicorn solo configura sus propios loggers, así que `configure_timing_logger` le añade un `StreamHandler` una sola vez; los tests ponen un `NullHandler` en `tests/__init__.py`. `test_architecture.py` admite `logging` en `core/errors.py` y `core/timing.py`.
+- **Middleware de timing** (`app/core/timing.py`, registrado en `create_app` como el más externo): logger `api.timing`, una línea por petición con método, path, status y ms, **nunca la query string** ni `GET /health`. Activo por defecto; `REQUEST_TIMING_LOG=false` lo quita (D8). uvicorn solo configura sus propios loggers, así que `configure_timing_logger` le añade un `StreamHandler` una sola vez; los tests ponen un `NullHandler` en `tests/__init__.py`. `test_architecture.py` admite `logging` en `core/errors.py` y `core/timing.py`.
 - **El access log de uvicorn sí registra la query string** (comprobado). Sin cambiar todavía: D9.
-- **Todavía sin caché.** F1 la implementará según D1–D11 (recomendado: diccionario en memoria con TTL e invalidación por espacios de nombres, válido solo con `--workers 1`).
+- **Caché de lecturas** (`app/core/cache.py`, `ResponseCache` en `app.state.response_cache`):
+  - **Qué es:** diccionario en memoria, sin dependencias, con TTL obligatorio y espacios de nombres (`inventory`, `incidents`) que una escritura correcta limpia enteros. Como máximo 64 entradas por espacio, y un contador de generación contra las lecturas que acaban después de una invalidación.
+  - **Qué guarda:** `GET /inventory/products*` durante 60 s y `GET /api/incidents` y `/summary` durante 30 s (la clave del listado son los `IncidentFilters` normalizados).
+  - **Dónde se consulta:** dentro del handler, después de `get_current_user`. Nada personal en una clave compartida.
+  - **Decisión permanente:** solo es válida con `--workers 1`; subir workers obliga a revisarla. Los seeds no invalidan (el TTL los acota).
+- **Backoffice:**
+  - `SupplierCreateForm` e `IncidentResults` se cargan con `next/dynamic`, con un `loading` del alto medido y precarga por intención;
+  - `SupplierTable` va con `React.memo` y sus filas derivadas con `useMemo` (reglas en `uis/backoffice/CLAUDE.md`).
 - **Seed de volumen** `scripts/seed_volume.py`: solo bases de prueba. Rechaza `services/api/data` y un PostgreSQL no local; es determinista e idempotente.
 
 ### Docker (#infra-40)

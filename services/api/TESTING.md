@@ -309,3 +309,11 @@ En Git Bash, lo mismo con `MSYS_NO_PATHCONV=1` delante y `"$(pwd -W):/repo:ro"` 
 **Tras la auditoría de serialización** (`0f2ff58`, mismo procedimiento): `unittest` **436 OK** y `pytest` **639 passed** (3498 subtests). Los 21 nuevos están en `test_suppliers_api.py` (`ResponseSchemaTests`), `test_incident_manager_contract.py` y `test_serialization.py` (cobertura de `response_model` en las 32 rutas). Detalle en [`docs/serialization-audit.md`](../../docs/serialization-audit.md) §9.
 
 **Tras el middleware de timing** (`1178ddf`, ticket de caching, mismo procedimiento): `unittest` **439 OK** y `pytest` **642 passed**. Los 3 nuevos están en `test_timing.py`.
+
+**Tras la caché (F1 del ticket de caching, mismo procedimiento):** `unittest` **482 OK** y `pytest` **685 passed**.
+
+- **Tests nuevos:**
+  - `test_cache.py` (14): TTL con reloj inyectable, invalidación por espacio, generación, máximo de entradas y concurrencia;
+  - `test_inventory_cache.py` (12) y `test_incident_manager_cache.py` (12): acierto sin consulta, invalidación solo con escrituras correctas, 401 sin token, filtros que no se pisan, 400 que no entra y seed que se ve al pasar el TTL;
+  - 5 más en `test_timing.py` (sin `/health` y `REQUEST_TIMING_LOG`).
+- **Tests ajustados:** `inventory_support.add_orders` y los conteos de consultas vacían la caché a mano: insertan como un seed. Los tests unitarios del gestor reciben una caché nueva por llamada.
