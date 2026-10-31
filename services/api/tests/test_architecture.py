@@ -103,11 +103,12 @@ class ApiDoesNotDuplicateCoreTests(unittest.TestCase):
                         self.assertFalse(alias.name.startswith("incident_analyzer."), path.name)
         self.assertTrue(used, "the API must consume incident_analyzer")
 
-    def test_only_core_errors_module_logs(self) -> None:
+    def test_only_core_errors_and_timing_modules_log(self) -> None:
+        # timing.py: una línea por petición sin query string (ticket de caching, F0).
         for path in python_files(APP_DIR):
             source = path.read_text(encoding="utf-8")
             if "logging" in source:
-                self.assertEqual(path.relative_to(APP_DIR).as_posix(), "core/errors.py")
+                self.assertIn(path.relative_to(APP_DIR).as_posix(), {"core/errors.py", "core/timing.py"})
 
 
 class CoreDoesNotDependOnApiTests(unittest.TestCase):
