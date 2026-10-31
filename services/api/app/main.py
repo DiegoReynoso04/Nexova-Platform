@@ -118,8 +118,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=False,
         expose_headers=["Content-Disposition", "X-Analysis-Id"],
     )
-    # Timing (ticket de caching, F0): el más externo, para medir la petición entera
-    # (también los 500 que ya ha convertido InternalErrorMiddleware).
-    configure_timing_logger()
-    app.middleware("http")(timing_middleware)
+    # Timing (ticket de caching, D8): el más externo, para medir la petición entera
+    # (también los 500 que ya ha convertido InternalErrorMiddleware). REQUEST_TIMING_LOG=false lo quita.
+    if settings.request_timing_log:
+        configure_timing_logger()
+        app.middleware("http")(timing_middleware)
     return app

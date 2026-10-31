@@ -2,7 +2,9 @@
 
 Una línea por petición en el logger `api.timing`: método, path, status y ms.
 Solo el path, nunca la query string (puede llevar emails o filtros con datos),
-ni cabeceras ni cuerpo.
+ni cabeceras ni cuerpo. `GET /health` no se registra: el healthcheck de Docker
+lo llama cada 5 s y llenaría el log sin información (D8). `create_app` solo
+registra el middleware con `REQUEST_TIMING_LOG` activo (por defecto).
 
 uvicorn solo configura sus propios loggers (`uvicorn`, `uvicorn.error`,
 `uvicorn.access`): sin un handler propio, un `logger.info` de `api.timing` no
@@ -20,6 +22,9 @@ from fastapi import Request, Response
 
 logger = logging.getLogger("api.timing")
 
+# Rutas que no dejan línea de timing.
+UNTIMED_PATHS = frozenset({"/health"})
+
 
 def configure_timing_logger() -> None:
     if not logger.handlers:
@@ -31,6 +36,8 @@ def configure_timing_logger() -> None:
 
 
 async def timing_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    if request.url.path in UNTIMED_PATHS:
+        return await call_next(request)
     start = time.perf_counter()
     response = await call_next(request)
     duration = (time.perf_counter() - start) * 1000  # ms
