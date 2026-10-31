@@ -4,6 +4,7 @@
 // No hace HTTP ni lee el archivo: todo pasa por useIncidentAnalysis y, para la
 // ayuda inmediata de extensión/tamaño, por la misma prevalidación del servicio.
 
+import dynamic from 'next/dynamic';
 import { useEffect, useRef } from 'react';
 
 import { Alert } from '@/components/ui/alert';
@@ -13,11 +14,27 @@ import { precheckFile } from '@/services/incidents.service';
 
 import { AnalysisError } from './analysis-error';
 import { AnalysisMeta } from './analysis-meta';
-import { DistributionTable } from './distribution-table';
-import { InvalidBreakdownTable } from './invalid-breakdown-table';
-import { SatisfactionPanel } from './satisfaction-panel';
-import { TotalsCards } from './totals-cards';
 import { UploadForm } from './upload-form';
+
+// Carga diferida (docs/caching-analysis.md, D6): las métricas solo existen tras
+// analizar un CSV, así que van en un chunk aparte que se pide al elegir el
+// archivo (antes de pulsar «Analizar»). Si aún no ha llegado al mostrar el
+// resultado, `ResultsPlaceholder` reserva su alto para no desplazar nada (CLS).
+const loadIncidentResults = () => import('./incident-results');
+const IncidentResults = dynamic(() => loadIncidentResults().then((module) => module.IncidentResults), {
+  loading: ResultsPlaceholder,
+});
+
+// Alto medido de las métricas en el build de producción (2026-10-31): 1850 px a
+// 375 px (una columna) y 1249 px desde `lg` (dos columnas). Varía un poco con el
+// número de reglas, categorías y estados del CSV.
+function ResultsPlaceholder() {
+  return (
+    <div aria-busy="true" className="min-h-[1850px] lg:min-h-[1249px]">
+      <span className="sr-only">Cargando resultados…</span>
+    </div>
+  );
+}
 
 export function IncidentAnalysisView() {
   const { file, result, analysis, exporting, analysisError, exportError, selectFile, analyze, exportResults } =
@@ -34,6 +51,12 @@ export function IncidentAnalysisView() {
   useEffect(() => {
     if (analysisId !== undefined) resultsHeadingRef.current?.focus();
   }, [analysisId]);
+
+  // Elegir un archivo anuncia un análisis: se adelanta el chunk de las métricas.
+  const hasFile = file !== null;
+  useEffect(() => {
+    if (hasFile) void loadIncidentResults();
+  }, [hasFile]);
 
   let liveMessage = '';
   if (isAnalyzing) liveMessage = 'Analizando el archivo…';
@@ -113,25 +136,7 @@ export function IncidentAnalysisView() {
             <AnalysisMeta result={result} isExporting={isExporting} exportError={exportError} onExport={exportResults} />
           </div>
 
-          <TotalsCards totals={result.totals} />
-          <InvalidBreakdownTable items={result.invalid_breakdown} />
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <DistributionTable
-              headingId="categories-heading"
-              title="Categorías"
-              codeLabel="Categoría"
-              items={result.categories}
-              note="Registros válidos por categoría; porcentaje sobre registros válidos."
-            />
-            <DistributionTable
-              headingId="statuses-heading"
-              title="Estados"
-              codeLabel="Estado"
-              items={result.statuses}
-              note="Registros válidos por estado; porcentaje sobre registros válidos."
-            />
-          </div>
-          <SatisfactionPanel satisfaction={result.satisfaction} />
+          <IncidentResults result={result} />
         </section>
       )}
     </>
