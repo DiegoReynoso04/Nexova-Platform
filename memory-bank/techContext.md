@@ -54,6 +54,7 @@ Verificado el 2026-10-21 (`git fetch` + `git log origin/main`): `origin/main` es
 - Actualización 2026-10-13 (`git fetch`): la auditoría de gestión de errores (PR #18, `feature/error-handling-audit`; merge `843ae26`, 2026-10-10) y AUTH-088 (PR #19, `feature/auth-088-test-suite`; merge `a56e346`, 2026-10-13). `origin/main` está en **`a56e346`**.
 - Actualización 2026-10-19 (`git fetch`): la PR #20 (`chore/memory-bank-auth088-merged`; merge `ef1e083`, 2026-10-13), solo memory-bank y `AGENTS.md`, y el inventario del Hito 5 (PR #21, `feature/inventory-orm`; merge `8e5448e`, 2026-10-19). `origin/main` está en **`8e5448e`**. El merge no aprueba las decisiones D1–D11 ni las de F2–F4 (`services/api/SPECS.md` §35), que siguen pendientes de revisión.
 - Actualización 2026-10-21 (`git fetch`): el frontend del inventario (PR #22, `feature/inventory-frontend`; merge `410da71`, 2026-10-21, sobre `8e5448e`), con F1–F6: `0e0f133`, `2dccef0` (`style(api)`), `72bd839`, `064a569`, `a591686`, `0fa0da3`, `09e53ef` y `0199caf`. `origin/main` está en **`410da71`**. El merge no aprueba las decisiones D1–D10 ni sus ajustes (`docs/inventory-frontend-review.md`), que siguen pendientes de revisión.
+- Actualización 2026-10-31 (`git pull`): las auditorías de rendimiento (PR #25, merge `d987a06`, 2026-10-28) y de serialización (PR #26, `feature/serialization-audit`; merge `9f312e1`). `origin/main` está en **`9f312e1`**.
 - **Repositorio renombrado (2026-09-30):** `DiegoReynoso04/Milestone-0-Elige-tu-empresa` → `DiegoReynoso04/nexova-platform` (GitHub lo muestra como `Nexova-Platform`; el nombre no distingue mayúsculas y las URLs antiguas redirigen). El remoto `origin` local ya apunta a `https://github.com/DiegoReynoso04/nexova-platform.git`. La carpeta local puede seguir llamándose `Milestone-0-Elige-tu-empresa`: no afecta a nada.
 
 - ~~**No está en `main` (2026-10-10):** la auditoría de gestión de errores vive en la rama `feature/error-handling-audit`, pendiente de push y PR.~~ *Corregido el 2026-10-10: integrada en `main` con la PR #18 (merge `843ae26`).*
@@ -294,6 +295,15 @@ Detalle y decisiones D1–D9 en [`docs/serialization-audit.md`](../docs/serializ
 - **Gestor de incidencias:** sus modelos de entrada son solo el contrato publicado en OpenAPI (`openapi_extra`); valida `nexova_shared`, para conservar los códigos del 400 de la Parte E. El 422 nativo se quita de esas rutas con `drop_native_validation_responses`. **FastAPI 0.141 guarda los routers incluidos sin aplanar**: `app.routes` no contiene sus rutas, hay que recorrerlas con `fastapi.routing.iter_route_contexts`.
 - **Regla fijada por tests:** `tests/test_serialization.py` exige `response_model` en cada decorador; la exportación CSV y los `DELETE` 204 lo declaran `None` y documentan su respuesta.
 - **Tests en contenedor:** si Windows bloquea el venv del host, las suites se ejecutan en un contenedor efímero (`services/api/TESTING.md` §14).
+
+### Timing por petición y caching (ticket del 2026-10-31, rama `feature/caching-optimisation`)
+
+Brief en [`docs/caching-brief.md`](../docs/caching-brief.md); medición y decisiones pendientes D1–D11 en [`docs/caching-analysis.md`](../docs/caching-analysis.md).
+
+- **Middleware de timing** (`app/core/timing.py`, registrado en `create_app` como el más externo): logger `api.timing`, una línea por petición con método, path, status y ms, **nunca la query string**. uvicorn solo configura sus propios loggers, así que `configure_timing_logger` le añade un `StreamHandler` una sola vez; los tests ponen un `NullHandler` en `tests/__init__.py`. `test_architecture.py` admite `logging` en `core/errors.py` y `core/timing.py`.
+- **El access log de uvicorn sí registra la query string** (comprobado). Sin cambiar todavía: D9.
+- **Todavía sin caché.** F1 la implementará según D1–D11 (recomendado: diccionario en memoria con TTL e invalidación por espacios de nombres, válido solo con `--workers 1`).
+- **Seed de volumen** `scripts/seed_volume.py`: solo bases de prueba. Rechaza `services/api/data` y un PostgreSQL no local; es determinista e idempotente.
 
 ### Docker (#infra-40)
 

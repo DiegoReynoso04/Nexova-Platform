@@ -11,5 +11,6 @@ This folder contains **helper scripts** for the monorepo: development automation
 |---|---|---|
 | `analyze.py` | Nexova incident analyzer CLI (validation, metrics, `results.csv` export) | [`packages/incident-analyzer/README.md`](../packages/incident-analyzer/README.md) |
 | `seed_incidents.py` | Loads the helpdesk incidents CSV into the centralized incident manager (idempotent; run with the `services/api` virtualenv) | [`services/api/README.md`](../services/api/README.md#seed-de-datos-históricos-scriptsseed_incidentspy) |
+| `seed_volume.py` | Synthetic volume seed (thousands of incidents, hundreds of suppliers, inventory assets with hundreds of orders) for **test databases only**: deterministic, idempotent, refuses the demo data and non-local PostgreSQL | [`docs/caching-analysis.md`](../docs/caching-analysis.md) §2 |
 
 > _Spanish version: [README.es.md](./README.es.md)._

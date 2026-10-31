@@ -4,9 +4,36 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-31 — Caching y optimización, F0: medir y proponer
+
+**Estado: F0 cerrada; esperando que el usuario decida D1–D11** (`docs/caching-analysis.md` §7). Sin ninguna caché implementada y sin push. Rama `feature/caching-optimisation`, desde `main` en `9f312e1`.
+
+- **Commits:**
+  - `1178ddf`: middleware de timing (`app/core/timing.py`; el brief decía `main.py`, pero la regla de logging de `test_architecture.py` solo admite `core/`);
+  - `docs(caching)`: brief literal (`docs/caching-brief.md`), análisis (`docs/caching-analysis.md`) y `scripts/seed_volume.py`.
+- **Validación de `services/api`** (contenedor efímero, TESTING §14): unittest 436 → **439 OK**, pytest 639 → **642 passed**. Línea de timing comprobada en `docker compose logs api`.
+- **Bases de prueba:**
+  - PostgreSQL efímero `postgres:17.6-alpine3.22`, con el esquema creado por el lifespan, y TinyDB en el scratchpad;
+  - Supabase de la demo **solo con GET** y `--lifespan off`. La demo tiene hoy 6 activos y **10 órdenes** (antes 7); no se tocó.
+  - Todo borrado al cerrar, salvo la imagen de postgres.
+- **Volumen sembrado:** 5096 incidencias, 415 proveedores, 126 activos y 30 393 órdenes. Seeder idempotente (segunda ejecución: 0) y con las dos protecciones probadas.
+- **Medidas clave:**
+  - incidencias, 22–110 ms (lee y valida el archivo entero);
+  - inventario en Supabase, ~400 ms fijos por `NullPool`;
+  - proveedores, 3–6 ms;
+  - `/inventory/orders`, 8,5 MB, con 25,5 s de render en el backoffice;
+  - `SupplierTable` se re-renderiza entera al abrir o cerrar el alta (150–372 ms);
+  - `next/dynamic` en los candidatos sube el JS inicial unos 0,4 KB;
+  - `activeCount` y `upcomingCount` no se recalculan al escribir.
+- **Pendiente del usuario:**
+  - D1–D11;
+  - parar el `next start -p 3003` de la auditoría de rendimiento (PID 28816, vivo desde el 2026-10-28; sin permiso para terminarlo en esta sesión, la medición se hizo en el 3004).
+
+---
+
 ## 2026-10-28 — Auditoría de serialización de `services/api` (F0 + F1)
 
-**Estado: hecha y verificada; pendiente de la revisión del usuario antes del push y la PR** (`feat: serialization audit and implementation`). Rama `feature/serialization-audit`, creada desde `main` en `d987a06` (merge de la PR #25, que este banco no recogía; corregido en la entrada de la auditoría de rendimiento).
+**Estado: hecha, revisada e integrada en `main` con la PR #26 (merge `9f312e1`).** *Anotado al empezar el ticket de caching (2026-10-31): esta entrada se escribió antes del merge.* Rama `feature/serialization-audit`, creada desde `main` en `d987a06` (merge de la PR #25, que este banco no recogía; corregido en la entrada de la auditoría de rendimiento).
 
 - **Documentos:** brief literal con la nota de equivalencias en `docs/serialization-audit-brief.md`; auditoría en `docs/serialization-audit.md` (32 endpoints, estado original 15 ✅ · 16 ⚠️ · 1 ❌, estado final 32 ✅; decisiones D1–D9; verificación en §9).
 - **Decisiones del usuario (2026-10-28):**
