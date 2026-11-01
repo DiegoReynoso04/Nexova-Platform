@@ -4,9 +4,46 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-01 — Plan de Telemetría, F0: briefing, inventario de puntos, desajustes y decisiones
+
+**Estado: F0 hecha; pendiente de que el usuario decida D1–D14.** Solo diseño: ningún código de instrumentación. Rama `docs/telemetry-plan`, desde `main` en `390d3aa`. Sin push.
+
+- **Archivos:**
+  - el BRIEFING de telemetría, que se versiona ahora (`docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`): métricas obligatorias, entidades e identificadores;
+  - el enunciado literal con nota de equivalencias (`docs/telemetry/telemetry-brief.md`);
+  - el documento de trabajo (`docs/telemetry/analysis.md`).
+- **Inventario:** puntos de instrumentación con archivo y línea, en la API y en el backoffice, del flujo de inventario y del resto (auth, proveedores, gestor y análisis de incidencias, navegación, abandono, límites de error, timing, 503 y caché). Hoy no se emite ningún evento y no hay cabecera de correlación.
+- **Desajustes confirmados (M0–M11):**
+  - el BRIEFING describe material de formación e incorporación por programa, y el Hito 5 implementó hardware y material de IT;
+  - `product_category` no tiene correspondencia 1:1 con `AssetCategory`;
+  - `office` solo difiere en la caja;
+  - no existen `programme_id`, coste unitario ni moneda;
+  - el umbral es solo `LOW_STOCK_MAX = 5` del frontend.
+- **Medido con la app real sobre SQLite (sin Supabase):**
+  - `PUT`/`PATCH`/`DELETE /inventory/products/{id}` → 405 **antes de autenticar**, también sin token;
+  - `current_stock` en el body → 422 `extra_forbidden` (después de autenticar).
+  - Hallazgo lateral: `Allow: GET` en `PUT /inventory/products`, aunque la colección admite `POST`.
+- **Decisiones propuestas (D1–D14), las decide el usuario:**
+  - `product_category` como campo nuevo;
+  - `programme_id` en `Asset`, con un catálogo que no da ninguna fuente;
+  - `unit_cost` y `currency` derivada de la oficina;
+  - `min_stock` por activo, detectado por cruce en `add_outbound_order`;
+  - la definición de `direct_stock_edit_rejected`;
+  - `sid` en el JWT y `X-Request-ID`;
+  - PII;
+  - el emisor (la API para el negocio);
+  - JSON Schema draft-07 con validación por librería estándar;
+  - criterios de stream/batch y throttle;
+  - taxonomía;
+  - los prerrequisitos, en el plan.
+- **Validación:** solo documentación; sin impacto técnico en el código. Tampoco cambia el negocio en `projectbrief.md`: el BRIEFING es una fuente nueva de contexto, pero no hay herramienta nueva.
+- **Pendiente:** las decisiones del usuario, `telemetry-plan.md`, `event-schemas.json` y su validación, y la PR `docs: telemetry design plan`.
+
+---
+
 ## 2026-10-31 — Caching y optimización, F1: implementación, medición «después» e informe
 
-**Estado: F1 hecha y verificada; pendiente de la revisión del usuario antes del push y la PR** (`feat: caching optimisation`). Rama `feature/caching-optimisation`.
+**Estado: F1 hecha, verificada e integrada en `main`** con la PR #27 (merge `390d3aa`, 2026-11-01). *Corregido el 2026-11-01: antes decía «pendiente de la revisión del usuario antes del push y la PR».* Rama `feature/caching-optimisation`.
 
 - **Decisiones del usuario (2026-10-31):**
   - D1 A, D2 A (sin la opción B), D3 A con 64 entradas por espacio, D4 y D5 como se propusieron;
@@ -35,7 +72,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - el hueco reservado no desplaza nada a 375 ni a 1280 px.
 - **Limpieza:** contenedores, volúmenes y red de medición borrados; cuentas temporales solo en la TinyDB de pruebas (borrada); `ui` de Docker arrancado de nuevo. Se conserva la imagen `postgres:17.6-alpine3.22`.
 - **Pendiente:**
-  - revisión del usuario, push y PR;
+  - ~~revisión del usuario, push y PR~~ (hecho: PR #27);
   - el usuario para el `next start -p 3003` antiguo;
   - D9 (access log de uvicorn con query string), D10 (paginación, pool de Supabase, `auth.json` por petición) y D7-B.
 
