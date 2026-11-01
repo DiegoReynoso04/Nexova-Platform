@@ -18,9 +18,11 @@ from app.auth.dependencies import get_current_user
 from app.auth.email import DisabledEmailSender, EmailSender, ResendEmailSender
 from app.auth.repository import AuthRepository
 from app.auth.service import UserService
+from app.core.cache import ResponseCache
 from app.core.config import Settings
 from app.core.errors import InternalErrorMiddleware, install_error_handlers
 from app.core.limits import BodySizeLimitMiddleware
+from app.core.timing import configure_timing_logger, timing_middleware
 from app.database import SupplierRepository
 from app.modules.incident_manager.repository import IncidentRepository
 from app.modules.incident_manager.router import drop_native_validation_responses
@@ -66,6 +68,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.user_service = UserService(AuthRepository(settings.auth_db_path))
     # Gestor centralizado de incidencias: TinyDB en INCIDENTS_DB_PATH.
     app.state.incident_repository = IncidentRepository(settings.incidents_db_path)
+    # Caché de lecturas (ticket de caching): en memoria, una por app; exige --workers 1.
+    app.state.response_cache = ResponseCache()
     # AUTH-03: envío del enlace de restablecimiento (los tests lo sustituyen).
     app.state.email_sender = build_email_sender(settings)
 
@@ -101,7 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return HealthResponse(status="ok")
 
     # add_middleware apila hacia fuera: el último añadido es el más externo.
-    # Orden resultante: CORS → errores internos (500) → límite de body → app.
+    # Orden resultante: timing → CORS → errores internos (500) → límite de body → app.
     app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_upload_bytes)
     app.add_middleware(InternalErrorMiddleware)
     app.add_middleware(
@@ -114,4 +118,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=False,
         expose_headers=["Content-Disposition", "X-Analysis-Id"],
     )
+    # Timing (ticket de caching, D8): el más externo, para medir la petición entera
+    # (también los 500 que ya ha convertido InternalErrorMiddleware). REQUEST_TIMING_LOG=false lo quita.
+    if settings.request_timing_log:
+        configure_timing_logger()
+        app.middleware("http")(timing_middleware)
     return app

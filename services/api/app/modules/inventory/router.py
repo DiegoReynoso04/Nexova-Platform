@@ -8,6 +8,15 @@ el resto de la API; las rutas de órdenes declaran además el usuario actual,
 porque su `id` (de TinyDB) es el `user_uuid` de cada orden. FastAPI resuelve
 `get_current_user` una sola vez por petición.
 
+Caché (ticket de caching, docs/caching-analysis.md D1–D4): `GET /products` y
+`GET /products/{id}` se guardan 60 s en el espacio `inventory` de la caché de
+la app. Es la misma respuesta para cualquier usuario, y se consulta dentro del
+handler, después de la autenticación. Las tres escrituras invalidan el espacio
+entero, solo si confirman: una que falla (400/404/409/503) lanza antes de
+llegar a `invalidate`. Los seeds y los cambios directos en la base no pasan
+por aquí; el TTL acota cuánto tardan en verse. Con `NullPool`, un acierto no
+abre ninguna conexión: la sesión de `get_db` solo conecta al primer `execute`.
+
 Los `responses=` solo documentan en OpenAPI los errores reales de cada ruta
 (`{detail, code}`, con ejemplos); no cambian el comportamiento. El 422 lo
 documenta FastAPI.
@@ -19,6 +28,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
 from app.auth.dependencies import CurrentUserDep
+from app.core.cache import CacheDep
 from app.core.errors import (
     AssetNotFoundError,
     InsufficientStockError,
@@ -45,6 +55,11 @@ router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 SessionDep = Annotated[Session, Depends(get_db)]
 
+CACHE_NAMESPACE = "inventory"
+# El stock solo cambia con una orden o un activo nuevo, y esas escrituras
+# invalidan al momento. Los 60 s solo acotan los cambios externos a la API (D1).
+CACHE_TTL_SECONDS = 60
+
 
 def _example(error: Any) -> dict[str, Any]:
     """Ejemplo de OpenAPI a partir del error real (mismo `detail` y `code`)."""
@@ -67,8 +82,8 @@ INSUFFICIENT_STOCK_EXAMPLE = InsufficientStockError('Portátil 14" Business', 13
 
 
 @router.get("/products", response_model=list[AssetRead], responses=COMMON_ERRORS)
-def list_products(session: SessionDep) -> list[AssetRead]:
-    return service.list_assets(session)
+def list_products(session: SessionDep, cache: CacheDep) -> list[AssetRead]:
+    return cache.get_or_set(CACHE_NAMESPACE, "products", CACHE_TTL_SECONDS, lambda: service.list_assets(session))
 
 
 @router.post(
@@ -77,14 +92,17 @@ def list_products(session: SessionDep) -> list[AssetRead]:
     response_model=AssetRead,
     responses={**COMMON_ERRORS, 409: _error("Ya existe un activo con ese SKU", SkuAlreadyExistsError())},
 )
-def create_product(payload: AssetCreate, session: SessionDep) -> AssetRead:
-    return service.create_asset(session, payload)
+def create_product(payload: AssetCreate, session: SessionDep, cache: CacheDep) -> AssetRead:
+    asset = service.create_asset(session, payload)
+    cache.invalidate(CACHE_NAMESPACE)
+    return asset
 
 
 # `{id}`: el nombre que fija el enunciado, también en OpenAPI.
 @router.get("/products/{id}", response_model=AssetRead, responses={**COMMON_ERRORS, 404: ASSET_NOT_FOUND})
-def get_product(id: int, session: SessionDep) -> AssetRead:  # noqa: A002 — nombre del enunciado
-    return service.get_asset(session, id)
+def get_product(id: int, session: SessionDep, cache: CacheDep) -> AssetRead:  # noqa: A002 — nombre del enunciado
+    # Un 404 lanza dentro de `get_or_set`: no se guarda.
+    return cache.get_or_set(CACHE_NAMESPACE, ("product", id), CACHE_TTL_SECONDS, lambda: service.get_asset(session, id))
 
 
 @router.post(
@@ -97,8 +115,12 @@ def get_product(id: int, session: SessionDep) -> AssetRead:  # noqa: A002 — no
         404: ASSET_NOT_FOUND,
     },
 )
-def create_inbound_order(payload: InboundOrderCreate, session: SessionDep, user: CurrentUserDep) -> InboundOrderRead:
-    return service.create_inbound_order(session, payload, user_uuid=str(user.id))
+def create_inbound_order(
+    payload: InboundOrderCreate, session: SessionDep, user: CurrentUserDep, cache: CacheDep
+) -> InboundOrderRead:
+    order = service.create_inbound_order(session, payload, user_uuid=str(user.id))
+    cache.invalidate(CACHE_NAMESPACE)
+    return order
 
 
 @router.post(
@@ -116,9 +138,12 @@ def create_inbound_order(payload: InboundOrderCreate, session: SessionDep, user:
     },
 )
 def create_outbound_order(
-    payload: OutboundOrderCreate, session: SessionDep, user: CurrentUserDep
+    payload: OutboundOrderCreate, session: SessionDep, user: CurrentUserDep, cache: CacheDep
 ) -> OutboundOrderRead:
-    return service.create_outbound_order(session, payload, user_uuid=str(user.id))
+    # La regla del stock se comprueba en la base (`FOR UPDATE`), nunca contra la caché.
+    order = service.create_outbound_order(session, payload, user_uuid=str(user.id))
+    cache.invalidate(CACHE_NAMESPACE)
+    return order
 
 
 @router.get("/orders", response_model=list[OrderRead], responses=COMMON_ERRORS)

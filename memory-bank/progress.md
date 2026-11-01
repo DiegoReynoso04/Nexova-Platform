@@ -4,9 +4,73 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-10-31 — Caching y optimización, F1: implementación, medición «después» e informe
+
+**Estado: F1 hecha y verificada; pendiente de la revisión del usuario antes del push y la PR** (`feat: caching optimisation`). Rama `feature/caching-optimisation`.
+
+- **Decisiones del usuario (2026-10-31):**
+  - D1 A, D2 A (sin la opción B), D3 A con 64 entradas por espacio, D4 y D5 como se propusieron;
+  - D6 A, D7 A (D7-B, mejora futura), D8 B;
+  - D9 y D10, trabajo futuro; D11 sí.
+- **Commits:**
+  - `1446a33` caché (`app/core/cache.py`);
+  - `248b025` inventario (60 s);
+  - `210a5ee` incidencias (30 s);
+  - `f6e8d19` `REQUEST_TIMING_LOG` y sin `/health`;
+  - `581e269` carga diferida (formulario de alta e `IncidentResults`);
+  - `d09f4fa` memo de `SupplierTable`;
+  - `a05666b` `scripts/bench_reads.py`;
+  - y el de documentación: `CACHING_REPORT.md`, `SPECS.md` Parte G, los README, `AGENTS.md`, `uis/backoffice/CLAUDE.md`, `TESTING.md` y este banco.
+- **Validación:**
+  - `services/api` en el contenedor efímero: unittest 436 → **482 OK** y pytest 639 → **685 passed**, con mutaciones de las invalidaciones detectadas;
+  - backoffice: `tsc`, `lint`, `build`, `node:test` 507 y Jest 240.
+- **Medición «después»** (mismo método que F0; TinyDB en un volumen de Docker):
+  - **aciertos:** 2,6–4,1 ms en el resumen y los listados filtrados, 13,4 ms en el listado sin filtros (2 MB) y 3,0 ms en el inventario en local;
+  - **Supabase, solo GET:** de ~400 ms a 2,4–3,0 ms;
+  - **fallos tras invalidación:** iguales al coste sin caché.
+- **Frontend:**
+  - abrir y cerrar el alta, de 162 y 112 ms a 0 ms;
+  - el `useMemo` evita 20–29 ms en los renders de «guardando»;
+  - chunks diferidos de 2,1 y 1,6 KB;
+  - el hueco reservado no desplaza nada a 375 ni a 1280 px.
+- **Limpieza:** contenedores, volúmenes y red de medición borrados; cuentas temporales solo en la TinyDB de pruebas (borrada); `ui` de Docker arrancado de nuevo. Se conserva la imagen `postgres:17.6-alpine3.22`.
+- **Pendiente:**
+  - revisión del usuario, push y PR;
+  - el usuario para el `next start -p 3003` antiguo;
+  - D9 (access log de uvicorn con query string), D10 (paginación, pool de Supabase, `auth.json` por petición) y D7-B.
+
+---
+
+## 2026-10-31 — Caching y optimización, F0: medir y proponer
+
+**Estado: F0 cerrada; el usuario decidió D1–D11 el mismo día (ver la entrada de F1, arriba).** Sin ninguna caché implementada y sin push. Rama `feature/caching-optimisation`, desde `main` en `9f312e1`.
+
+- **Commits:**
+  - `1178ddf`: middleware de timing (`app/core/timing.py`; el brief decía `main.py`, pero la regla de logging de `test_architecture.py` solo admite `core/`);
+  - `docs(caching)`: brief literal (`docs/caching-brief.md`), análisis (`docs/caching-analysis.md`) y `scripts/seed_volume.py`.
+- **Validación de `services/api`** (contenedor efímero, TESTING §14): unittest 436 → **439 OK**, pytest 639 → **642 passed**. Línea de timing comprobada en `docker compose logs api`.
+- **Bases de prueba:**
+  - PostgreSQL efímero `postgres:17.6-alpine3.22`, con el esquema creado por el lifespan, y TinyDB en el scratchpad;
+  - Supabase de la demo **solo con GET** y `--lifespan off`. La demo tiene hoy 6 activos y **10 órdenes** (antes 7); no se tocó.
+  - Todo borrado al cerrar, salvo la imagen de postgres.
+- **Volumen sembrado:** 5096 incidencias, 415 proveedores, 126 activos y 30 393 órdenes. Seeder idempotente (segunda ejecución: 0) y con las dos protecciones probadas.
+- **Medidas clave:**
+  - incidencias, 22–110 ms (lee y valida el archivo entero);
+  - inventario en Supabase, ~400 ms fijos por `NullPool`;
+  - proveedores, 3–6 ms;
+  - `/inventory/orders`, 8,5 MB, con 25,5 s de render en el backoffice;
+  - `SupplierTable` se re-renderiza entera al abrir o cerrar el alta (150–372 ms);
+  - `next/dynamic` en los candidatos sube el JS inicial unos 0,4 KB;
+  - `activeCount` y `upcomingCount` no se recalculan al escribir.
+- **Pendiente del usuario:**
+  - D1–D11;
+  - parar el `next start -p 3003` de la auditoría de rendimiento (PID 28816, vivo desde el 2026-10-28; sin permiso para terminarlo en esta sesión, la medición se hizo en el 3004).
+
+---
+
 ## 2026-10-28 — Auditoría de serialización de `services/api` (F0 + F1)
 
-**Estado: hecha y verificada; pendiente de la revisión del usuario antes del push y la PR** (`feat: serialization audit and implementation`). Rama `feature/serialization-audit`, creada desde `main` en `d987a06` (merge de la PR #25, que este banco no recogía; corregido en la entrada de la auditoría de rendimiento).
+**Estado: hecha, revisada e integrada en `main` con la PR #26 (merge `9f312e1`).** *Anotado al empezar el ticket de caching (2026-10-31): esta entrada se escribió antes del merge.* Rama `feature/serialization-audit`, creada desde `main` en `d987a06` (merge de la PR #25, que este banco no recogía; corregido en la entrada de la auditoría de rendimiento).
 
 - **Documentos:** brief literal con la nota de equivalencias en `docs/serialization-audit-brief.md`; auditoría en `docs/serialization-audit.md` (32 endpoints, estado original 15 ✅ · 16 ⚠️ · 1 ❌, estado final 32 ✅; decisiones D1–D9; verificación en §9).
 - **Decisiones del usuario (2026-10-28):**

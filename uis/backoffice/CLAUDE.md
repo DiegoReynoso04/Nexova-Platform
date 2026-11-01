@@ -176,6 +176,11 @@ Desde el ticket #infra-40, el backoffice se arranca **solo con Docker**, en el c
   - React sigue registrando en la consola del navegador los errores que capturan los límites, con su mensaje. Por eso ningún error lanzado en el código de producción puede llevar datos de la API o del usuario en su mensaje.
   - `tests/production-source.test.mjs` lo comprueba.
 - **Textos de error sin detalles técnicos:** ningún texto de `components/` ni `app/` muestra variables de entorno (`NEXT_PUBLIC_*`), rutas del repositorio (`services/api`) ni códigos HTTP entre paréntesis. (Única excepción acotada: `/inventory` muestra el `detail` de texto de la API en sus 4xx/5xx; ver su sección.) Los avisos usan textos neutros con una acción («Inténtalo de nuevo», «Avisa al equipo técnico») y mantienen la distinción por tipo de error. No hay contacto de soporte porque el contexto no define ninguno: no se inventa. Lo comprueba `tests/production-source.test.mjs`.
+- **Carga diferida y memo (ticket de caching, [`CACHING_REPORT.md`](../../CACHING_REPORT.md) §1):**
+  - `SupplierCreateForm` y `components/incidents/incident-results.tsx` solo se cargan con `next/dynamic`, cada uno en su propio chunk; ningún archivo los importa de forma estática.
+  - Su `loading` reserva el alto medido del contenido (sin CLS), y el chunk se adelanta a la intención: puntero o foco en «Nuevo proveedor», y elegir el archivo en `/incidents`.
+  - `SupplierTable` va con `React.memo` y sus filas derivadas con `useMemo([suppliers, today])`: no se le pasan props que cambien de referencia sin cambiar de valor.
+  - Lo comprueba `tests/production-source.test.mjs`.
 - **Contenedores con scroll horizontal:** todo `overflow-x-auto` de `components/` lleva también `relative`. Así los elementos `position: absolute` de dentro (p. ej. `sr-only`) quedan recortados y no ensanchan la página; sin él, `/incident-manager` tenía scroll horizontal a 375 px. Lo comprueba `tests/production-source.test.mjs`, con una lista explícita de excepciones pendientes (`/suppliers`, `/incidents`).
 
 <!-- BEGIN:nextjs-agent-rules -->

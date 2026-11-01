@@ -81,6 +81,13 @@ Ningún agente commitea código sin completar estos cinco pasos, en orden:
 
    **Gestión de errores (auditoría transversal, rama `feature/error-handling-audit`):** informe, trazabilidad de los criterios del ticket y guía de verificación en `docs/error-handling-audit.md`. Las reglas viven en cada subproyecto: el 503 `storage_unavailable` en `services/api/SPECS.md` §4–§5, los límites de error y los textos en `uis/backoffice/CLAUDE.md` y en `uis/talent-pipeline-tracker/CLAUDE.md` («Errores»). Un cambio en la gestión de errores de cualquier capa se verifica también con los casos de error de ese documento (§7.4).
 
+   **Caching y optimización (ticket de caching; `services/api` → `app/core/cache.py`, `app/core/timing.py`; `uis/backoffice` → `/suppliers`, `/incidents`):**
+   - **Documentación:** informe en `CACHING_REPORT.md`; medición inicial y decisiones D1–D11 en `docs/caching-analysis.md`; contrato en `services/api/SPECS.md` Parte G.
+   - **Qué se cachea:** `GET /inventory/products*` (60 s) y `GET /api/incidents` y `/summary` (30 s). La caché vive en memoria y solo es válida con `--workers 1`. Nunca se cachea nada personal en una clave compartida.
+   - **Tests:** los cubre la validación de `services/api` de la tabla.
+   - **Un cambio en la caché o en una escritura que invalida** se verifica también midiendo con `scripts/bench_reads.py` contra una API de medición con bases de prueba, nunca contra la demo (receta en `docs/caching-analysis.md` §2.4).
+   - **Un cambio en la carga diferida o en el memo del backoffice** se verifica con el build de producción: chunks, ausencia de layout shift al abrir el formulario y al mostrar resultados, y `<Profiler>` temporal sin commitear.
+
    **Directorio de proveedores de Nexova (`services/api` → `/suppliers`, `uis/backoffice` → `/suppliers`):** contexto en `docs/ligthweight-storage-api.md`; contrato en `services/api/SPECS.md` Parte B. La validación de `services/api` de la tabla cubre también los tests de proveedores; además, `docker compose exec api python -m app.seed` debe ejecutarse sin errores y ser idempotente. Un cambio en `/suppliers` se verifica también en el navegador (filtros, alta con 422, tarifa, estado).
 
 2. **Revisar el diff real antes de comitear:** `git status --short` y `git diff --stat`. Confirmar que no se incluyen archivos generados (`node_modules/`, `.next/`, `*.log`, `*.tsbuildinfo`) ni dependencias no autorizadas en ningún `package.json` tocado.

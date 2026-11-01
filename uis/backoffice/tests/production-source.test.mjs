@@ -592,4 +592,25 @@ describe('código de producción', () => {
       assert.equal(callsFetch, file === 'lib/api-client.ts', file);
     }
   });
+
+  // Ticket de caching, D6 (docs/caching-analysis.md): el formulario de alta y
+  // las métricas del análisis van en su propio chunk. Un import estático en
+  // cualquier otro archivo lo devolvería al chunk de la ruta.
+  test('carga diferida: formulario de alta y métricas del análisis solo con next/dynamic y alto reservado', () => {
+    const lazy = [
+      ['components/suppliers/supplier-directory-view.tsx', 'supplier-create-form', 'SupplierCreateForm', 'CreateFormPlaceholder'],
+      ['components/incidents/incident-analysis-view.tsx', 'incident-results', 'IncidentResults', 'ResultsPlaceholder'],
+    ];
+    for (const [view, module, component, placeholder] of lazy) {
+      const code = codeWithoutComments(view);
+      assert.match(code, /import dynamic from 'next\/dynamic';/, view);
+      assert.match(code, new RegExp(`import\\('\\./${module}'\\)`), view);
+      assert.match(code, new RegExp(`const ${component} = dynamic\\(`), view);
+      assert.match(code, new RegExp(`loading: ${placeholder}`), view);
+      assert.match(code, /aria-busy="true" className="min-h-\[\d+px\]/, view);
+      for (const file of PRODUCTION_FILES) {
+        assert.doesNotMatch(codeWithoutComments(file), new RegExp(`from '[^']*/?${module}'`), `${file} importa ${module} de forma estática`);
+      }
+    }
+  });
 });

@@ -184,6 +184,8 @@ class QueryCountTests(InventoryTestCase):
             asset = self.create(sku=f"EXAMPLE-Q-{index}")
             self.add_orders(asset["id"], entries=[5, 3], exits=[1])
         self.assertEqual(len(self.client.get(PRODUCTS_URL).json()), 20)
+        # Se cuenta una lectura sin caché (un acierto no hace ninguna consulta).
+        self.app.state.response_cache.invalidate("inventory")
         with_twenty = self.count_queries("GET", PRODUCTS_URL)
         self.assertEqual(with_one, 1)
         self.assertEqual(with_twenty, with_one)

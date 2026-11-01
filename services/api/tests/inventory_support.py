@@ -58,7 +58,12 @@ class InventoryTestCase(unittest.TestCase):
         return response.json()
 
     def add_orders(self, asset_id: int, entries: list[int], exits: list[int], office: str = "Valencia") -> None:
-        """Inserta órdenes directamente con la sesión (sin pasar por las rutas)."""
+        """Inserta órdenes directamente con la sesión (sin pasar por las rutas).
+
+        Como un seed, no pasa por la API y no invalida la caché; aquí se vacía a
+        mano, igual que si hubiera pasado el TTL (los tests de la caché, en
+        test_inventory_cache.py, prueban justo lo contrario).
+        """
         with Session(self.engine) as session:
             for quantity in entries:
                 session.add(
@@ -77,6 +82,7 @@ class InventoryTestCase(unittest.TestCase):
                     )
                 )
             session.commit()
+        self.app.state.response_cache.invalidate("inventory")
 
     def asset_count(self) -> int:
         with Session(self.engine) as session:

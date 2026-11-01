@@ -10,6 +10,9 @@ docs/centralized-incident-manager.md y SPECS.md Parte E.
 decisión que hoy solo cubría HTTP: la validación antes de escribir, el 400 de
 una transición inválida sin tocar nada, el 404 y el desempate del orden
 cuando varias incidencias comparten fecha.
+
+Cada llamada recibe una caché nueva (`ResponseCache()`): aquí se prueba la
+decisión sin caché; la caché tiene sus tests en test_incident_manager_cache.py.
 """
 
 from datetime import UTC, datetime
@@ -19,6 +22,7 @@ from uuid import uuid4
 import pytest
 from nexova_shared.incidents import IncidentDraft, IncidentStatus, SeedIncident, validate_incident_fields
 
+from app.core.cache import ResponseCache
 from app.core.errors import IncidentFieldsError, IncidentNotFoundError, InvalidStatusTransitionApiError
 from app.modules.incident_manager import router
 from app.modules.incident_manager.models import IncidentRead
@@ -40,7 +44,7 @@ def _payload(**changes: Any) -> dict[str, Any]:
 
 
 def _create(repo: IncidentRepository, **changes: Any) -> IncidentRead:
-    return router.create_incident(_payload(**changes), repo)
+    return router.create_incident(_payload(**changes), repo, ResponseCache())
 
 
 def _stored(repo: IncidentRepository, incident_id: Any) -> IncidentRead | None:
@@ -105,7 +109,7 @@ def test_filters_are_combined_with_and(incident_repo: IncidentRepository) -> Non
     _create(incident_repo, origin="branch", branch="central", category="sla_breach")
     _create(incident_repo, origin="branch", branch="miami_office", category="technical_failure")
 
-    found = router.list_incidents(incident_repo, origin="branch", branch="miami_office", category="sla_breach")
+    found = router.list_incidents(incident_repo, ResponseCache(), origin="branch", branch="miami_office", category="sla_breach")
 
     # El listado da filas sin `updated_at` (auditoría de serialización, D5).
     assert [item.id for item in found] == [target.id]
@@ -117,20 +121,20 @@ def test_list_is_newest_first_and_ties_are_broken_by_id(incident_repo: IncidentR
     clock.advance(minutes=1)
     newest = _create(incident_repo)
 
-    listed = router.list_incidents(incident_repo)
+    listed = router.list_incidents(incident_repo, ResponseCache())
 
     assert listed[0].id == newest.id
     assert [item.id for item in listed[1:]] == [
         incident.id for incident in sorted(same_time, key=lambda incident: str(incident.id), reverse=True)
     ]
-    assert router.list_incidents(incident_repo) == listed
+    assert router.list_incidents(incident_repo, ResponseCache()) == listed
 
 
 @pytest.mark.parametrize(("field", "value"), [("status", "closed"), ("branch", "madrid"), ("origin", "")])
 def test_filter_outside_the_vocabulary_is_rejected(incident_repo: IncidentRepository, field: str, value: str) -> None:
     # Un filtro desconocido es un error, no una lista vacía que parezca «no hay incidencias».
     with pytest.raises(IncidentFieldsError) as exc:
-        router.list_incidents(incident_repo, **{field: value})
+        router.list_incidents(incident_repo, ResponseCache(), **{field: value})
     assert [name for name, _ in _fields(exc.value)] == [field]
 
 
@@ -140,9 +144,9 @@ def test_filter_outside_the_vocabulary_is_rejected(incident_repo: IncidentReposi
 def test_summary_counts_by_status_and_keeps_every_key(incident_repo: IncidentRepository) -> None:
     first = _create(incident_repo)
     _create(incident_repo)
-    router.change_incident_status(first.id, {"status": "discarded"}, incident_repo)
+    router.change_incident_status(first.id, {"status": "discarded"}, incident_repo, ResponseCache())
 
-    summary = router.incident_summary(incident_repo)
+    summary = router.incident_summary(incident_repo, ResponseCache())
 
     assert summary.total == 2
     assert summary.by_status == {
@@ -154,7 +158,7 @@ def test_summary_counts_by_status_and_keeps_every_key(incident_repo: IncidentRep
 
 
 def test_summary_of_an_empty_manager_is_all_zeros(incident_repo: IncidentRepository) -> None:
-    summary = router.incident_summary(incident_repo)
+    summary = router.incident_summary(incident_repo, ResponseCache())
     assert summary.total == 0
     assert set(summary.by_status.values()) == {0}
 
@@ -179,7 +183,7 @@ def test_valid_transition_changes_status_and_updated_at_only(incident_repo: Inci
     incident = _create(incident_repo)
     clock.advance(hours=2)
 
-    changed = router.change_incident_status(incident.id, {"status": "in_progress"}, incident_repo)
+    changed = router.change_incident_status(incident.id, {"status": "in_progress"}, incident_repo, ResponseCache())
 
     assert (changed.status, changed.updated_at, changed.created_at) == (
         IncidentStatus.IN_PROGRESS,
@@ -191,10 +195,10 @@ def test_valid_transition_changes_status_and_updated_at_only(incident_repo: Inci
 
 def test_an_open_incident_can_be_discarded_directly_but_a_discarded_one_is_final(incident_repo: IncidentRepository) -> None:
     incident = _create(incident_repo)
-    router.change_incident_status(incident.id, {"status": "discarded"}, incident_repo)
+    router.change_incident_status(incident.id, {"status": "discarded"}, incident_repo, ResponseCache())
 
     with pytest.raises(InvalidStatusTransitionApiError):
-        router.change_incident_status(incident.id, {"status": "open"}, incident_repo)
+        router.change_incident_status(incident.id, {"status": "open"}, incident_repo, ResponseCache())
 
 
 def test_invalid_transition_is_rejected_and_writes_nothing(
@@ -206,7 +210,7 @@ def test_invalid_transition_is_rejected_and_writes_nothing(
     clock.advance(hours=1)
 
     with pytest.raises(InvalidStatusTransitionApiError) as exc:
-        router.change_incident_status(incident.id, {"status": "resolved"}, incident_repo)
+        router.change_incident_status(incident.id, {"status": "resolved"}, incident_repo, ResponseCache())
 
     assert _fields(exc.value) == [("status", "invalid_transition")]
     assert incident_repo.path.read_bytes() == before
@@ -214,7 +218,7 @@ def test_invalid_transition_is_rejected_and_writes_nothing(
 
 def test_status_change_of_an_unknown_id_is_not_found(incident_repo: IncidentRepository) -> None:
     with pytest.raises(IncidentNotFoundError):
-        router.change_incident_status(uuid4(), {"status": "in_progress"}, incident_repo)
+        router.change_incident_status(uuid4(), {"status": "in_progress"}, incident_repo, ResponseCache())
 
 
 @pytest.mark.parametrize(
@@ -231,7 +235,7 @@ def test_malformed_status_change_is_rejected_without_touching_the_incident(
     # Solo se cambia `status`: el cuerpo se valida antes de buscar la incidencia.
     incident = _create(incident_repo)
     with pytest.raises(IncidentFieldsError):
-        router.change_incident_status(incident.id, body, incident_repo)
+        router.change_incident_status(incident.id, body, incident_repo, ResponseCache())
     assert _stored(incident_repo, incident.id) == incident
 
 

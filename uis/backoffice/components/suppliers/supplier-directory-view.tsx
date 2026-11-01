@@ -4,6 +4,7 @@
 // No hace HTTP: todo pasa por useSupplierDirectory → services/suppliers.service.ts.
 // No hay botón de eliminar (suspensión controlada; services/api/SPECS.md §10).
 
+import dynamic from 'next/dynamic';
 import { useState } from 'react';
 
 import { Alert } from '@/components/ui/alert';
@@ -12,10 +13,32 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useSupplierDirectory } from '@/hooks/use-supplier-directory';
 import { RENEWAL_WINDOW_DAYS, renewalInfo } from '@/lib/supplier-renewal';
 
-import { SupplierCreateForm } from './supplier-create-form';
 import { SupplierError } from './supplier-error';
 import { SupplierFilterBar } from './supplier-filters';
 import { SupplierTable } from './supplier-table';
+
+// Carga diferida (docs/caching-analysis.md, D6): el formulario de alta solo
+// existe con `formOpen`. Su chunk se adelanta al acercar el puntero o el foco a
+// «Nuevo proveedor»; si aún no ha llegado al abrir, `CreateFormPlaceholder`
+// reserva su alto para no desplazar el directorio (CLS).
+const loadCreateForm = () => import('./supplier-create-form');
+const SupplierCreateForm = dynamic(() => loadCreateForm().then((module) => module.SupplierCreateForm), {
+  loading: CreateFormPlaceholder,
+});
+
+// Alto medido del formulario en el build de producción (2026-10-31): 961 px a
+// 375 px (una columna) y 574–590 px desde `sm` (dos columnas; se reserva el menor).
+function CreateFormPlaceholder() {
+  return (
+    <div aria-busy="true" className="min-h-[961px] sm:min-h-[574px]">
+      <span className="sr-only">Cargando formulario…</span>
+    </div>
+  );
+}
+
+function preloadCreateForm() {
+  void loadCreateForm();
+}
 
 export function SupplierDirectoryView() {
   const directory = useSupplierDirectory();
@@ -58,7 +81,13 @@ export function SupplierDirectoryView() {
             Registrar proveedor
           </h2>
           {!showForm && (
-            <Button onClick={openForm} aria-expanded={false} aria-controls="create-form-region">
+            <Button
+              onClick={openForm}
+              onPointerEnter={preloadCreateForm}
+              onFocus={preloadCreateForm}
+              aria-expanded={false}
+              aria-controls="create-form-region"
+            >
               Nuevo proveedor
             </Button>
           )}

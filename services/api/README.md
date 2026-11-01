@@ -126,6 +126,7 @@ Variables de entorno (la API **no** carga archivos `.env` por sí sola, no usa `
 | `EMAIL_FROM` | — (con `RESEND_API_KEY`) | Remitente, p. ej. `Nexova <onboarding@resend.dev>` (remitente de pruebas de Resend: solo entrega a la dirección de tu cuenta de Resend) |
 | `PASSWORD_RESET_URL` | — (con `RESEND_API_KEY`) | URL absoluta de la página de restablecimiento del frontend; el enlace añade `?token=…`. Con Docker: `http://localhost:3001/reset-password` |
 | `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` | `30` | Vigencia del enlace, entre 15 y 60 minutos |
+| `REQUEST_TIMING_LOG` | `true` | Middleware de timing: una línea por petición en el log (`api.timing`) con método, path, status y ms, sin query string ni `GET /health`. `false` lo apaga. Ver `SPECS.md` §44 |
 | `MAX_UPLOAD_BYTES` | `1048576` (1 MiB) | Límite técnico del **body HTTP completo** (CSV + cabeceras y delimitadores multipart), **no del CSV**: el CSV máximo es algo menor. Decisión de la API, no requisito del cliente. Detalle en `SPECS.md` §3.1 |
 
 Con Docker no hace falta definir las rutas TinyDB: por defecto apuntan a `/app/api/data/`, que es `services/api/data/` del host montada. Tras cambiar el `.env`: `docker compose up -d api`.
@@ -197,6 +198,7 @@ docker compose exec api python -m app.auth.create_admin --email admin@example.co
 - **Autenticación sin estado**: no hay revocación ni refresh de tokens; cambiar o restablecer la contraseña (AUTH-03) o el rol no invalida los tokens ya emitidos hasta que expiran. Sin permisos por rol en las rutas de incidentes y proveedores (basta un token válido).
 - Con `MAX_UPLOAD_BYTES` > 1 MiB, Starlette puede volcar el archivo subido a un temporal en disco durante la petición.
 - Las respuestas 200 de análisis y exportación llevan `Cache-Control: no-store`.
+- **Caché de lecturas en memoria** (`SPECS.md` Parte G): `GET /inventory/products` y `/inventory/products/{id}` durante 60 s, y `GET /api/incidents` y `/api/incidents/summary` durante 30 s. Las escrituras por la API la limpian al momento; **los seeds y los cambios directos en la base no**: con la API en marcha, sus datos tardan hasta el TTL en verse (o reinicia el contenedor: `docker compose restart api`). Solo es válida con `--workers 1`.
 
 ## Gestor centralizado de incidencias
 
@@ -230,6 +232,7 @@ services/api/.venv/bin/python scripts/seed_incidents.py packages/incident-analyz
 - Códigos de salida: `0` correcto · `1` CSV inexistente, no UTF-8 o con una cabecera sin las columnas del analizador · `2` argumentos, configuración o entorno incorrectos (por ejemplo, ejecutarlo con un Python sin el venv, o una base `--db`/`INCIDENTS_DB_PATH` que no se puede abrir o escribir, o que está corrupta). Ningún error termina con traceback; ante una base dañada, stderr muestra la línea del registro (`storage incidents is unavailable: <Clase>`) y el mensaje del script con solo el nombre del archivo.
 - Con el fixture de aceptación: 96 insertadas y 4 inválidas (filas 18, 45, 71 y 93); en la segunda ejecución, 0 insertadas y 96 ya existentes.
 - Igual que el seeder de proveedores: ejecutarlo con la API parada o sin escrituras en curso.
+- Con la API en marcha, el listado y el resumen del gestor tardan **hasta 30 s** en mostrar lo sembrado: el seed escribe en TinyDB sin pasar por la API y no limpia su caché (`SPECS.md` §43).
 
 ## Inventario (Hito 5)
 
@@ -298,6 +301,7 @@ Stock por SKU:
   NXV-TRN-001: 0
 ```
 
+- **Caché:** con la API en marcha, `GET /inventory/products` y el detalle tardan **hasta 60 s** en mostrar lo sembrado: el seed escribe en la base sin pasar por la API y no limpia su caché (`SPECS.md` §43).
 - **Segunda ejecución:** inserta 0 (`Activos ya existentes (omitidos): 6`, `Activos que ya tenían órdenes (no se les añade ninguna): 3`) y el mismo stock.
 - **Idempotencia:** los activos se buscan por `sku`; las órdenes de un activo solo se insertan si ese activo no tiene ninguna.
 - **Una sola transacción:** o se carga todo o nada. Las órdenes pasan por las mismas reglas que la API, incluida la del stock.
@@ -386,10 +390,12 @@ Los tests reutilizan el fixture sintético del núcleo (`example.invalid`). Como
 app/
 ├── main.py                  # create_app(): middlewares, handlers, routers (+ protección JWT), /health
 ├── core/
+│   ├── cache.py             # ResponseCache: caché en memoria con TTL, espacios de nombres y máximo de entradas (SPECS Parte G)
 │   ├── config.py            # Settings desde variables de entorno (stdlib); exige la config JWT al arrancar
 │   ├── errors.py            # formato {detail, code}, 401/403/409, 422 saneado, 503 de almacenamiento, middleware de 500 opaco
 │   ├── limits.py            # límite del body (Content-Length + conteo en streaming)
-│   └── storage.py           # GuardedJSONStorage: fallos del archivo TinyDB → 503 storage_unavailable
+│   ├── storage.py           # GuardedJSONStorage: fallos del archivo TinyDB → 503 storage_unavailable
+│   └── timing.py            # middleware de timing (logger api.timing), sin query string ni /health
 ├── auth/                    # AUTH-01
 │   ├── models.py            # User/Profile (Pydantic), UserRole, validación de email y contraseña
 │   ├── repository.py        # AuthRepository: única capa que toca TinyDB de usuarios y perfiles

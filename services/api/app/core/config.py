@@ -35,6 +35,9 @@ MAX_PASSWORD_RESET_TOKEN_MINUTES = 60
 # Hito 5: esquemas de DATABASE_URL aceptados desde el entorno (Supabase, PostgreSQL
 # con psycopg2). Los tests inyectan `Settings(database_url="sqlite://")` sin pasar por aquí.
 DATABASE_URL_SCHEMES = ("postgresql", "postgresql+psycopg2")
+# Ticket de caching (D8): valores aceptados por REQUEST_TIMING_LOG.
+TRUE_VALUES = ("true", "1", "yes", "on")
+FALSE_VALUES = ("false", "0", "no", "off")
 
 
 class ConfigError(ValueError):
@@ -64,6 +67,9 @@ class Settings:
     # `require_database()` la exige al arrancar la API. Lleva la contraseña de la
     # base, así que nunca aparece en un repr/log ni en un mensaje de error.
     database_url: str = field(default="", repr=False)
+    # Middleware de timing (ticket de caching, D8): una línea por petición en
+    # `api.timing`, sin `/health`. Activo por defecto; REQUEST_TIMING_LOG=false lo apaga.
+    request_timing_log: bool = True
 
     def __post_init__(self) -> None:
         if "*" in self.cors_allowed_origins:
@@ -127,6 +133,9 @@ class Settings:
         expire_minutes = environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "").strip()
         reset_minutes = environ.get("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "").strip()
         database_url = environ.get("DATABASE_URL", "").strip()
+        timing_log = environ.get("REQUEST_TIMING_LOG", "").strip().lower()
+        if timing_log and timing_log not in TRUE_VALUES + FALSE_VALUES:
+            raise ConfigError("REQUEST_TIMING_LOG must be true or false")
         # Solo se mira lo que va antes de "://"; el mensaje nunca repite la URL.
         scheme, separator, _ = database_url.partition("://")
         if database_url and (not separator or scheme not in DATABASE_URL_SCHEMES):
@@ -160,4 +169,5 @@ class Settings:
             password_reset_url=environ.get("PASSWORD_RESET_URL", "").strip(),
             password_reset_token_minutes=password_reset_token_minutes,
             database_url=database_url,
+            request_timing_log=timing_log not in FALSE_VALUES,
         )
