@@ -4,9 +4,38 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-02 — Plan de Telemetría, F1: plan, esquemas y validación
+
+**Estado: F1 hecha y validada; pendiente de la revisión del usuario antes del push y la PR** (`docs: telemetry design plan`). Rama `docs/telemetry-plan`. Solo diseño: ningún código de instrumentación.
+
+- **Decisiones del usuario (2026-11-02):**
+  - D1 B, D1-a (`null`, nunca un cuarto valor) y D1-b (sin clasificar en este ticket);
+  - D2 A, solo con el patrón de slug;
+  - D3 con umbral 10 % y media de las 3 anteriores, configurables, y `direction`;
+  - D4 `min_stock` 5, `<` y por cruce;
+  - D5–D8 A;
+  - D9 con HMAC + `inbound_order_id` y retención de 90 días en bruto / agregados sin límite;
+  - D10 A, D11 A + B y D12–D14 como se propusieron.
+  - Resumen en `docs/telemetry/telemetry-plan.md` §1.4.
+- **Entregables:**
+  - `docs/telemetry/telemetry-plan.md`: alcance y equivalencias M0–M11, prerrequisitos P1–P10 con su orden, flujo de inventario en 12 pasos con archivo y línea, catálogo, envelope, 52 fichas, entrega, throttle, riesgos, exclusiones y validación;
+  - `docs/telemetry/event-schemas.json`: draft-07, envelope común, una definición por evento, `oneOf` raíz y `$comment` con los metadatos;
+  - `scripts/validate_event_schemas.py`: librería estándar.
+- **Cifras:** 52 eventos, 5 obligatorios y 47 oportunidades, en 10 categorías; 42 los emite la API y 10 el frontend; 13 van por stream y 39 por batch. 43 se pueden emitir sin prerrequisitos de modelo; los 9 de inventario esperan a P1–P3, P7, P9 y P10.
+- **Validación:**
+  - el script, OK (52 eventos, 53 ejemplos), y detecta 10 de 10 mutaciones;
+  - `npx --yes ajv-cli@5.0.0` (Node 24.18.0): metaesquema válido, 53 ejemplos `valid` y control negativo `invalid`.
+  - Ningún `package.json` ni dependencia nueva.
+- **Otros cambios:** fila nueva en la tabla de validación de `AGENTS.md` §4 y en `scripts/README*.md`; estado de `analysis.md` actualizado.
+- **Pendiente:**
+  - revisión del usuario, push y PR;
+  - el ticket de captura: P1–P10, la clasificación de activos, el catálogo de programas, los datos semilla del BRIEFING §5 y alinear el indicador «Bajo».
+
+---
+
 ## 2026-11-01 — Plan de Telemetría, F0: briefing, inventario de puntos, desajustes y decisiones
 
-**Estado: F0 hecha; pendiente de que el usuario decida D1–D14.** Solo diseño: ningún código de instrumentación. Rama `docs/telemetry-plan`, desde `main` en `390d3aa`. Sin push.
+**Estado: F0 hecha; el usuario decidió D1–D14 el 2026-11-02 (ver la entrada de F1, arriba).** *Corregido el 2026-11-02: antes decía «pendiente de que el usuario decida D1–D14».* Solo diseño: ningún código de instrumentación. Rama `docs/telemetry-plan`, desde `main` en `390d3aa`. Sin push.
 
 - **Archivos:**
   - el BRIEFING de telemetría, que se versiona ahora (`docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`): métricas obligatorias, entidades e identificadores;

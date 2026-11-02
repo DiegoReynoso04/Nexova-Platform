@@ -1,0 +1,3963 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Nexova — esquemas de eventos de telemetría",
+  "description": "JSON Schema draft-07. Un evento válido cumple exactamente una de las definiciones (discriminadas por `event_type`). Documentación: docs/telemetry/telemetry-plan.md.",
+  "definitions": {
+    "envelope": {
+      "description": "Event Envelope común a todos los eventos (plan, §5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventId",
+        "timestamp",
+        "sessionId",
+        "userId",
+        "event_type",
+        "schemaVersion",
+        "requestId",
+        "properties"
+      ],
+      "properties": {
+        "eventId": {
+          "description": "UUID v4 del evento, generado por el emisor.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "timestamp": {
+          "description": "Instante del hecho, ISO 8601 en UTC con milisegundos y `Z`.",
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "sessionId": {
+          "description": "Claim `sid` del JWT (UUID v4) o `null`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "userId": {
+          "description": "`sub` del JWT (id del usuario en TinyDB, UUID v4) o `null`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "event_type": {
+          "description": "Taxonomía `entidad_accion` en snake_case.",
+          "type": "string",
+          "pattern": "^[a-z]+(_[a-z]+)+$"
+        },
+        "schemaVersion": {
+          "description": "Versión semver del esquema del evento.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "requestId": {
+          "description": "`X-Request-ID` (UUID v4) de la petición, o `null` si el evento no corresponde a una.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "properties": {
+          "description": "Payload del evento; cada evento fija su allowlist.",
+          "type": "object"
+        }
+      }
+    },
+    "inbound_order_created": {
+      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=api; entrega=batch; prerrequisitos=P1,P3,P4,P5,P6,P9",
+      "description": "Se ha registrado una orden de entrada (`AssetEntry`): llega un lote de material desde un proveedor.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "inbound_order_created"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "office",
+            "product_id",
+            "product_category",
+            "programme_id",
+            "quantity",
+            "currency",
+            "inbound_order_id",
+            "unit_cost",
+            "supplier_key",
+            "asset_category"
+          ],
+          "properties": {
+            "office": {
+              "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6).",
+              "enum": [
+                "valencia",
+                "miami"
+              ]
+            },
+            "product_id": {
+              "description": "`Asset.id` del activo (D6).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "product_category": {
+              "description": "Categoría del BRIEFING (`Asset.product_category`, P1). `null` si el activo no es material de formación ni de incorporación (D1-a), si aún no está clasificado o si no hay activo.",
+              "enum": [
+                "training_kit",
+                "certification",
+                "onboarding_equipment",
+                null
+              ]
+            },
+            "programme_id": {
+              "description": "Programa o área del activo (`Asset.programme_id`, P1), slug como `ventas-b2b` o `liderazgo-basico` (ejemplos del BRIEFING). `null` si el activo no tiene programa o no hay activo.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "maxLength": 64
+            },
+            "quantity": {
+              "description": "Unidades de la orden (`quantity`).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "currency": {
+              "description": "Moneda de la oficina (BRIEFING §6: `EUR` en Valencia, `USD` en Miami), derivada en la API, nunca convertida (D3).",
+              "enum": [
+                "EUR",
+                "USD"
+              ]
+            },
+            "inbound_order_id": {
+              "description": "`AssetEntry.id`.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "unit_cost": {
+              "description": "Coste unitario de la entrada (`AssetEntry.unit_cost`, P3), en `currency`, con dos decimales.",
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 9999999999.99
+            },
+            "supplier_key": {
+              "description": "Clave seudónima del proveedor: HMAC-SHA256 en hex del nombre normalizado (P9). Nunca el nombre.",
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "maxLength": 64
+            },
+            "asset_category": {
+              "description": "Categoría operativa del Hito 5 (`Asset.category`), sin traducir: permite agregar los activos con `product_category` nulo.",
+              "enum": [
+                "hardware",
+                "peripherals",
+                "office_supplies",
+                "training_materials"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "outbound_order_created": {
+      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=api; entrega=batch; prerrequisitos=P1,P4,P5,P6",
+      "description": "Se ha registrado una orden de salida (`AssetExit`): se entrega un kit o certificado, o se consume material.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "outbound_order_created"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "office",
+            "product_id",
+            "product_category",
+            "programme_id",
+            "quantity",
+            "currency",
+            "outbound_order_id",
+            "exit_type",
+            "stock_after",
+            "asset_category"
+          ],
+          "properties": {
+            "office": {
+              "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6).",
+              "enum": [
+                "valencia",
+                "miami"
+              ]
+            },
+            "product_id": {
+              "description": "`Asset.id` del activo (D6).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "product_category": {
+              "description": "Categoría del BRIEFING (`Asset.product_category`, P1). `null` si el activo no es material de formación ni de incorporación (D1-a), si aún no está clasificado o si no hay activo.",
+              "enum": [
+                "training_kit",
+                "certification",
+                "onboarding_equipment",
+                null
+              ]
+            },
+            "programme_id": {
+              "description": "Programa o área del activo (`Asset.programme_id`, P1), slug como `ventas-b2b` o `liderazgo-basico` (ejemplos del BRIEFING). `null` si el activo no tiene programa o no hay activo.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "maxLength": 64
+            },
+            "quantity": {
+              "description": "Unidades de la orden (`quantity`).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "currency": {
+              "description": "Moneda de la oficina (BRIEFING §6: `EUR` en Valencia, `USD` en Miami), derivada en la API, nunca convertida (D3).",
+              "enum": [
+                "EUR",
+                "USD"
+              ]
+            },
+            "outbound_order_id": {
+              "description": "`AssetExit.id`.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "exit_type": {
+              "description": "Tipo de salida, tal cual (`allocation` = asignación, `consumption` = consumo).",
+              "enum": [
+                "allocation",
+                "consumption"
+              ]
+            },
+            "stock_after": {
+              "description": "Stock del activo después de la salida.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "asset_category": {
+              "description": "Categoría operativa del Hito 5 (`Asset.category`), sin traducir: permite agregar los activos con `product_category` nulo.",
+              "enum": [
+                "hardware",
+                "peripherals",
+                "office_supplies",
+                "training_materials"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "stock_threshold_triggered": {
+      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=api; entrega=stream; prerrequisitos=P1,P2,P4,P5,P6",
+      "description": "Una salida ha hecho cruzar al stock de un activo su mínimo configurado: antes estaba en `min_stock` o por encima y después queda por debajo (`<`).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "stock_threshold_triggered"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "office",
+            "product_id",
+            "product_category",
+            "programme_id",
+            "quantity",
+            "currency",
+            "outbound_order_id",
+            "stock_before",
+            "stock_after",
+            "min_stock",
+            "asset_category"
+          ],
+          "properties": {
+            "office": {
+              "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6).",
+              "enum": [
+                "valencia",
+                "miami"
+              ]
+            },
+            "product_id": {
+              "description": "`Asset.id` del activo (D6).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "product_category": {
+              "description": "Categoría del BRIEFING (`Asset.product_category`, P1). `null` si el activo no es material de formación ni de incorporación (D1-a), si aún no está clasificado o si no hay activo.",
+              "enum": [
+                "training_kit",
+                "certification",
+                "onboarding_equipment",
+                null
+              ]
+            },
+            "programme_id": {
+              "description": "Programa o área del activo (`Asset.programme_id`, P1), slug como `ventas-b2b` o `liderazgo-basico` (ejemplos del BRIEFING). `null` si el activo no tiene programa o no hay activo.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "maxLength": 64
+            },
+            "quantity": {
+              "description": "Unidades de la salida que provocó el cruce.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "currency": {
+              "description": "Moneda de la oficina (BRIEFING §6: `EUR` en Valencia, `USD` en Miami), derivada en la API, nunca convertida (D3).",
+              "enum": [
+                "EUR",
+                "USD"
+              ]
+            },
+            "outbound_order_id": {
+              "description": "`AssetExit.id` de la salida que provocó el cruce.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "stock_before": {
+              "description": "Stock antes de la salida (`available`).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "stock_after": {
+              "description": "Stock después de la salida. 0 = agotado.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "min_stock": {
+              "description": "Mínimo configurado del activo en ese momento (`Asset.min_stock`, P2; por defecto 5).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "asset_category": {
+              "description": "Categoría operativa del Hito 5 (`Asset.category`), sin traducir: permite agregar los activos con `product_category` nulo.",
+              "enum": [
+                "hardware",
+                "peripherals",
+                "office_supplies",
+                "training_materials"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "direct_stock_edit_rejected": {
+      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=api; entrega=batch; prerrequisitos=P1,P4,P5,P6,P7",
+      "description": "Alguien ha intentado fijar el stock fuera de una orden y la API lo ha rechazado (definición operativa D5).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "direct_stock_edit_rejected"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "office",
+            "product_id",
+            "product_category",
+            "programme_id",
+            "quantity",
+            "currency",
+            "attempt_kind",
+            "http_method",
+            "route_template",
+            "status_code",
+            "authenticated",
+            "suppressed_count"
+          ],
+          "properties": {
+            "office": {
+              "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6). `null` si no se puede saber (ver la ficha).",
+              "enum": [
+                "valencia",
+                "miami",
+                null
+              ]
+            },
+            "product_id": {
+              "description": "`Asset.id` del activo (D6). `null` si la petición no identifica un activo.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "product_category": {
+              "description": "Categoría del BRIEFING (`Asset.product_category`, P1). `null` si el activo no es material de formación ni de incorporación (D1-a), si aún no está clasificado o si no hay activo.",
+              "enum": [
+                "training_kit",
+                "certification",
+                "onboarding_equipment",
+                null
+              ]
+            },
+            "programme_id": {
+              "description": "Programa o área del activo (`Asset.programme_id`, P1), slug como `ventas-b2b` o `liderazgo-basico` (ejemplos del BRIEFING). `null` si el activo no tiene programa o no hay activo.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "maxLength": 64
+            },
+            "quantity": {
+              "description": "Valor de stock intentado si el body lo trae como entero (caso 2); `null` en el caso 1 (el body no se lee) o si no es un entero.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "currency": {
+              "description": "Moneda de la oficina (BRIEFING §6: `EUR` en Valencia, `USD` en Miami), derivada en la API, nunca convertida (D3). `null` si `office` es `null`.",
+              "enum": [
+                "EUR",
+                "USD",
+                null
+              ]
+            },
+            "attempt_kind": {
+              "description": "Caso 1 (`method_not_allowed`) o caso 2 (`stock_field_in_body`).",
+              "enum": [
+                "method_not_allowed",
+                "stock_field_in_body"
+              ]
+            },
+            "http_method": {
+              "description": "Método de la petición rechazada.",
+              "enum": [
+                "PUT",
+                "PATCH",
+                "DELETE",
+                "POST"
+              ]
+            },
+            "route_template": {
+              "description": "Plantilla de la ruta, nunca el path con el id.",
+              "enum": [
+                "/inventory/products",
+                "/inventory/products/{id}",
+                "/inventory/orders/inbound",
+                "/inventory/orders/outbound"
+              ]
+            },
+            "status_code": {
+              "description": "Respuesta de la API.",
+              "enum": [
+                405,
+                422
+              ]
+            },
+            "authenticated": {
+              "description": "`true` si la petición traía un token válido (en el caso 1 se decodifica de forma opcional, D5).",
+              "type": "boolean"
+            },
+            "suppressed_count": {
+              "description": "Eventos iguales (misma clave de throttle) descartados desde la última emisión (§7.2). 0 si no se descartó ninguno.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "kit_cost_variance_detected": {
+      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=api; entrega=stream; prerrequisitos=P1,P3,P4,P5,P6,P9,P10",
+      "description": "El coste unitario de una entrada se desvía de la referencia del mismo material y proveedor más que el umbral configurado, hacia arriba o hacia abajo.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "kit_cost_variance_detected"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "office",
+            "product_id",
+            "product_category",
+            "programme_id",
+            "quantity",
+            "currency",
+            "inbound_order_id",
+            "supplier_key",
+            "unit_cost",
+            "reference_unit_cost",
+            "variance_pct",
+            "direction",
+            "threshold_pct",
+            "reference_window",
+            "asset_category"
+          ],
+          "properties": {
+            "office": {
+              "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6).",
+              "enum": [
+                "valencia",
+                "miami"
+              ]
+            },
+            "product_id": {
+              "description": "`Asset.id` del activo (D6).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "product_category": {
+              "description": "Categoría del BRIEFING (`Asset.product_category`, P1). `null` si el activo no es material de formación ni de incorporación (D1-a), si aún no está clasificado o si no hay activo.",
+              "enum": [
+                "training_kit",
+                "certification",
+                "onboarding_equipment",
+                null
+              ]
+            },
+            "programme_id": {
+              "description": "Programa o área del activo (`Asset.programme_id`, P1), slug como `ventas-b2b` o `liderazgo-basico` (ejemplos del BRIEFING). `null` si el activo no tiene programa o no hay activo.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "maxLength": 64
+            },
+            "quantity": {
+              "description": "Unidades de la entrada evaluada.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "currency": {
+              "description": "Moneda de la oficina (BRIEFING §6: `EUR` en Valencia, `USD` en Miami), derivada en la API, nunca convertida (D3).",
+              "enum": [
+                "EUR",
+                "USD"
+              ]
+            },
+            "inbound_order_id": {
+              "description": "`AssetEntry.id` de la entrada evaluada: la renegociación se resuelve desde la base, con control de acceso (D9).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "supplier_key": {
+              "description": "Clave seudónima del proveedor (P9).",
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "maxLength": 64
+            },
+            "unit_cost": {
+              "description": "Coste unitario de la entrada evaluada, en `currency`.",
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 9999999999.99
+            },
+            "reference_unit_cost": {
+              "description": "Media de las `N` entradas anteriores del mismo par, en `currency`.",
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 9999999999.99
+            },
+            "variance_pct": {
+              "description": "Variación porcentual con signo respecto a la referencia, con 2 decimales.",
+              "type": "number",
+              "minimum": -100,
+              "maximum": 1000000
+            },
+            "direction": {
+              "description": "`increase` si `variance_pct > 0`; `decrease` si es negativa.",
+              "enum": [
+                "increase",
+                "decrease"
+              ]
+            },
+            "threshold_pct": {
+              "description": "Umbral vigente (`TELEMETRY_COST_VARIANCE_THRESHOLD_PCT`, por defecto 10).",
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000
+            },
+            "reference_window": {
+              "description": "`N` vigente (`TELEMETRY_COST_VARIANCE_WINDOW`, por defecto 3).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "asset_category": {
+              "description": "Categoría operativa del Hito 5 (`Asset.category`), sin traducir: permite agregar los activos con `product_category` nulo.",
+              "enum": [
+                "hardware",
+                "peripherals",
+                "office_supplies",
+                "training_materials"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "product_created": {
+      "$comment": "clasificación=oportunidad; categoría=inventario; emisor=api; entrega=batch; prerrequisitos=P1,P2,P4,P5,P6",
+      "description": "Se ha dado de alta un activo (`POST /inventory/products` → 201).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "product_created"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "office",
+            "product_id",
+            "product_category",
+            "programme_id",
+            "quantity",
+            "currency",
+            "min_stock",
+            "asset_category"
+          ],
+          "properties": {
+            "office": {
+              "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6).",
+              "enum": [
+                "valencia",
+                "miami"
+              ]
+            },
+            "product_id": {
+              "description": "`Asset.id` del activo (D6).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "product_category": {
+              "description": "Categoría del BRIEFING (`Asset.product_category`, P1). `null` si el activo no es material de formación ni de incorporación (D1-a), si aún no está clasificado o si no hay activo.",
+              "enum": [
+                "training_kit",
+                "certification",
+                "onboarding_equipment",
+                null
+              ]
+            },
+            "programme_id": {
+              "description": "Programa o área del activo (`Asset.programme_id`, P1), slug como `ventas-b2b` o `liderazgo-basico` (ejemplos del BRIEFING). `null` si el activo no tiene programa o no hay activo.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "maxLength": 64
+            },
+            "quantity": {
+              "description": "Siempre `null`: un activo nace con stock 0 y no tiene cantidad (campo mínimo del BRIEFING presente por coherencia).",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "currency": {
+              "description": "Moneda de la oficina (BRIEFING §6: `EUR` en Valencia, `USD` en Miami), derivada en la API, nunca convertida (D3).",
+              "enum": [
+                "EUR",
+                "USD"
+              ]
+            },
+            "min_stock": {
+              "description": "Mínimo con el que nace (P2).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "asset_category": {
+              "description": "Categoría operativa del Hito 5 (`Asset.category`), sin traducir: permite agregar los activos con `product_category` nulo.",
+              "enum": [
+                "hardware",
+                "peripherals",
+                "office_supplies",
+                "training_materials"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "inbound_order_rejected": {
+      "$comment": "clasificación=oportunidad; categoría=inventario; emisor=api; entrega=batch; prerrequisitos=P1,P4,P5,P6",
+      "description": "Una orden de entrada válida en forma ha sido rechazada por una regla del negocio: activo inexistente (404) u oficina distinta de la del activo (400).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "inbound_order_rejected"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "office",
+            "product_id",
+            "product_category",
+            "programme_id",
+            "quantity",
+            "currency",
+            "error_code"
+          ],
+          "properties": {
+            "office": {
+              "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6). `null` si no se puede saber (ver la ficha).",
+              "enum": [
+                "valencia",
+                "miami",
+                null
+              ]
+            },
+            "product_id": {
+              "description": "`Asset.id` del activo (D6).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "product_category": {
+              "description": "Categoría del BRIEFING (`Asset.product_category`, P1). `null` si el activo no es material de formación ni de incorporación (D1-a), si aún no está clasificado o si no hay activo.",
+              "enum": [
+                "training_kit",
+                "certification",
+                "onboarding_equipment",
+                null
+              ]
+            },
+            "programme_id": {
+              "description": "Programa o área del activo (`Asset.programme_id`, P1), slug como `ventas-b2b` o `liderazgo-basico` (ejemplos del BRIEFING). `null` si el activo no tiene programa o no hay activo.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "maxLength": 64
+            },
+            "quantity": {
+              "description": "`quantity` del body (ya validado).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "currency": {
+              "description": "Moneda de la oficina (BRIEFING §6: `EUR` en Valencia, `USD` en Miami), derivada en la API, nunca convertida (D3). `null` si `office` es `null`.",
+              "enum": [
+                "EUR",
+                "USD",
+                null
+              ]
+            },
+            "error_code": {
+              "description": "`code` de la respuesta.",
+              "enum": [
+                "asset_not_found",
+                "office_mismatch"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "outbound_order_rejected": {
+      "$comment": "clasificación=oportunidad; categoría=inventario; emisor=api; entrega=stream; prerrequisitos=P1,P4,P5,P6",
+      "description": "Una salida válida en forma ha sido rechazada por una regla del negocio: activo inexistente, oficina distinta o stock insuficiente.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "outbound_order_rejected"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "office",
+            "product_id",
+            "product_category",
+            "programme_id",
+            "quantity",
+            "currency",
+            "error_code",
+            "exit_type",
+            "available_stock"
+          ],
+          "properties": {
+            "office": {
+              "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6). `null` si no se puede saber (ver la ficha).",
+              "enum": [
+                "valencia",
+                "miami",
+                null
+              ]
+            },
+            "product_id": {
+              "description": "`Asset.id` del activo (D6).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "product_category": {
+              "description": "Categoría del BRIEFING (`Asset.product_category`, P1). `null` si el activo no es material de formación ni de incorporación (D1-a), si aún no está clasificado o si no hay activo.",
+              "enum": [
+                "training_kit",
+                "certification",
+                "onboarding_equipment",
+                null
+              ]
+            },
+            "programme_id": {
+              "description": "Programa o área del activo (`Asset.programme_id`, P1), slug como `ventas-b2b` o `liderazgo-basico` (ejemplos del BRIEFING). `null` si el activo no tiene programa o no hay activo.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "maxLength": 64
+            },
+            "quantity": {
+              "description": "Unidades pedidas en la salida rechazada.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "currency": {
+              "description": "Moneda de la oficina (BRIEFING §6: `EUR` en Valencia, `USD` en Miami), derivada en la API, nunca convertida (D3). `null` si `office` es `null`.",
+              "enum": [
+                "EUR",
+                "USD",
+                null
+              ]
+            },
+            "error_code": {
+              "description": "`code` de la respuesta.",
+              "enum": [
+                "asset_not_found",
+                "office_mismatch",
+                "insufficient_stock"
+              ]
+            },
+            "exit_type": {
+              "description": "Tipo de salida pedida.",
+              "enum": [
+                "allocation",
+                "consumption"
+              ]
+            },
+            "available_stock": {
+              "description": "Stock disponible (`available`) si el motivo es `insufficient_stock`; `null` en los demás.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          }
+        }
+      }
+    },
+    "inventory_validation_failed": {
+      "$comment": "clasificación=oportunidad; categoría=inventario; emisor=api; entrega=batch; prerrequisitos=P1,P4,P5,P6",
+      "description": "Una escritura del inventario ha llegado a la API con el body mal formado (422).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "inventory_validation_failed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "office",
+            "product_id",
+            "product_category",
+            "programme_id",
+            "quantity",
+            "currency",
+            "route_template",
+            "fields",
+            "error_types"
+          ],
+          "properties": {
+            "office": {
+              "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6). `null` si no se puede saber (ver la ficha).",
+              "enum": [
+                "valencia",
+                "miami",
+                null
+              ]
+            },
+            "product_id": {
+              "description": "`Asset.id` del activo (D6). `null` si la petición no identifica un activo.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "product_category": {
+              "description": "Categoría del BRIEFING (`Asset.product_category`, P1). `null` si el activo no es material de formación ni de incorporación (D1-a), si aún no está clasificado o si no hay activo.",
+              "enum": [
+                "training_kit",
+                "certification",
+                "onboarding_equipment",
+                null
+              ]
+            },
+            "programme_id": {
+              "description": "Programa o área del activo (`Asset.programme_id`, P1), slug como `ventas-b2b` o `liderazgo-basico` (ejemplos del BRIEFING). `null` si el activo no tiene programa o no hay activo.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+              "maxLength": 64
+            },
+            "quantity": {
+              "description": "`quantity` del body si es un entero válido; `null` si no.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "currency": {
+              "description": "Moneda de la oficina (BRIEFING §6: `EUR` en Valencia, `USD` en Miami), derivada en la API, nunca convertida (D3). `null` si `office` es `null`.",
+              "enum": [
+                "EUR",
+                "USD",
+                null
+              ]
+            },
+            "route_template": {
+              "description": "Plantilla de la ruta.",
+              "enum": [
+                "/inventory/products",
+                "/inventory/orders/inbound",
+                "/inventory/orders/outbound"
+              ]
+            },
+            "fields": {
+              "description": "Último elemento de cada `loc` (`quantity`, `assigned_to`, `body`…), sin repetir. Nombres de campo, nunca valores.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z_]+$",
+                "maxLength": 40
+              },
+              "maxItems": 20,
+              "uniqueItems": true
+            },
+            "error_types": {
+              "description": "`type` de Pydantic de cada error (`greater_than_equal`, `extra_forbidden`…), sin repetir.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z_]+$",
+                "maxLength": 40
+              },
+              "maxItems": 20,
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "user_logged_in": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Login correcto: la API ha emitido un JWT (y con él un `sid` nuevo).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "user_logged_in"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "role",
+            "token_ttl_seconds"
+          ],
+          "properties": {
+            "role": {
+              "description": "Rol del usuario.",
+              "enum": [
+                "admin",
+                "manager",
+                "user"
+              ]
+            },
+            "token_ttl_seconds": {
+              "description": "Vigencia del token emitido (`expires_in`).",
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "login_failed": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=stream; prerrequisitos=P5,P6",
+      "description": "Login rechazado (401 `invalid_credentials`).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "login_failed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "null"
+        },
+        "userId": {
+          "type": "null"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reason",
+            "suppressed_count"
+          ],
+          "properties": {
+            "reason": {
+              "description": "`malformed_email` (línea 42) o `invalid_credentials` (línea 45: email desconocido, contraseña incorrecta o usuario inactivo, sin distinguir, como la API).",
+              "enum": [
+                "malformed_email",
+                "invalid_credentials"
+              ]
+            },
+            "suppressed_count": {
+              "description": "Eventos iguales (misma clave de throttle) descartados desde la última emisión (§7.2). 0 si no se descartó ninguno.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "user_registered": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=batch; prerrequisitos=P5,P6",
+      "description": "Se ha creado una cuenta con el registro público (`POST /users` → 201).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "user_registered"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "null"
+        },
+        "userId": {
+          "type": "null"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {}
+        }
+      }
+    },
+    "registration_failed": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=batch; prerrequisitos=P5,P6",
+      "description": "El registro público ha fallado: email ya registrado (409) o datos no válidos (422).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "registration_failed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "null"
+        },
+        "userId": {
+          "type": "null"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reason",
+            "fields"
+          ],
+          "properties": {
+            "reason": {
+              "description": "Motivo.",
+              "enum": [
+                "email_already_registered",
+                "validation_error"
+              ]
+            },
+            "fields": {
+              "description": "Campos con error del 422 (`password`, `email`…); vacío en el 409.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z_]+$",
+                "maxLength": 40
+              },
+              "maxItems": 20,
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "session_expired": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Una petición ha llegado con un token de firma válida pero caducado: la sesión ha expirado.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "session_expired"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "route_template",
+            "session_age_seconds",
+            "token_ttl_seconds"
+          ],
+          "properties": {
+            "route_template": {
+              "description": "Ruta donde caducó.",
+              "enum": [
+                "/auth/login",
+                "/auth/me",
+                "/auth/forgot-password",
+                "/auth/reset-password",
+                "/auth/change-password",
+                "/users",
+                "/users/{user_id}",
+                "/profiles/me",
+                "/suppliers",
+                "/suppliers/{supplier_id}",
+                "/suppliers/{supplier_id}/rate",
+                "/suppliers/{supplier_id}/status",
+                "/api/incidents/analyze",
+                "/api/incidents/results/export",
+                "/api/incidents",
+                "/api/incidents/summary",
+                "/api/incidents/{incident_id}",
+                "/api/incidents/{incident_id}/status",
+                "/inventory/products",
+                "/inventory/products/{id}",
+                "/inventory/orders/inbound",
+                "/inventory/orders/outbound",
+                "/inventory/orders",
+                "/telemetry/events"
+              ]
+            },
+            "session_age_seconds": {
+              "description": "Ahora − `iat` del token.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "token_ttl_seconds": {
+              "description": "`exp` − `iat` del token.",
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "auth_token_rejected": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=stream; prerrequisitos=P5,P6",
+      "description": "Una petición protegida ha traído un token que no es una sesión caducada: mal formado, con otra firma, sin claims, o de un usuario borrado o inactivo.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "auth_token_rejected"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reason",
+            "route_template",
+            "suppressed_count"
+          ],
+          "properties": {
+            "reason": {
+              "description": "Motivo del rechazo.",
+              "enum": [
+                "malformed",
+                "invalid_signature",
+                "missing_claims",
+                "unknown_user",
+                "inactive_user"
+              ]
+            },
+            "route_template": {
+              "description": "Ruta protegida pedida.",
+              "enum": [
+                "/auth/login",
+                "/auth/me",
+                "/auth/forgot-password",
+                "/auth/reset-password",
+                "/auth/change-password",
+                "/users",
+                "/users/{user_id}",
+                "/profiles/me",
+                "/suppliers",
+                "/suppliers/{supplier_id}",
+                "/suppliers/{supplier_id}/rate",
+                "/suppliers/{supplier_id}/status",
+                "/api/incidents/analyze",
+                "/api/incidents/results/export",
+                "/api/incidents",
+                "/api/incidents/summary",
+                "/api/incidents/{incident_id}",
+                "/api/incidents/{incident_id}/status",
+                "/inventory/products",
+                "/inventory/products/{id}",
+                "/inventory/orders/inbound",
+                "/inventory/orders/outbound",
+                "/inventory/orders",
+                "/telemetry/events"
+              ]
+            },
+            "suppressed_count": {
+              "description": "Eventos iguales (misma clave de throttle) descartados desde la última emisión (§7.2). 0 si no se descartó ninguno.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "user_logged_out": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=frontend; entrega=batch; prerrequisitos=P4,P8",
+      "description": "El usuario ha cerrado la sesión desde el backoffice.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "user_logged_out"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "trigger"
+          ],
+          "properties": {
+            "trigger": {
+              "description": "Desde dónde se cerró.",
+              "enum": [
+                "header_button",
+                "session_error_screen"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "password_reset_requested": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=batch; prerrequisitos=P5,P6",
+      "description": "Alguien ha pedido un enlace de restablecimiento (`POST /auth/forgot-password`, siempre 200).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "password_reset_requested"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "null"
+        },
+        "userId": {
+          "type": "null"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "account_found"
+          ],
+          "properties": {
+            "account_found": {
+              "description": "`true` si el email corresponde a una cuenta (motivo `unknown_email` de la auditoría si no). No se devuelve al cliente.",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "password_reset_completed": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=batch; prerrequisitos=P5,P6",
+      "description": "Un enlace de restablecimiento se ha usado con éxito.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "password_reset_completed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "null"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {}
+        }
+      }
+    },
+    "password_reset_rejected": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=batch; prerrequisitos=P5,P6",
+      "description": "Un enlace de restablecimiento no se ha podido usar (400 `invalid_reset_token`).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "password_reset_rejected"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "null"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reason"
+          ],
+          "properties": {
+            "reason": {
+              "description": "Motivo de la auditoría de AUTH-03.",
+              "enum": [
+                "unknown",
+                "expired",
+                "used"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "password_changed": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Un usuario con sesión ha cambiado su contraseña.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "password_changed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {}
+        }
+      }
+    },
+    "password_change_rejected": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Un cambio de contraseña con sesión ha fallado porque la contraseña actual no coincide (400 `incorrect_password`).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "password_change_rejected"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reason"
+          ],
+          "properties": {
+            "reason": {
+              "description": "Único motivo hoy.",
+              "enum": [
+                "incorrect_password"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "password_reset_email_failed": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=stream; prerrequisitos=P6",
+      "description": "El email de restablecimiento no se ha podido entregar (tarea en segundo plano, después de responder).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "password_reset_email_failed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "null"
+        },
+        "userId": {
+          "type": "null"
+        },
+        "requestId": {
+          "type": "null"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "error_class"
+          ],
+          "properties": {
+            "error_class": {
+              "description": "Nombre de la clase de la excepción (`EmailNotConfiguredError`, `EmailDeliveryError`…), nunca su mensaje.",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+              "maxLength": 64
+            }
+          }
+        }
+      }
+    },
+    "access_denied": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Un usuario autenticado ha pedido algo para lo que no tiene permiso (403 `forbidden`).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "access_denied"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reason",
+            "route_template",
+            "http_method"
+          ],
+          "properties": {
+            "reason": {
+              "description": "Motivo.",
+              "enum": [
+                "admin_required",
+                "not_owner",
+                "role_change_forbidden",
+                "password_change_forbidden"
+              ]
+            },
+            "route_template": {
+              "description": "Ruta.",
+              "enum": [
+                "/users",
+                "/users/{user_id}"
+              ]
+            },
+            "http_method": {
+              "description": "Método.",
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "user_role_changed": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=stream; prerrequisitos=P4,P5,P6",
+      "description": "Un admin ha cambiado el rol de un usuario (`PUT /users/{id}` con `role`).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "user_role_changed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "target_user_id",
+            "from_role",
+            "to_role"
+          ],
+          "properties": {
+            "target_user_id": {
+              "description": "Id (seudónimo) del usuario afectado.",
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "maxLength": 36
+            },
+            "from_role": {
+              "description": "Rol anterior.",
+              "enum": [
+                "admin",
+                "manager",
+                "user"
+              ]
+            },
+            "to_role": {
+              "description": "Rol nuevo.",
+              "enum": [
+                "admin",
+                "manager",
+                "user"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "user_deleted": {
+      "$comment": "clasificación=oportunidad; categoría=autenticación; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Se ha borrado un usuario (y su perfil).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "user_deleted"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "target_user_id",
+            "self_deletion"
+          ],
+          "properties": {
+            "target_user_id": {
+              "description": "Id del usuario borrado. Sus órdenes conservan el `user_uuid`.",
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "maxLength": 36
+            },
+            "self_deletion": {
+              "description": "`true` si se borró a sí mismo.",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "page_viewed": {
+      "$comment": "clasificación=oportunidad; categoría=navegación; emisor=frontend; entrega=batch; prerrequisitos=P4,P8",
+      "description": "El usuario ha permanecido al menos 1 s en una página del backoffice.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "page_viewed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "route_template",
+            "previous_route_template",
+            "entry"
+          ],
+          "properties": {
+            "route_template": {
+              "description": "Ruta de la página, sin query string.",
+              "enum": [
+                "/",
+                "/login",
+                "/register",
+                "/forgot-password",
+                "/reset-password",
+                "/account/profile",
+                "/account/change-password",
+                "/incidents",
+                "/suppliers",
+                "/incident-manager",
+                "/incident-manager/new",
+                "/inventory/products",
+                "/inventory/orders/inbound",
+                "/inventory/orders/outbound",
+                "/inventory/orders"
+              ]
+            },
+            "previous_route_template": {
+              "description": "Página anterior en la misma pestaña; `null` en la primera.",
+              "enum": [
+                "/",
+                "/login",
+                "/register",
+                "/forgot-password",
+                "/reset-password",
+                "/account/profile",
+                "/account/change-password",
+                "/incidents",
+                "/suppliers",
+                "/incident-manager",
+                "/incident-manager/new",
+                "/inventory/products",
+                "/inventory/orders/inbound",
+                "/inventory/orders/outbound",
+                "/inventory/orders",
+                null
+              ]
+            },
+            "entry": {
+              "description": "Primera carga de la pestaña o navegación dentro de la app.",
+              "enum": [
+                "initial_load",
+                "in_app_navigation"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "page_not_found_viewed": {
+      "$comment": "clasificación=oportunidad; categoría=navegación; emisor=frontend; entrega=batch; prerrequisitos=P4,P8",
+      "description": "Se ha mostrado la página 404 del backoffice.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "page_not_found_viewed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "previous_route_template"
+          ],
+          "properties": {
+            "previous_route_template": {
+              "description": "Página anterior; `null` si se llegó desde fuera.",
+              "enum": [
+                "/",
+                "/login",
+                "/register",
+                "/forgot-password",
+                "/reset-password",
+                "/account/profile",
+                "/account/change-password",
+                "/incidents",
+                "/suppliers",
+                "/incident-manager",
+                "/incident-manager/new",
+                "/inventory/products",
+                "/inventory/orders/inbound",
+                "/inventory/orders/outbound",
+                "/inventory/orders",
+                null
+              ]
+            }
+          }
+        }
+      }
+    },
+    "form_started": {
+      "$comment": "clasificación=oportunidad; categoría=flujos; emisor=frontend; entrega=batch; prerrequisitos=P4,P8",
+      "description": "El usuario ha empezado a rellenar un formulario (primer cambio de un campo).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "form_started"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "form"
+          ],
+          "properties": {
+            "form": {
+              "description": "Formulario.",
+              "enum": [
+                "login",
+                "register",
+                "forgot_password",
+                "reset_password",
+                "change_password",
+                "profile",
+                "supplier_create",
+                "incident_create",
+                "incident_analysis_upload",
+                "inbound_order",
+                "outbound_order"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "form_submitted": {
+      "$comment": "clasificación=oportunidad; categoría=flujos; emisor=frontend; entrega=batch; prerrequisitos=P4,P8",
+      "description": "Un envío de formulario ha terminado (con éxito o no).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "form_submitted"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "form",
+            "outcome",
+            "duration_ms",
+            "attempt_number"
+          ],
+          "properties": {
+            "form": {
+              "description": "Formulario.",
+              "enum": [
+                "login",
+                "register",
+                "forgot_password",
+                "reset_password",
+                "change_password",
+                "profile",
+                "supplier_create",
+                "incident_create",
+                "incident_analysis_upload",
+                "inbound_order",
+                "outbound_order"
+              ]
+            },
+            "outcome": {
+              "description": "Resultado según el `kind` del error del servicio.",
+              "enum": [
+                "success",
+                "validation_error",
+                "api_rejected",
+                "session_expired",
+                "network_error",
+                "server_error"
+              ]
+            },
+            "duration_ms": {
+              "description": "Tiempo desde `form_started`.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400000
+            },
+            "attempt_number": {
+              "description": "Envíos desde `form_started` (1 = a la primera).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        }
+      }
+    },
+    "form_abandoned": {
+      "$comment": "clasificación=oportunidad; categoría=flujos; emisor=frontend; entrega=batch; prerrequisitos=P4,P8",
+      "description": "Un formulario empezado se ha dejado sin un envío correcto.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "form_abandoned"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "form",
+            "last_field",
+            "had_validation_error",
+            "had_api_error",
+            "duration_ms"
+          ],
+          "properties": {
+            "form": {
+              "description": "Formulario.",
+              "enum": [
+                "login",
+                "register",
+                "forgot_password",
+                "reset_password",
+                "change_password",
+                "profile",
+                "supplier_create",
+                "incident_create",
+                "incident_analysis_upload",
+                "inbound_order",
+                "outbound_order"
+              ]
+            },
+            "last_field": {
+              "description": "Nombre del último campo tocado; `null` si no se sabe.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-z_]+$",
+              "maxLength": 40
+            },
+            "had_validation_error": {
+              "description": "Si llegó a ver un error de validación.",
+              "type": "boolean"
+            },
+            "had_api_error": {
+              "description": "Si llegó a ver un error de la API.",
+              "type": "boolean"
+            },
+            "duration_ms": {
+              "description": "Tiempo desde `form_started`.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400000
+            }
+          }
+        }
+      }
+    },
+    "form_validation_failed": {
+      "$comment": "clasificación=oportunidad; categoría=flujos; emisor=frontend; entrega=batch; prerrequisitos=P4,P8",
+      "description": "La validación en cliente ha bloqueado un envío (sin petición a la API).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "form_validation_failed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "form",
+            "fields"
+          ],
+          "properties": {
+            "form": {
+              "description": "Formulario.",
+              "enum": [
+                "login",
+                "register",
+                "forgot_password",
+                "reset_password",
+                "change_password",
+                "profile",
+                "supplier_create",
+                "incident_create",
+                "incident_analysis_upload",
+                "inbound_order",
+                "outbound_order"
+              ]
+            },
+            "fields": {
+              "description": "Campos con error.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z_]+$",
+                "maxLength": 40
+              },
+              "maxItems": 20,
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "frontend_error_captured": {
+      "$comment": "clasificación=oportunidad; categoría=errores; emisor=frontend; entrega=stream; prerrequisitos=P4,P8",
+      "description": "Un límite de error de Next ha capturado un error de render en el backoffice.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "frontend_error_captured"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "boundary",
+            "route_template",
+            "suppressed_count"
+          ],
+          "properties": {
+            "boundary": {
+              "description": "Límite que lo capturó.",
+              "enum": [
+                "route",
+                "global"
+              ]
+            },
+            "route_template": {
+              "description": "Página donde ocurrió; `null` si el path no es una ruta conocida.",
+              "enum": [
+                "/",
+                "/login",
+                "/register",
+                "/forgot-password",
+                "/reset-password",
+                "/account/profile",
+                "/account/change-password",
+                "/incidents",
+                "/suppliers",
+                "/incident-manager",
+                "/incident-manager/new",
+                "/inventory/products",
+                "/inventory/orders/inbound",
+                "/inventory/orders/outbound",
+                "/inventory/orders",
+                null
+              ]
+            },
+            "suppressed_count": {
+              "description": "Eventos iguales (misma clave de throttle) descartados desde la última emisión (§7.2). 0 si no se descartó ninguno.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "client_request_failed": {
+      "$comment": "clasificación=oportunidad; categoría=errores; emisor=frontend; entrega=stream; prerrequisitos=P4,P5,P8",
+      "description": "Una petición del backoffice no ha obtenido respuesta de la API: red, timeout o configuración.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "client_request_failed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "http_method",
+            "api_route_template",
+            "timeout_ms",
+            "suppressed_count"
+          ],
+          "properties": {
+            "kind": {
+              "description": "Tipo de fallo.",
+              "enum": [
+                "network",
+                "timeout",
+                "config"
+              ]
+            },
+            "http_method": {
+              "description": "Método.",
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ]
+            },
+            "api_route_template": {
+              "description": "Ruta de la API normalizada en el cliente: segmentos numéricos o UUID → `{…}` con el nombre de la plantilla, sin query string.",
+              "enum": [
+                "/auth/login",
+                "/auth/me",
+                "/auth/forgot-password",
+                "/auth/reset-password",
+                "/auth/change-password",
+                "/users",
+                "/users/{user_id}",
+                "/profiles/me",
+                "/suppliers",
+                "/suppliers/{supplier_id}",
+                "/suppliers/{supplier_id}/rate",
+                "/suppliers/{supplier_id}/status",
+                "/api/incidents/analyze",
+                "/api/incidents/results/export",
+                "/api/incidents",
+                "/api/incidents/summary",
+                "/api/incidents/{incident_id}",
+                "/api/incidents/{incident_id}/status",
+                "/inventory/products",
+                "/inventory/products/{id}",
+                "/inventory/orders/inbound",
+                "/inventory/orders/outbound",
+                "/inventory/orders",
+                "/telemetry/events"
+              ]
+            },
+            "timeout_ms": {
+              "description": "Timeout aplicado si `kind = timeout`; `null` en los demás.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "suppressed_count": {
+              "description": "Eventos iguales (misma clave de throttle) descartados desde la última emisión (§7.2). 0 si no se descartó ninguno.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "server_error_returned": {
+      "$comment": "clasificación=oportunidad; categoría=errores; emisor=api; entrega=stream; prerrequisitos=P5,P6",
+      "description": "La API ha respondido 500 `internal_error` por una excepción no prevista.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "server_error_returned"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "http_method",
+            "route_template",
+            "error_class",
+            "suppressed_count"
+          ],
+          "properties": {
+            "http_method": {
+              "description": "Método.",
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ]
+            },
+            "route_template": {
+              "description": "Plantilla de la ruta.",
+              "enum": [
+                "/auth/login",
+                "/auth/me",
+                "/auth/forgot-password",
+                "/auth/reset-password",
+                "/auth/change-password",
+                "/users",
+                "/users/{user_id}",
+                "/profiles/me",
+                "/suppliers",
+                "/suppliers/{supplier_id}",
+                "/suppliers/{supplier_id}/rate",
+                "/suppliers/{supplier_id}/status",
+                "/api/incidents/analyze",
+                "/api/incidents/results/export",
+                "/api/incidents",
+                "/api/incidents/summary",
+                "/api/incidents/{incident_id}",
+                "/api/incidents/{incident_id}/status",
+                "/inventory/products",
+                "/inventory/products/{id}",
+                "/inventory/orders/inbound",
+                "/inventory/orders/outbound",
+                "/inventory/orders",
+                "/telemetry/events",
+                "unmatched"
+              ]
+            },
+            "error_class": {
+              "description": "Clase de la excepción (lo mismo que ya registra el log).",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+              "maxLength": 64
+            },
+            "suppressed_count": {
+              "description": "Eventos iguales (misma clave de throttle) descartados desde la última emisión (§7.2). 0 si no se descartó ninguno.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "storage_unavailable_detected": {
+      "$comment": "clasificación=oportunidad; categoría=salud técnica; emisor=api; entrega=stream; prerrequisitos=P5,P6",
+      "description": "Un almacén no responde y la API ha devuelto 503 `storage_unavailable`.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "storage_unavailable_detected"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "store",
+            "error_class",
+            "route_template",
+            "suppressed_count"
+          ],
+          "properties": {
+            "store": {
+              "description": "Almacén.",
+              "enum": [
+                "suppliers",
+                "auth",
+                "incidents",
+                "inventory"
+              ]
+            },
+            "error_class": {
+              "description": "Clase de la excepción.",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+              "maxLength": 64
+            },
+            "route_template": {
+              "description": "Ruta que lo detectó.",
+              "enum": [
+                "/auth/login",
+                "/auth/me",
+                "/auth/forgot-password",
+                "/auth/reset-password",
+                "/auth/change-password",
+                "/users",
+                "/users/{user_id}",
+                "/profiles/me",
+                "/suppliers",
+                "/suppliers/{supplier_id}",
+                "/suppliers/{supplier_id}/rate",
+                "/suppliers/{supplier_id}/status",
+                "/api/incidents/analyze",
+                "/api/incidents/results/export",
+                "/api/incidents",
+                "/api/incidents/summary",
+                "/api/incidents/{incident_id}",
+                "/api/incidents/{incident_id}/status",
+                "/inventory/products",
+                "/inventory/products/{id}",
+                "/inventory/orders/inbound",
+                "/inventory/orders/outbound",
+                "/inventory/orders",
+                "/telemetry/events",
+                "unmatched"
+              ]
+            },
+            "suppressed_count": {
+              "description": "Eventos iguales (misma clave de throttle) descartados desde la última emisión (§7.2). 0 si no se descartó ninguno.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "api_startup_failed": {
+      "$comment": "clasificación=oportunidad; categoría=salud técnica; emisor=api; entrega=stream; prerrequisitos=P6",
+      "description": "La API no ha podido arrancar porque la base del inventario no respondía.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "api_startup_failed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "null"
+        },
+        "userId": {
+          "type": "null"
+        },
+        "requestId": {
+          "type": "null"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "component",
+            "error_class"
+          ],
+          "properties": {
+            "component": {
+              "description": "Componente que falló.",
+              "enum": [
+                "inventory_database"
+              ]
+            },
+            "error_class": {
+              "description": "Clase del error original.",
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+              "maxLength": 64
+            }
+          }
+        }
+      }
+    },
+    "cache_lookup_recorded": {
+      "$comment": "clasificación=oportunidad; categoría=salud técnica; emisor=api; entrega=batch; prerrequisitos=P6",
+      "description": "Agregado de 60 s de la caché de lecturas de un espacio: aciertos, fallos e invalidaciones.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "cache_lookup_recorded"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "null"
+        },
+        "userId": {
+          "type": "null"
+        },
+        "requestId": {
+          "type": "null"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "namespace",
+            "window_seconds",
+            "hits",
+            "misses",
+            "invalidations"
+          ],
+          "properties": {
+            "namespace": {
+              "description": "Espacio de la caché.",
+              "enum": [
+                "inventory",
+                "incidents"
+              ]
+            },
+            "window_seconds": {
+              "description": "Duración de la ventana.",
+              "enum": [
+                60
+              ]
+            },
+            "hits": {
+              "description": "Aciertos.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "misses": {
+              "description": "Fallos.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "invalidations": {
+              "description": "Invalidaciones.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "api_latency_recorded": {
+      "$comment": "clasificación=oportunidad; categoría=rendimiento; emisor=api; entrega=batch; prerrequisitos=P6",
+      "description": "Agregado de 60 s de la duración de las peticiones de una ruta, método y clase de estado.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "api_latency_recorded"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "null"
+        },
+        "userId": {
+          "type": "null"
+        },
+        "requestId": {
+          "type": "null"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "http_method",
+            "route_template",
+            "status_class",
+            "window_seconds",
+            "request_count",
+            "p50_ms",
+            "p95_ms",
+            "max_ms"
+          ],
+          "properties": {
+            "http_method": {
+              "description": "Método.",
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ]
+            },
+            "route_template": {
+              "description": "Plantilla (`unmatched` en 404/405 sin ruta).",
+              "enum": [
+                "/auth/login",
+                "/auth/me",
+                "/auth/forgot-password",
+                "/auth/reset-password",
+                "/auth/change-password",
+                "/users",
+                "/users/{user_id}",
+                "/profiles/me",
+                "/suppliers",
+                "/suppliers/{supplier_id}",
+                "/suppliers/{supplier_id}/rate",
+                "/suppliers/{supplier_id}/status",
+                "/api/incidents/analyze",
+                "/api/incidents/results/export",
+                "/api/incidents",
+                "/api/incidents/summary",
+                "/api/incidents/{incident_id}",
+                "/api/incidents/{incident_id}/status",
+                "/inventory/products",
+                "/inventory/products/{id}",
+                "/inventory/orders/inbound",
+                "/inventory/orders/outbound",
+                "/inventory/orders",
+                "/telemetry/events",
+                "unmatched"
+              ]
+            },
+            "status_class": {
+              "description": "Clase de estado.",
+              "enum": [
+                "2xx",
+                "3xx",
+                "4xx",
+                "5xx"
+              ]
+            },
+            "window_seconds": {
+              "description": "Duración de la ventana.",
+              "enum": [
+                60
+              ]
+            },
+            "request_count": {
+              "description": "Peticiones.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "p50_ms": {
+              "description": "Mediana, en ms con 1 decimal.",
+              "type": "number",
+              "minimum": 0
+            },
+            "p95_ms": {
+              "description": "Percentil 95 (por rango más cercano).",
+              "type": "number",
+              "minimum": 0
+            },
+            "max_ms": {
+              "description": "Máximo.",
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "page_load_recorded": {
+      "$comment": "clasificación=oportunidad; categoría=rendimiento; emisor=frontend; entrega=batch; prerrequisitos=P4,P8",
+      "description": "Una página de datos del backoffice ha llegado a su primer estado final (datos, vacío o error).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "page_load_recorded"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "route_template",
+            "duration_ms",
+            "outcome"
+          ],
+          "properties": {
+            "route_template": {
+              "description": "Página.",
+              "enum": [
+                "/suppliers",
+                "/incident-manager",
+                "/inventory/products",
+                "/inventory/orders"
+              ]
+            },
+            "duration_ms": {
+              "description": "Del montaje al primer estado final (`performance.now()`).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 120000
+            },
+            "outcome": {
+              "description": "Estado final.",
+              "enum": [
+                "data",
+                "empty",
+                "error"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "supplier_created": {
+      "$comment": "clasificación=oportunidad; categoría=proveedores; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Se ha dado de alta un proveedor en el directorio.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "supplier_created"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "supplier_id",
+            "country",
+            "categories",
+            "currency",
+            "status"
+          ],
+          "properties": {
+            "supplier_id": {
+              "description": "Id del proveedor (TinyDB).",
+              "type": "integer",
+              "minimum": 1
+            },
+            "country": {
+              "description": "País, tal cual.",
+              "enum": [
+                "Spain",
+                "USA"
+              ]
+            },
+            "categories": {
+              "description": "Categorías, tal cual.",
+              "type": "array",
+              "items": {
+                "enum": [
+                  "job_boards",
+                  "ats_software",
+                  "assessment_tools",
+                  "training_platforms",
+                  "payroll_and_hr_software",
+                  "video_interview",
+                  "background_check",
+                  "office_and_facilities",
+                  "it_and_software_licenses"
+                ]
+              },
+              "maxItems": 9,
+              "uniqueItems": true
+            },
+            "currency": {
+              "description": "Moneda de la tarifa.",
+              "enum": [
+                "EUR",
+                "USD"
+              ]
+            },
+            "status": {
+              "description": "Estado inicial.",
+              "enum": [
+                "active",
+                "suspended"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "supplier_rate_updated": {
+      "$comment": "clasificación=oportunidad; categoría=proveedores; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Ha cambiado la tarifa mensual de un proveedor.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "supplier_rate_updated"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "supplier_id",
+            "currency",
+            "change_pct",
+            "direction"
+          ],
+          "properties": {
+            "supplier_id": {
+              "description": "Id del proveedor.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "currency": {
+              "description": "Moneda.",
+              "enum": [
+                "EUR",
+                "USD"
+              ]
+            },
+            "change_pct": {
+              "description": "Variación porcentual con signo, 2 decimales.",
+              "type": "number",
+              "minimum": -100,
+              "maximum": 1000000
+            },
+            "direction": {
+              "description": "Sentido.",
+              "enum": [
+                "increase",
+                "decrease",
+                "unchanged"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "supplier_status_changed": {
+      "$comment": "clasificación=oportunidad; categoría=proveedores; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Un proveedor se ha activado o suspendido.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "supplier_status_changed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "supplier_id",
+            "from_status",
+            "to_status"
+          ],
+          "properties": {
+            "supplier_id": {
+              "description": "Id del proveedor.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "from_status": {
+              "description": "Estado anterior.",
+              "enum": [
+                "active",
+                "suspended"
+              ]
+            },
+            "to_status": {
+              "description": "Estado nuevo.",
+              "enum": [
+                "active",
+                "suspended"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "supplier_deleted": {
+      "$comment": "clasificación=oportunidad; categoría=proveedores; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Se ha borrado un proveedor por la API (la interfaz no lo permite: solo suspende).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "supplier_deleted"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "supplier_id",
+            "status_at_deletion"
+          ],
+          "properties": {
+            "supplier_id": {
+              "description": "Id borrado.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "status_at_deletion": {
+              "description": "Estado que tenía.",
+              "enum": [
+                "active",
+                "suspended"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "supplier_list_filtered": {
+      "$comment": "clasificación=oportunidad; categoría=proveedores; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Se ha consultado el directorio con al menos un filtro.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "supplier_list_filtered"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filters",
+            "result_count"
+          ],
+          "properties": {
+            "filters": {
+              "description": "Filtros usados.",
+              "type": "array",
+              "items": {
+                "enum": [
+                  "country",
+                  "category"
+                ]
+              },
+              "maxItems": 2,
+              "uniqueItems": true
+            },
+            "result_count": {
+              "description": "Proveedores devueltos.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "incident_created": {
+      "$comment": "clasificación=oportunidad; categoría=gestor de incidencias; emisor=api; entrega=stream; prerrequisitos=P4,P5,P6",
+      "description": "Se ha registrado una incidencia en el gestor centralizado.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "incident_created"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "incident_id",
+            "category",
+            "origin",
+            "branch"
+          ],
+          "properties": {
+            "incident_id": {
+              "description": "Id de la incidencia.",
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "maxLength": 36
+            },
+            "category": {
+              "description": "Categoría.",
+              "enum": [
+                "technical_failure",
+                "process_error",
+                "client_complaint",
+                "candidate_issue",
+                "staff_issue",
+                "sla_breach",
+                "data_quality",
+                "other"
+              ]
+            },
+            "origin": {
+              "description": "Origen.",
+              "enum": [
+                "customer",
+                "branch",
+                "internal"
+              ]
+            },
+            "branch": {
+              "description": "Sede (vocabulario propio; no se traduce a `office`, D6).",
+              "enum": [
+                "central",
+                "valencia_operations",
+                "miami_office",
+                "remote"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "incident_status_changed": {
+      "$comment": "clasificación=oportunidad; categoría=gestor de incidencias; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Una incidencia ha cambiado de estado.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "incident_status_changed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "incident_id",
+            "from_status",
+            "to_status",
+            "category",
+            "branch",
+            "age_seconds"
+          ],
+          "properties": {
+            "incident_id": {
+              "description": "Id.",
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "maxLength": 36
+            },
+            "from_status": {
+              "description": "Estado anterior.",
+              "enum": [
+                "open",
+                "in_progress",
+                "resolved",
+                "discarded"
+              ]
+            },
+            "to_status": {
+              "description": "Estado nuevo.",
+              "enum": [
+                "open",
+                "in_progress",
+                "resolved",
+                "discarded"
+              ]
+            },
+            "category": {
+              "description": "Categoría.",
+              "enum": [
+                "technical_failure",
+                "process_error",
+                "client_complaint",
+                "candidate_issue",
+                "staff_issue",
+                "sla_breach",
+                "data_quality",
+                "other"
+              ]
+            },
+            "branch": {
+              "description": "Sede.",
+              "enum": [
+                "central",
+                "valencia_operations",
+                "miami_office",
+                "remote"
+              ]
+            },
+            "age_seconds": {
+              "description": "Tiempo desde `created_at`.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "incident_status_change_rejected": {
+      "$comment": "clasificación=oportunidad; categoría=gestor de incidencias; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Se ha pedido una transición de estado no permitida (400 `invalid_status_transition`).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "incident_status_change_rejected"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "incident_id",
+            "from_status",
+            "requested_status"
+          ],
+          "properties": {
+            "incident_id": {
+              "description": "Id.",
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "maxLength": 36
+            },
+            "from_status": {
+              "description": "Estado actual.",
+              "enum": [
+                "open",
+                "in_progress",
+                "resolved",
+                "discarded"
+              ]
+            },
+            "requested_status": {
+              "description": "Estado pedido.",
+              "enum": [
+                "open",
+                "in_progress",
+                "resolved",
+                "discarded"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "incident_validation_failed": {
+      "$comment": "clasificación=oportunidad; categoría=gestor de incidencias; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "El gestor de incidencias ha rechazado un alta, un filtro o un cambio de estado por validación (400 `validation_error`).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "incident_validation_failed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "fields",
+            "error_types"
+          ],
+          "properties": {
+            "operation": {
+              "description": "Operación.",
+              "enum": [
+                "create",
+                "list",
+                "status_change"
+              ]
+            },
+            "fields": {
+              "description": "Campos con error (`field` del 400).",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z_]+$",
+                "maxLength": 40
+              },
+              "maxItems": 20,
+              "uniqueItems": true
+            },
+            "error_types": {
+              "description": "Valores de `error` del 400, sin repetir.",
+              "type": "array",
+              "items": {
+                "enum": [
+                  "missing",
+                  "blank",
+                  "too_long",
+                  "invalid_type",
+                  "invalid_choice",
+                  "unknown_field",
+                  "invalid_body"
+                ]
+              },
+              "maxItems": 7,
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "incident_list_filtered": {
+      "$comment": "clasificación=oportunidad; categoría=gestor de incidencias; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Se ha consultado el listado de incidencias con al menos un filtro.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "incident_list_filtered"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filters",
+            "result_count",
+            "cache_hit"
+          ],
+          "properties": {
+            "filters": {
+              "description": "Filtros usados.",
+              "type": "array",
+              "items": {
+                "enum": [
+                  "status",
+                  "origin",
+                  "branch",
+                  "category"
+                ]
+              },
+              "maxItems": 4,
+              "uniqueItems": true
+            },
+            "result_count": {
+              "description": "Incidencias devueltas.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "cache_hit": {
+              "description": "Si la respuesta salió de la caché (Parte G).",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "incident_analysis_completed": {
+      "$comment": "clasificación=oportunidad; categoría=análisis de incidentes; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Un CSV del helpdesk se ha analizado correctamente (`POST /api/incidents/analyze` → 200).",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "incident_analysis_completed"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "analysis_id",
+            "total_records",
+            "valid_records",
+            "invalid_records",
+            "file_size_bucket",
+            "duration_ms"
+          ],
+          "properties": {
+            "analysis_id": {
+              "description": "`analysis_id`.",
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "maxLength": 36
+            },
+            "total_records": {
+              "description": "`totals.total_records`.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "valid_records": {
+              "description": "`totals.valid_records`.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "invalid_records": {
+              "description": "`totals.invalid_records`.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "file_size_bucket": {
+              "description": "Tamaño del archivo por tramos.",
+              "enum": [
+                "under_64_kib",
+                "64_to_256_kib",
+                "256_kib_to_1_mib",
+                "over_1_mib"
+              ]
+            },
+            "duration_ms": {
+              "description": "Duración del análisis.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "incident_analysis_rejected": {
+      "$comment": "clasificación=oportunidad; categoría=análisis de incidentes; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Un CSV se ha rechazado antes de analizarse.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "incident_analysis_rejected"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status_code",
+            "error_code",
+            "file_size_bucket"
+          ],
+          "properties": {
+            "status_code": {
+              "description": "Respuesta.",
+              "enum": [
+                400,
+                413,
+                415,
+                422
+              ]
+            },
+            "error_code": {
+              "description": "`code`.",
+              "enum": [
+                "invalid_csv",
+                "bad_request",
+                "file_too_large",
+                "unsupported_file_type",
+                "validation_error"
+              ]
+            },
+            "file_size_bucket": {
+              "description": "Tamaño por tramos según `Content-Length`; `null` si no se sabe.",
+              "enum": [
+                "under_64_kib",
+                "64_to_256_kib",
+                "256_kib_to_1_mib",
+                "over_1_mib",
+                null
+              ]
+            }
+          }
+        }
+      }
+    },
+    "incident_results_exported": {
+      "$comment": "clasificación=oportunidad; categoría=análisis de incidentes; emisor=api; entrega=batch; prerrequisitos=P4,P5,P6",
+      "description": "Se ha pedido la exportación del último análisis.",
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        }
+      ],
+      "properties": {
+        "event_type": {
+          "const": "incident_results_exported"
+        },
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "outcome",
+            "analysis_id",
+            "analysis_age_seconds"
+          ],
+          "properties": {
+            "outcome": {
+              "description": "Resultado.",
+              "enum": [
+                "exported",
+                "no_analysis"
+              ]
+            },
+            "analysis_id": {
+              "description": "`X-Analysis-Id` exportado; `null` si no había análisis.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "maxLength": 36
+            },
+            "analysis_age_seconds": {
+              "description": "Tiempo desde `analyzed_at`; `null` si no había análisis.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/definitions/inbound_order_created"
+    },
+    {
+      "$ref": "#/definitions/outbound_order_created"
+    },
+    {
+      "$ref": "#/definitions/stock_threshold_triggered"
+    },
+    {
+      "$ref": "#/definitions/direct_stock_edit_rejected"
+    },
+    {
+      "$ref": "#/definitions/kit_cost_variance_detected"
+    },
+    {
+      "$ref": "#/definitions/product_created"
+    },
+    {
+      "$ref": "#/definitions/inbound_order_rejected"
+    },
+    {
+      "$ref": "#/definitions/outbound_order_rejected"
+    },
+    {
+      "$ref": "#/definitions/inventory_validation_failed"
+    },
+    {
+      "$ref": "#/definitions/user_logged_in"
+    },
+    {
+      "$ref": "#/definitions/login_failed"
+    },
+    {
+      "$ref": "#/definitions/user_registered"
+    },
+    {
+      "$ref": "#/definitions/registration_failed"
+    },
+    {
+      "$ref": "#/definitions/session_expired"
+    },
+    {
+      "$ref": "#/definitions/auth_token_rejected"
+    },
+    {
+      "$ref": "#/definitions/user_logged_out"
+    },
+    {
+      "$ref": "#/definitions/password_reset_requested"
+    },
+    {
+      "$ref": "#/definitions/password_reset_completed"
+    },
+    {
+      "$ref": "#/definitions/password_reset_rejected"
+    },
+    {
+      "$ref": "#/definitions/password_changed"
+    },
+    {
+      "$ref": "#/definitions/password_change_rejected"
+    },
+    {
+      "$ref": "#/definitions/password_reset_email_failed"
+    },
+    {
+      "$ref": "#/definitions/access_denied"
+    },
+    {
+      "$ref": "#/definitions/user_role_changed"
+    },
+    {
+      "$ref": "#/definitions/user_deleted"
+    },
+    {
+      "$ref": "#/definitions/page_viewed"
+    },
+    {
+      "$ref": "#/definitions/page_not_found_viewed"
+    },
+    {
+      "$ref": "#/definitions/form_started"
+    },
+    {
+      "$ref": "#/definitions/form_submitted"
+    },
+    {
+      "$ref": "#/definitions/form_abandoned"
+    },
+    {
+      "$ref": "#/definitions/form_validation_failed"
+    },
+    {
+      "$ref": "#/definitions/frontend_error_captured"
+    },
+    {
+      "$ref": "#/definitions/client_request_failed"
+    },
+    {
+      "$ref": "#/definitions/server_error_returned"
+    },
+    {
+      "$ref": "#/definitions/storage_unavailable_detected"
+    },
+    {
+      "$ref": "#/definitions/api_startup_failed"
+    },
+    {
+      "$ref": "#/definitions/cache_lookup_recorded"
+    },
+    {
+      "$ref": "#/definitions/api_latency_recorded"
+    },
+    {
+      "$ref": "#/definitions/page_load_recorded"
+    },
+    {
+      "$ref": "#/definitions/supplier_created"
+    },
+    {
+      "$ref": "#/definitions/supplier_rate_updated"
+    },
+    {
+      "$ref": "#/definitions/supplier_status_changed"
+    },
+    {
+      "$ref": "#/definitions/supplier_deleted"
+    },
+    {
+      "$ref": "#/definitions/supplier_list_filtered"
+    },
+    {
+      "$ref": "#/definitions/incident_created"
+    },
+    {
+      "$ref": "#/definitions/incident_status_changed"
+    },
+    {
+      "$ref": "#/definitions/incident_status_change_rejected"
+    },
+    {
+      "$ref": "#/definitions/incident_validation_failed"
+    },
+    {
+      "$ref": "#/definitions/incident_list_filtered"
+    },
+    {
+      "$ref": "#/definitions/incident_analysis_completed"
+    },
+    {
+      "$ref": "#/definitions/incident_analysis_rejected"
+    },
+    {
+      "$ref": "#/definitions/incident_results_exported"
+    }
+  ]
+}

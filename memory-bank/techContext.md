@@ -313,6 +313,19 @@ Brief en [`docs/caching-brief.md`](../docs/caching-brief.md); medición inicial 
   - `SupplierTable` va con `React.memo` y sus filas derivadas con `useMemo` (reglas en `uis/backoffice/CLAUDE.md`).
 - **Seed de volumen** `scripts/seed_volume.py`: solo bases de prueba. Rechaza `services/api/data` y un PostgreSQL no local; es determinista e idempotente.
 
+### Plan de telemetría (diseño, ticket del 2026-11-01/02, rama `docs/telemetry-plan`)
+
+Diseño sin código: [`docs/telemetry/telemetry-plan.md`](../docs/telemetry/telemetry-plan.md) y [`docs/telemetry/event-schemas.json`](../docs/telemetry/event-schemas.json). El BRIEFING está en `docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`. Las decisiones D1–D14 son del usuario; el detalle está en el plan y no se duplica aquí.
+
+- **Estado del código:** no existe ningún emisor de eventos ni cabecera de correlación. Lo que el plan exige al equipo que instrumente son los prerrequisitos P1–P10 (§2 del plan):
+  - columnas del inventario `product_category`, `programme_id`, `min_stock`, `unit_cost` y `currency`, con migración;
+  - claim `sid` en el JWT y `X-Request-ID`;
+  - emisor `app/core/telemetry.py` (logger `nexova.telemetry`);
+  - colector `POST /telemetry/events` y `lib/telemetry.ts`;
+  - clave `TELEMETRY_SUPPLIER_KEY`.
+- **Esquemas:** JSON Schema draft-07. La comprobación permanente es `python scripts/validate_event_schemas.py` (librería estándar, subconjunto cerrado de palabras clave y coherencia con el plan). `ajv-cli@5.0.0` se ejecutó una vez con `npx`, sin tocar ningún `package.json`.
+- **Hallazgo técnico (F0):** `PUT`/`PATCH`/`DELETE` sobre `/inventory/products{,/{id}}` dan 405 **antes** de autenticar, porque Starlette no ejecuta las dependencias del router. Además, `Allow` solo lista `GET` en la colección.
+
 ### Docker (#infra-40)
 
 **Implementación (2026-10-22/25, rama `feature/docker-dev-env`; brief en [`docs/infra-40-brief.md`](../docs/infra-40-brief.md), guía en [`docs/local-development.md`](../docs/local-development.md), revisión en [`docs/infra-40-review.md`](../docs/infra-40-review.md)):** decisiones técnicas permanentes, tomadas por el usuario (D1–D7 y posteriores) y pendientes de revisión por el tech lead.

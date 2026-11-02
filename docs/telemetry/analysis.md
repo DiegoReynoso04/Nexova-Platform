@@ -1,6 +1,6 @@
 # Plan de Telemetría — F0: inventario, desajustes y decisiones
 
-**Estado: F0 cerrada, pendiente de que el usuario decida D1–D14.** Documento de trabajo, no el entregable: el plan (`telemetry-plan.md`) y los esquemas (`event-schemas.json`) se escriben en las fases siguientes, con las decisiones tomadas. **No se ha escrito código de instrumentación.**
+**Estado: F0 cerrada; el usuario decidió D1–D14 el 2026-11-02** (resumen y ajustes en [`telemetry-plan.md`](./telemetry-plan.md) §1.4, que manda sobre las recomendaciones de este documento). Documento de trabajo, no el entregable: el plan (`telemetry-plan.md`) y los esquemas (`event-schemas.json`) se escriben en las fases siguientes, con las decisiones tomadas. **No se ha escrito código de instrumentación.**
 
 - **Fuentes, por orden:**
   - BRIEFING de telemetría: [`docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`](../proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md). Es la fuente de verdad de las métricas obligatorias, las entidades y los identificadores.
