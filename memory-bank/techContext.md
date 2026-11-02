@@ -276,7 +276,7 @@ Detalle en `progress.md` (entradas del 2026-10-10). Decisiones técnicas permane
 
 ### Inventario: frontend del backoffice
 
-**Implementación (2026-10-19/21, rama `feature/inventory-frontend`, fases F1–F5 y F6 de documentación y verificación final; integrada en `main` con la PR #22, merge `410da71`, 2026-10-21; brief en [`docs/inventory-frontend-brief.md`](../docs/inventory-frontend-brief.md), guía en [`docs/inventory-frontend-review.md`](../docs/inventory-frontend-review.md); reglas completas en `uis/backoffice/CLAUDE.md`):** decisiones técnicas permanentes, tomadas por el usuario (D1–D10 y ajustes) y pendientes de revisión por el tech lead.
+**Implementación (2026-10-19/21, rama `feature/inventory-frontend`, fases F1–F5 y F6 de documentación y verificación final; integrada en `main` con la PR #22, merge `410da71`, 2026-10-21; guía en [`docs/inventory-frontend-review.md`](../docs/inventory-frontend-review.md); reglas completas en `uis/backoffice/CLAUDE.md`):** decisiones técnicas permanentes, tomadas por el usuario (D1–D10 y ajustes) y pendientes de revisión por el tech lead.
 
 - **Segundo cliente, mismo código:** `lib/inventory-api-client.ts` es otra instancia de `createApiClient` con `NEXT_PUBLIC_INVENTORY_API_URL` (solo el host, sin reserva a `NEXT_PUBLIC_API_URL`). Sigue habiendo un único `fetch`, un único sitio que pone el Bearer y un único tratamiento del 401. `services/inventory.service.ts` es el único módulo que nombra `/inventory/...`.
 - **Errores (excepción acotada a `/inventory`):** un 4xx (salvo 401 y 422) o 5xx con `detail` de texto muestra ese `detail` bajo un título en español; sin cuerpo legible, textos fijos; 422 con texto propio por campo y el `msg` de la API debajo (opción 3); `insufficient_stock` junto a Cantidad.
@@ -299,7 +299,7 @@ Detalle y decisiones D1–D9 en [`docs/serialization-audit.md`](../docs/serializ
 
 ### Timing por petición y caching (ticket del 2026-10-31, rama `feature/caching-optimisation`)
 
-Brief en [`docs/caching-brief.md`](../docs/caching-brief.md); medición inicial y decisiones D1–D11 (tomadas el 2026-10-31) en [`docs/caching-analysis.md`](../docs/caching-analysis.md); informe en [`CACHING_REPORT.md`](../CACHING_REPORT.md); contrato en `services/api/SPECS.md` Parte G (no duplicado aquí).
+Medición inicial y decisiones D1–D11 (tomadas el 2026-10-31) en [`docs/caching-analysis.md`](../docs/caching-analysis.md); informe en [`CACHING_REPORT.md`](../CACHING_REPORT.md); contrato en `services/api/SPECS.md` Parte G (no duplicado aquí).
 
 - **Middleware de timing** (`app/core/timing.py`, registrado en `create_app` como el más externo): logger `api.timing`, una línea por petición con método, path, status y ms, **nunca la query string** ni `GET /health`. Activo por defecto; `REQUEST_TIMING_LOG=false` lo quita (D8). uvicorn solo configura sus propios loggers, así que `configure_timing_logger` le añade un `StreamHandler` una sola vez; los tests ponen un `NullHandler` en `tests/__init__.py`. `test_architecture.py` admite `logging` en `core/errors.py` y `core/timing.py`.
 - **El access log de uvicorn sí registra la query string** (comprobado). Sin cambiar todavía: D9.
@@ -328,7 +328,7 @@ Diseño sin código: [`docs/telemetry/telemetry-plan.md`](../docs/telemetry/tele
 
 ### Docker (#infra-40)
 
-**Implementación (2026-10-22/25, rama `feature/docker-dev-env`; brief en [`docs/infra-40-brief.md`](../docs/infra-40-brief.md), guía en [`docs/local-development.md`](../docs/local-development.md), revisión en [`docs/infra-40-review.md`](../docs/infra-40-review.md)):** decisiones técnicas permanentes, tomadas por el usuario (D1–D7 y posteriores) y pendientes de revisión por el tech lead.
+**Implementación (2026-10-22/25, rama `feature/docker-dev-env`; guía en [`docs/local-development.md`](../docs/local-development.md), revisión en [`docs/infra-40-review.md`](../docs/infra-40-review.md)):** decisiones técnicas permanentes, tomadas por el usuario (D1–D7 y posteriores) y pendientes de revisión por el tech lead.
 
 - **Único modo de arranque en desarrollo:** `docker compose up` desde la raíz, con un solo `.env` (plantilla `.env.example` en la raíz) y puertos fijos: 3000 website, 3001 backoffice, 8000 API. `services/api/.env` y `uis/backoffice/.env.local` ya no se usan para arrancar. Los tests siguen en el host (`AGENTS.md` §4). El tracker queda fuera de Docker, en el 3002.
 - **Comunicación por nombre de servicio:** el navegador solo habla con `localhost:3001/backend/…`; el rewrite de `uis/backoffice/next.config.ts` la reenvía a `API_INTERNAL_URL=http://api:8000` (variable solo de servidor; sin ella, `rewrites()` devuelve `[]`). Mismo origen, sin CORS para el backoffice. Con `next start`, los rewrites salen del `routes-manifest.json` de `next build`: un build de producción necesitaría la variable al construir.

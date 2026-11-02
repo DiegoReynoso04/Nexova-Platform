@@ -1,6 +1,6 @@
 # REPORT — Mejoras de rendimiento de los dos frontends
 
-Informe de cierre de la auditoría de rendimiento ([`docs/perf-audit-brief.md`](docs/perf-audit-brief.md)): qué se cambió, cuánto mejoró y qué tuvo más impacto.
+Informe de cierre de la auditoría de rendimiento: qué se cambió, cuánto mejoró y qué tuvo más impacto.
 
 | Documento | Qué contiene |
 |---|---|

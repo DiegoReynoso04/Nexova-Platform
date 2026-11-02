@@ -87,7 +87,7 @@ Autorizado por el usuario el 2026-10-19 (frontend del inventario del Hito 5, ram
 
 Fuentes de verdad, por orden:
 
-- Requisitos: el brief literal del frontend del inventario, [`docs/inventory-frontend-brief.md`](../../docs/inventory-frontend-brief.md) (con la nota de equivalencias: su «BRIEFING.md» son el `README.md` raíz y el CONTEXT, y sus rutas `/backoffice/inventory/...` son `/inventory/...`), y [`docs/context-nexova-gestion-inventario-hito-5.md`](../../docs/context-nexova-gestion-inventario-hito-5.md) (entidades, campos, vocabulario y reglas). El briefing de empresa es el [`README.md`](../../README.md) raíz.
+- Requisitos: [`docs/context-nexova-gestion-inventario-hito-5.md`](../../docs/context-nexova-gestion-inventario-hito-5.md) (entidades, campos, vocabulario y reglas). El briefing de empresa es el [`README.md`](../../README.md) raíz.
 - Contrato HTTP: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte F (§37–§38) y `services/api/app/modules/inventory/schemas.py`. Mismas reglas que `/incidents` para no inventar campos ni endpoints.
 - Guía de revisión de la API: [`docs/inventory-review.md`](../../docs/inventory-review.md); guía de revisión del frontend (arranque, recorrido de las 4 páginas, trazabilidad con el brief, decisiones D1–D10 y lo no verificado): [`docs/inventory-frontend-review.md`](../../docs/inventory-frontend-review.md).
 

@@ -4,7 +4,6 @@
 
 - **Fuentes, por orden:**
   - BRIEFING de telemetría: [`docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`](../proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md). Es la fuente de verdad de las métricas obligatorias, las entidades y los identificadores.
-  - Enunciado literal: [`telemetry-brief.md`](./telemetry-brief.md).
   - Modelo real: `services/api/SPECS.md` (Partes C, D, F y G) y el código de `services/api` y `uis/backoffice`, leído en `main` en `390d3aa` (PR #27 mergeada).
   - CONTEXT del Hito 5: [`docs/context-nexova-gestion-inventario-hito-5.md`](../context-nexova-gestion-inventario-hito-5.md).
 - **Comprobado ejecutando, no solo leyendo:** las respuestas a los intentos de editar el stock (§3, M6). Se usó la app real con SQLite en memoria, con el soporte de los tests (`tests/inventory_support.py`) y un script temporal fuera del repo. No se tocó Supabase ni ninguna base de la demo.

@@ -1,6 +1,6 @@
 # AUDIT — Auditoría de rendimiento de los dos frontends
 
-Análisis inicial de la auditoría de rendimiento que pide el brief ([`docs/perf-audit-brief.md`](docs/perf-audit-brief.md)). Recoge:
+Análisis inicial de la auditoría de rendimiento que pide el brief. Recoge:
 
 - las puntuaciones iniciales de Lighthouse;
 - los problemas encontrados, con su causa raíz;

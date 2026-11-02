@@ -1,4 +1,4 @@
-"""Middleware de timing por petición (ticket de caching, F0; docs/caching-brief.md).
+"""Middleware de timing por petición (ticket de caching, F0).
 
 Una línea por petición en el logger `api.timing`: método, path, status y ms.
 Solo el path, nunca la query string (puede llevar emails o filtros con datos),

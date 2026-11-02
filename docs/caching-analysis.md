@@ -2,7 +2,7 @@
 
 > **Actualización (2026-10-31, F1):** el usuario decidió D1 A, D2 A (sin la opción B), D3 A con un máximo de 64 entradas por espacio, D4 y D5 como se proponen, D6 A, D7 A (B como mejora futura), D8 B, D9 fuera de este ticket (trabajo futuro), D10 como trabajo futuro y D11 sí. La implementación, la medición «después» y el informe están en [`CACHING_REPORT.md`](../CACHING_REPORT.md) y el contrato en `services/api/SPECS.md` Parte G. Lo que sigue es la foto de F0, sin cambios.
 >
-> **Estado al cerrar F0:** **sin ninguna caché implementada**. Rama `feature/caching-optimisation` (desde `main` en `9f312e1`, merge de la PR #26). Brief literal en [`caching-brief.md`](./caching-brief.md). El `CACHING_REPORT.md` del brief se escribirá en F1, cuando el usuario decida D1–D11 (§7).
+> **Estado al cerrar F0:** **sin ninguna caché implementada**. Rama `feature/caching-optimisation` (desde `main` en `9f312e1`, merge de la PR #26). El `CACHING_REPORT.md` del brief se escribirá en F1, cuando el usuario decida D1–D11 (§7).
 >
 > Commits de F0: `1178ddf` (`feat(api): middleware de timing por petición`) y el de este documento, el brief y el seeder de volumen.
 

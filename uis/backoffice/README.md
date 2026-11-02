@@ -44,7 +44,7 @@ Registro estructurado de incidencias técnicas y operativas de Nexova. Requisito
 
 ### `/inventory/*` — inventario de equipos y materiales
 
-Interfaz del inventario del Hito 5 para el personal de operaciones: consultar el stock, registrar entregas y salidas y revisar el historial. Brief: [`docs/inventory-frontend-brief.md`](../../docs/inventory-frontend-brief.md); contexto: [`docs/context-nexova-gestion-inventario-hito-5.md`](../../docs/context-nexova-gestion-inventario-hito-5.md); contrato: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte F. Se abre desde **«Inventario»** en la cabecera; una subnavegación lleva a las cuatro páginas (`/inventory` redirige a Activos).
+Interfaz del inventario del Hito 5 para el personal de operaciones: consultar el stock, registrar entregas y salidas y revisar el historial. Contexto: [`docs/context-nexova-gestion-inventario-hito-5.md`](../../docs/context-nexova-gestion-inventario-hito-5.md); contrato: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte F. Se abre desde **«Inventario»** en la cabecera; una subnavegación lleva a las cuatro páginas (`/inventory` redirige a Activos).
 
 - **`/inventory/products` (Activos)**: `GET /inventory/products`. Nombre, SKU, categoría, oficina y Stock actual con su nivel (0 «Agotado», de 1 a 5 «Bajo», más de 5 «Suficiente»; color, icono y texto). Cada fila enlaza a registrar una entrada o una salida de ese activo (`?asset_id=`).
 - **`/inventory/orders/inbound` (Entrada de activos)**: `POST /inventory/orders/inbound`. Selector «nombre — SKU (oficina)», Oficina del activo en solo lectura, Cantidad y Proveedor. Validación en cliente sin petición; tras el éxito, «Entrada registrada: N × nombre (SKU)» y formulario limpio con el activo del enlace.

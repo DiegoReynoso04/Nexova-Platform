@@ -3,7 +3,7 @@
 Respuesta al RFI de gestión: qué datos capturar en la plataforma de Nexova, para qué decisión, con qué forma, por qué canal y qué no se captura. **Es un documento de diseño: no hay código de instrumentación.** Lo tiene que poder instrumentar otro desarrollador sin preguntar nada. Si algo no está aquí, es un hueco del plan y no una decisión implícita.
 
 - **Esquemas:** [`event-schemas.json`](./event-schemas.json) (JSON Schema draft-07), consistente al 100 % con este documento. Lo comprueba `scripts/validate_event_schemas.py` (§9).
-- **Brief literal del ticket:** [`telemetry-brief.md`](./telemetry-brief.md). Análisis previo (inventario de puntos, desajustes M0–M11 y decisiones D1–D14 con sus opciones): [`analysis.md`](./analysis.md).
+- **Análisis previo:** [`analysis.md`](./analysis.md) (inventario de puntos, desajustes M0–M11 y decisiones D1–D14 con sus opciones).
 - **Código de referencia:** `main` en `390d3aa`. Las líneas citadas son de ese commit; si el código se mueve, manda el nombre de la función citada junto a la línea.
 
 **Cifras: 52 eventos.** 5 son obligatorios (BRIEFING) y 47, oportunidades identificadas, en 10 categorías: inventario 9, autenticación 16, navegación 2, flujos 4, errores 3, salud técnica 3, rendimiento 2, proveedores 5, gestor de incidencias 5 y análisis de incidentes 3. 42 los emite la API y 10 el frontend. 13 van por stream y 39 por batch.

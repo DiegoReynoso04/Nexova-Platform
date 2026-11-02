@@ -1,6 +1,6 @@
 # Lighthouse — medición inicial (F1)
 
-Medición de partida de la auditoría de rendimiento (brief en [`docs/perf-audit-brief.md`](../../docs/perf-audit-brief.md)). Esta fase solo mide: aquí no se corrige nada ni se interpretan causas raíz (eso es F3, en `AUDIT.md`).
+Medición de partida de la auditoría de rendimiento. Esta fase solo mide: aquí no se corrige nada ni se interpretan causas raíz (eso es F3, en `AUDIT.md`).
 
 **Fuente de las cifras.** Todas salen del JSON guardado en cada caso. Las únicas excepciones son las ejecuciones que no se guardaron (§4), que las anotó el usuario a mano. Las capturas (`.png`) son la evidencia visual.
 

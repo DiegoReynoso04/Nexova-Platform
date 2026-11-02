@@ -39,7 +39,6 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 - **Archivos:**
   - el BRIEFING de telemetría, que se versiona ahora (`docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`): métricas obligatorias, entidades e identificadores;
-  - el enunciado literal con nota de equivalencias (`docs/telemetry/telemetry-brief.md`);
   - el documento de trabajo (`docs/telemetry/analysis.md`).
 - **Inventario:** puntos de instrumentación con archivo y línea, en la API y en el backoffice, del flujo de inventario y del resto (auth, proveedores, gestor y análisis de incidencias, navegación, abandono, límites de error, timing, 503 y caché). Hoy no se emite ningún evento y no hay cabecera de correlación.
 - **Desajustes confirmados (M0–M11):**
@@ -113,7 +112,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 - **Commits:**
   - `1178ddf`: middleware de timing (`app/core/timing.py`; el brief decía `main.py`, pero la regla de logging de `test_architecture.py` solo admite `core/`);
-  - `docs(caching)`: brief literal (`docs/caching-brief.md`), análisis (`docs/caching-analysis.md`) y `scripts/seed_volume.py`.
+  - `docs(caching)`: análisis (`docs/caching-analysis.md`) y `scripts/seed_volume.py`.
 - **Validación de `services/api`** (contenedor efímero, TESTING §14): unittest 436 → **439 OK**, pytest 639 → **642 passed**. Línea de timing comprobada en `docker compose logs api`.
 - **Bases de prueba:**
   - PostgreSQL efímero `postgres:17.6-alpine3.22`, con el esquema creado por el lifespan, y TinyDB en el scratchpad;
@@ -138,7 +137,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 **Estado: hecha, revisada e integrada en `main` con la PR #26 (merge `9f312e1`).** *Anotado al empezar el ticket de caching (2026-10-31): esta entrada se escribió antes del merge.* Rama `feature/serialization-audit`, creada desde `main` en `d987a06` (merge de la PR #25, que este banco no recogía; corregido en la entrada de la auditoría de rendimiento).
 
-- **Documentos:** brief literal con la nota de equivalencias en `docs/serialization-audit-brief.md`; auditoría en `docs/serialization-audit.md` (32 endpoints, estado original 15 ✅ · 16 ⚠️ · 1 ❌, estado final 32 ✅; decisiones D1–D9; verificación en §9).
+- **Documentos:** auditoría en `docs/serialization-audit.md` (32 endpoints, estado original 15 ✅ · 16 ⚠️ · 1 ❌, estado final 32 ✅; decisiones D1–D9; verificación en §9).
 - **Decisiones del usuario (2026-10-28):**
   - D1–D5, D7 y D9: las recomendadas;
   - D6 A, con la condición de explicar el reparto: los modelos de entrada del gestor son el contrato publicado y `nexova_shared` la autoridad de validación;
@@ -372,7 +371,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-10-27 — Auditoría de rendimiento de los dos frontends: F0–F1
 
-**Estado: en curso** (F1 hecha), en `feature/perf-audit`, creada desde `main` en `6877599`. Brief literal en `docs/perf-audit-brief.md` (`fb3cb15`). Sin push.
+**Estado: en curso** (F1 hecha), en `feature/perf-audit`, creada desde `main` en `6877599`. Sin push.
 
 - **F0 — análisis y decisiones del usuario:**
   - **Ubicación:** `AUDIT.md`, `REPORT.md` y `audit/` en la raíz. `audit/` queda como carpeta de evidencias en `.agents/rules/monorepo-structure.md`.
@@ -424,7 +423,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 **Estado: integrado en `main` con la PR #24 (merge `6877599`, 2026-10-25).** Historial: F0 y F1 en `6a49d6f`, F2 en `daede5e`, F3 en `0883f3d`, F4 en `cbeac39`, el tracker en `fe56224`, F5 en `f498ef5` y F7 en el commit `docs(infra-40)`; sin F6; sin push de F7), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
 
 - **F0 — análisis, aprobado por el usuario con cambios:**
-  - brief literal en `docs/infra-40-brief.md`, con una nota de equivalencias (`uis/website` es HTML estático, no Next.js; `/services` es `services/api`);
+  - equivalencias del ticket: `uis/website` es HTML estático, no Next.js; `/services` es `services/api`;
   - comprobado: Docker 29.7.2 y Compose v5.5.0 (`additional_contexts` desde 2.17); `node:24-alpine` y `python:3.14-slim` existen (amd64 y arm64); las 28 dependencias de `uv.lock` sin el grupo dev se resuelven solo con wheels para Linux x86_64 y CPython 3.14 (también `psycopg2-binary` 2.9.13); en Next 16.3 los rewrites de `next.config` se cargan al arrancar `next dev` y, con `next start`, salen del `routes-manifest.json` de `next build`; recarga en Docker con `watchOptions.pollIntervalMs` (Turbopack) y `WATCHPACK_POLLING` (vigilante de Next);
   - decisiones del usuario: D1 con un script `http` de Node para el website (la `busybox` de Alpine se compila sin `httpd`), D2 sin tocar CORS (`localhost:3001` sigue para el tracker fuera de Docker), D3 con build args en producción, D4–D7 como las propuso, y las fases F1–F7 del plan;
   - pendiente: el motor de Docker Desktop no arranca en la máquina del usuario (el backend falla al crear `sailor-ingest.sock`), que lo arregla él; sin motor no se ha ejecutado `busybox --list` ni verificado el polling.
@@ -675,7 +674,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 **Estado: hecho y validado; comiteado tras la revisión del usuario**, en `feature/inventory-frontend`, sobre F1 (`0e0f133`) y el `style(api)` (`2dccef0`). Sin pruebas que escriban en Supabase: el usuario hace las del navegador.
 
 - **Antes, ya comiteado:**
-  - F1 + el brief literal (`docs/inventory-frontend-brief.md`), commit `0e0f133`;
+  - F1, commit `0e0f133`;
   - la unión de los imports de `typing` en `services/api/app/modules/inventory/router.py`, commit `2dccef0`. Las suites de `services/api` dan 409 y 612 antes y después; pytest cuenta un subtest menos, porque `test_no_session_is_created_at_module_level` abre uno por sentencia de nivel de módulo.
 - **Navegación:**
   - `app/inventory/layout.tsx` con `components/inventory/inventory-nav.tsx` (Activos · Entrada de activos · Salida de activos · Historial, con `aria-current` vía `NavLink`);
@@ -731,7 +730,6 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - Jest: `__tests__/utils/inventory.service.test.ts` (`parseQuantity` y validadores).
 - **Mutaciones**, todas detectadas y deshechas: sin Bearer; `quantity` como texto; `office` del formulario en vez del activo (en la entrada y, tras reforzar el test con un activo de Miami, en la salida); `insufficient_stock` sin `field`; reserva a `NEXT_PUBLIC_API_URL`.
 - **Validación** (línea base → F1): `build` correcto; `tsc` y `lint` sin errores; `node:test` 344 → 386; Jest 161 → 187.
-- **Brief literal versionado** en `docs/inventory-frontend-brief.md`, con una nota de equivalencias («BRIEFING.md» = `README.md` raíz + CONTEXT; `/backoffice/inventory/...` = `/inventory/...`), y enlazado desde `uis/backoffice/CLAUDE.md`.
 - **422 (corregido el 2026-10-20, opción 3 del usuario):** junto a cada campo, un texto propio en español y, debajo, el `msg` de la API si es utilizable. Así se cumple también el «extrae el mensaje del cuerpo» del brief.
 
 ---
