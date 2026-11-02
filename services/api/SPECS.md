@@ -781,7 +781,7 @@ Lo crea `init_db` al arrancar (`create_all` solo crea lo que falta). No hay colu
 
 # Parte G — Caché de lecturas y timing por petición (ticket de caching)
 
-Brief literal: [`docs/caching-brief.md`](../../docs/caching-brief.md). Medición inicial y decisiones D1–D11 (tomadas por el usuario el 2026-10-31): [`docs/caching-analysis.md`](../../docs/caching-analysis.md). Informe final con las cifras de antes y después: [`CACHING_REPORT.md`](../../CACHING_REPORT.md). **Ninguna ruta cambia de contrato**: mismas respuestas, mismos códigos y mismos errores; solo cambia cuándo se leen de la base.
+Medición inicial y decisiones D1–D11 (tomadas por el usuario el 2026-10-31): [`docs/caching-analysis.md`](../../docs/caching-analysis.md). Informe final con las cifras de antes y después: [`CACHING_REPORT.md`](../../CACHING_REPORT.md). **Ninguna ruta cambia de contrato**: mismas respuestas, mismos códigos y mismos errores; solo cambia cuándo se leen de la base.
 
 ## 41. Qué se cachea
 

@@ -1,6 +1,6 @@
 # Auditoría de serialización — `services/api`
 
-**Estado: F1 hecha y verificada (2026-10-28).** Rama `feature/serialization-audit`, creada desde `main` en `d987a06` (merge de la PR #25). F0 (`5b0bd38`) registró el estado original, que se conserva en las columnas «Salida actual» y «Estado original». El usuario decidió D1–D9 (§6), F1 se implementó en cuatro commits por módulo (§7) y la verificación final está en §9. Brief literal y nota de equivalencias en [`serialization-audit-brief.md`](./serialization-audit-brief.md).
+**Estado: F1 hecha y verificada (2026-10-28).** Rama `feature/serialization-audit`, creada desde `main` en `d987a06` (merge de la PR #25). F0 (`5b0bd38`) registró el estado original, que se conserva en las columnas «Salida actual» y «Estado original». El usuario decidió D1–D9 (§6), F1 se implementó en cuatro commits por módulo (§7) y la verificación final está en §9.
 
 ## 0. Método y leyenda
 

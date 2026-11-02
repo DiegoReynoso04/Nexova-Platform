@@ -2,7 +2,6 @@
 
 > Ticket de caching y optimización (rama `feature/caching-optimisation`, 2026-10-31).
 >
-> - **Brief literal:** [`docs/caching-brief.md`](./docs/caching-brief.md).
 > - **Medición inicial, tabla de los 32 endpoints y decisiones D1–D11:** [`docs/caching-analysis.md`](./docs/caching-analysis.md), F0. El usuario tomó las decisiones el 2026-10-31.
 > - **Contrato de la caché:** [`services/api/SPECS.md`](./services/api/SPECS.md) Parte G.
 >

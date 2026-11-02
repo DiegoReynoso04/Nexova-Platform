@@ -4,7 +4,6 @@
 
 Documento para revisar la sección de inventario de `uis/backoffice`: cómo levantarla, qué se ve en cada página, qué cubre cada test y qué **no** está verificado.
 
-- Brief literal del frontend (con la nota de equivalencias de este repo): [`inventory-frontend-brief.md`](./inventory-frontend-brief.md).
 - Contexto de negocio (entidades, campos, vocabulario y reglas): [`context-nexova-gestion-inventario-hito-5.md`](./context-nexova-gestion-inventario-hito-5.md). El briefing de empresa es el [`README.md`](../README.md) raíz.
 - Contrato HTTP de la API: [`services/api/SPECS.md`](../services/api/SPECS.md) Parte F; guía de revisión de la API: [`inventory-review.md`](./inventory-review.md).
 - Reglas permanentes del frontend: [`uis/backoffice/CLAUDE.md`](../uis/backoffice/CLAUDE.md) (sección «Inventario»); puesta en marcha: [`uis/backoffice/README.md`](../uis/backoffice/README.md).
@@ -100,7 +99,7 @@ Con la API, el seed y el backoffice en marcha, y una sesión iniciada. Las entra
 
 ## Trazabilidad: «Qué vamos a evaluar» → implementación → test → navegador
 
-Fuente de los puntos: el brief literal ([`inventory-frontend-brief.md`](./inventory-frontend-brief.md), «Qué Vamos a Evaluar»). Los tests de `node:test` se citan como `archivo` → `bloque` → `test` (en `uis/backoffice/tests/`); los de Jest, en `uis/backoffice/__tests__/`. «Navegador» es la verificación del usuario con Supabase real (2026-10-20), salvo que se indique otra cosa.
+Fuente de los puntos: el apartado «Qué Vamos a Evaluar» del brief. Los tests de `node:test` se citan como `archivo` → `bloque` → `test` (en `uis/backoffice/tests/`); los de Jest, en `uis/backoffice/__tests__/`. «Navegador» es la verificación del usuario con Supabase real (2026-10-20), salvo que se indique otra cosa.
 
 | Punto | Implementación | Test | Navegador |
 |---|---|---|---|

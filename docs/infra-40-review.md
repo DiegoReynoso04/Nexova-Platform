@@ -2,7 +2,6 @@
 
 Documento para revisar el ticket: qué se construyó, cómo arrancarlo, qué evidencia hay para cada criterio de evaluación del brief, qué se decidió y qué **no** está verificado.
 
-- Brief literal (con la nota de equivalencias de este repo): [`infra-40-brief.md`](./infra-40-brief.md).
 - Guía de arranque del día a día: [`local-development.md`](./local-development.md).
 - Reglas para agentes y validación de cada pieza: [`AGENTS.md`](../AGENTS.md) §4 (bloque «Docker»).
 - Historial por fases (F0–F5 y F7) y validaciones ejecutadas: [`memory-bank/progress.md`](../memory-bank/progress.md).
@@ -50,7 +49,7 @@ docker compose ps      # api (healthy) y ui
 
 ## Trazabilidad: «Lo que evaluaremos» → implementación → evidencia
 
-Fuente: el brief literal, sección «Lo que evaluaremos». «F4» y «F5» son las fases de [`progress.md`](../memory-bank/progress.md).
+Fuente: el brief, sección «Lo que evaluaremos». «F4» y «F5» son las fases de [`progress.md`](../memory-bank/progress.md).
 
 | Criterio | Implementación | Evidencia |
 |---|---|---|

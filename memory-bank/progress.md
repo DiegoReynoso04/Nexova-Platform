@@ -4,9 +4,76 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-02 — Plan de Telemetría, F1: plan, esquemas y validación
+
+**Estado: F1 hecha y validada; pendiente de la revisión del usuario antes del push y la PR** (`docs: telemetry design plan`). Rama `docs/telemetry-plan`. Solo diseño: ningún código de instrumentación.
+
+- **Decisiones del usuario (2026-11-02):**
+  - D1 B, D1-a (`null`, nunca un cuarto valor) y D1-b (sin clasificar en este ticket);
+  - D2 A, solo con el patrón de slug;
+  - D3 con umbral 10 % y media de las 3 anteriores, configurables, y `direction`;
+  - D4 `min_stock` 5, `<` y por cruce;
+  - D5–D8 A;
+  - D9 con HMAC + `inbound_order_id` y retención de 90 días en bruto / agregados sin límite;
+  - D10 A, D11 A + B y D12–D14 como se propusieron.
+  - Resumen en `docs/telemetry/telemetry-plan.md` §1.4.
+- **Entregables:**
+  - `docs/telemetry/telemetry-plan.md`: alcance y equivalencias M0–M11, prerrequisitos P1–P10 con su orden, flujo de inventario en 12 pasos con archivo y línea, catálogo, envelope, 52 fichas, entrega, throttle, riesgos, exclusiones y validación;
+  - `docs/telemetry/event-schemas.json`: draft-07, envelope común, una definición por evento, `oneOf` raíz, `$comment` con los metadatos y, en los 9 eventos de inventario, un `oneOf` de coherencia oficina–moneda (`valencia`/`EUR`, `miami`/`USD`; `null`/`null` donde la oficina puede faltar);
+  - `scripts/validate_event_schemas.py`: librería estándar.
+- **Cifras:** 52 eventos, 5 obligatorios y 47 oportunidades, en 10 categorías; 42 los emite la API y 10 el frontend; 13 van por stream y 39 por batch. 43 se pueden emitir sin prerrequisitos de modelo; los 9 de inventario esperan a P1–P3, P7, P9 y P10.
+- **Validación:**
+  - las 52 frases siguen literalmente la plantilla del enunciado («…, lo que nos permite tomar la decisión de…») y el script lo comprueba;
+  - el script, OK (52 eventos, 53 ejemplos), y detecta 13 de 13 mutaciones;
+  - `npx --yes ajv-cli@5.0.0` (Node 24.18.0): metaesquema válido, 53 ejemplos `valid` y los dos controles negativos `invalid` (clave fuera de la allowlist y `valencia`/`USD`);
+  - la suite `unittest` de `services/api`: 482 OK.
+  - Ningún `package.json` ni dependencia nueva.
+- **Otros cambios:** fila nueva en la tabla de validación de `AGENTS.md` §4 y en `scripts/README*.md`; estado de `analysis.md` actualizado.
+- **Pendiente:**
+  - revisión del usuario, push y PR;
+  - el ticket de captura: P1–P10, la clasificación de activos, el catálogo de programas, los datos semilla del BRIEFING §5 y alinear el indicador «Bajo».
+
+---
+
+## 2026-11-01 — Plan de Telemetría, F0: briefing, inventario de puntos, desajustes y decisiones
+
+**Estado: F0 hecha; el usuario decidió D1–D14 el 2026-11-02 (ver la entrada de F1, arriba).** *Corregido el 2026-11-02: antes decía «pendiente de que el usuario decida D1–D14».* Solo diseño: ningún código de instrumentación. Rama `docs/telemetry-plan`, desde `main` en `390d3aa`. Sin push.
+
+- **Archivos:**
+  - el BRIEFING de telemetría, que se versiona ahora (`docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`): métricas obligatorias, entidades e identificadores;
+  - el documento de trabajo (`docs/telemetry/analysis.md`).
+- **Inventario:** puntos de instrumentación con archivo y línea, en la API y en el backoffice, del flujo de inventario y del resto (auth, proveedores, gestor y análisis de incidencias, navegación, abandono, límites de error, timing, 503 y caché). Hoy no se emite ningún evento y no hay cabecera de correlación.
+- **Desajustes confirmados (M0–M11):**
+  - el BRIEFING describe material de formación e incorporación por programa, y el Hito 5 implementó hardware y material de IT;
+  - `product_category` no tiene correspondencia 1:1 con `AssetCategory`;
+  - `office` solo difiere en la caja;
+  - no existen `programme_id`, coste unitario ni moneda;
+  - el umbral es solo `LOW_STOCK_MAX = 5` del frontend.
+- **Medido con la app real sobre SQLite (sin Supabase):**
+  - `PUT`/`PATCH`/`DELETE /inventory/products/{id}` → 405 **antes de autenticar**, también sin token;
+  - `current_stock` en el body → 422 `extra_forbidden` (después de autenticar).
+  - Hallazgo lateral: `Allow: GET` en `PUT /inventory/products`, aunque la colección admite `POST`.
+- **Decisiones propuestas (D1–D14), las decide el usuario:**
+  - `product_category` como campo nuevo;
+  - `programme_id` en `Asset`, con un catálogo que no da ninguna fuente;
+  - `unit_cost` y `currency` derivada de la oficina;
+  - `min_stock` por activo, detectado por cruce en `add_outbound_order`;
+  - la definición de `direct_stock_edit_rejected`;
+  - `sid` en el JWT y `X-Request-ID`;
+  - PII;
+  - el emisor (la API para el negocio);
+  - JSON Schema draft-07 con validación por librería estándar;
+  - criterios de stream/batch y throttle;
+  - taxonomía;
+  - los prerrequisitos, en el plan.
+- **Validación:** solo documentación; sin impacto técnico en el código. Tampoco cambia el negocio en `projectbrief.md`: el BRIEFING es una fuente nueva de contexto, pero no hay herramienta nueva.
+- **Pendiente:** las decisiones del usuario, `telemetry-plan.md`, `event-schemas.json` y su validación, y la PR `docs: telemetry design plan`.
+
+---
+
 ## 2026-10-31 — Caching y optimización, F1: implementación, medición «después» e informe
 
-**Estado: F1 hecha y verificada; pendiente de la revisión del usuario antes del push y la PR** (`feat: caching optimisation`). Rama `feature/caching-optimisation`.
+**Estado: F1 hecha, verificada e integrada en `main`** con la PR #27 (merge `390d3aa`, 2026-11-01). *Corregido el 2026-11-01: antes decía «pendiente de la revisión del usuario antes del push y la PR».* Rama `feature/caching-optimisation`.
 
 - **Decisiones del usuario (2026-10-31):**
   - D1 A, D2 A (sin la opción B), D3 A con 64 entradas por espacio, D4 y D5 como se propusieron;
@@ -35,7 +102,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - el hueco reservado no desplaza nada a 375 ni a 1280 px.
 - **Limpieza:** contenedores, volúmenes y red de medición borrados; cuentas temporales solo en la TinyDB de pruebas (borrada); `ui` de Docker arrancado de nuevo. Se conserva la imagen `postgres:17.6-alpine3.22`.
 - **Pendiente:**
-  - revisión del usuario, push y PR;
+  - ~~revisión del usuario, push y PR~~ (hecho: PR #27);
   - el usuario para el `next start -p 3003` antiguo;
   - D9 (access log de uvicorn con query string), D10 (paginación, pool de Supabase, `auth.json` por petición) y D7-B.
 
@@ -47,7 +114,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 - **Commits:**
   - `1178ddf`: middleware de timing (`app/core/timing.py`; el brief decía `main.py`, pero la regla de logging de `test_architecture.py` solo admite `core/`);
-  - `docs(caching)`: brief literal (`docs/caching-brief.md`), análisis (`docs/caching-analysis.md`) y `scripts/seed_volume.py`.
+  - `docs(caching)`: análisis (`docs/caching-analysis.md`) y `scripts/seed_volume.py`.
 - **Validación de `services/api`** (contenedor efímero, TESTING §14): unittest 436 → **439 OK**, pytest 639 → **642 passed**. Línea de timing comprobada en `docker compose logs api`.
 - **Bases de prueba:**
   - PostgreSQL efímero `postgres:17.6-alpine3.22`, con el esquema creado por el lifespan, y TinyDB en el scratchpad;
@@ -72,7 +139,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 **Estado: hecha, revisada e integrada en `main` con la PR #26 (merge `9f312e1`).** *Anotado al empezar el ticket de caching (2026-10-31): esta entrada se escribió antes del merge.* Rama `feature/serialization-audit`, creada desde `main` en `d987a06` (merge de la PR #25, que este banco no recogía; corregido en la entrada de la auditoría de rendimiento).
 
-- **Documentos:** brief literal con la nota de equivalencias en `docs/serialization-audit-brief.md`; auditoría en `docs/serialization-audit.md` (32 endpoints, estado original 15 ✅ · 16 ⚠️ · 1 ❌, estado final 32 ✅; decisiones D1–D9; verificación en §9).
+- **Documentos:** auditoría en `docs/serialization-audit.md` (32 endpoints, estado original 15 ✅ · 16 ⚠️ · 1 ❌, estado final 32 ✅; decisiones D1–D9; verificación en §9).
 - **Decisiones del usuario (2026-10-28):**
   - D1–D5, D7 y D9: las recomendadas;
   - D6 A, con la condición de explicar el reparto: los modelos de entrada del gestor son el contrato publicado y `nexova_shared` la autoridad de validación;
@@ -306,7 +373,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-10-27 — Auditoría de rendimiento de los dos frontends: F0–F1
 
-**Estado: en curso** (F1 hecha), en `feature/perf-audit`, creada desde `main` en `6877599`. Brief literal en `docs/perf-audit-brief.md` (`fb3cb15`). Sin push.
+**Estado: en curso** (F1 hecha), en `feature/perf-audit`, creada desde `main` en `6877599`. Sin push.
 
 - **F0 — análisis y decisiones del usuario:**
   - **Ubicación:** `AUDIT.md`, `REPORT.md` y `audit/` en la raíz. `audit/` queda como carpeta de evidencias en `.agents/rules/monorepo-structure.md`.
@@ -358,7 +425,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 **Estado: integrado en `main` con la PR #24 (merge `6877599`, 2026-10-25).** Historial: F0 y F1 en `6a49d6f`, F2 en `daede5e`, F3 en `0883f3d`, F4 en `cbeac39`, el tracker en `fe56224`, F5 en `f498ef5` y F7 en el commit `docs(infra-40)`; sin F6; sin push de F7), en `feature/docker-dev-env`, creada desde `origin/main` y actualizada con fast-forward a `db76772` (merge de la PR #23, el memory-bank del inventario). Al traer ese merge, `git stash pop` dio conflicto en esta entrada; se resolvió dejándola encima de la del 2026-10-21 (después, el stash ya aplicado se borró con `git stash drop`).
 
 - **F0 — análisis, aprobado por el usuario con cambios:**
-  - brief literal en `docs/infra-40-brief.md`, con una nota de equivalencias (`uis/website` es HTML estático, no Next.js; `/services` es `services/api`);
+  - equivalencias del ticket: `uis/website` es HTML estático, no Next.js; `/services` es `services/api`;
   - comprobado: Docker 29.7.2 y Compose v5.5.0 (`additional_contexts` desde 2.17); `node:24-alpine` y `python:3.14-slim` existen (amd64 y arm64); las 28 dependencias de `uv.lock` sin el grupo dev se resuelven solo con wheels para Linux x86_64 y CPython 3.14 (también `psycopg2-binary` 2.9.13); en Next 16.3 los rewrites de `next.config` se cargan al arrancar `next dev` y, con `next start`, salen del `routes-manifest.json` de `next build`; recarga en Docker con `watchOptions.pollIntervalMs` (Turbopack) y `WATCHPACK_POLLING` (vigilante de Next);
   - decisiones del usuario: D1 con un script `http` de Node para el website (la `busybox` de Alpine se compila sin `httpd`), D2 sin tocar CORS (`localhost:3001` sigue para el tracker fuera de Docker), D3 con build args en producción, D4–D7 como las propuso, y las fases F1–F7 del plan;
   - pendiente: el motor de Docker Desktop no arranca en la máquina del usuario (el backend falla al crear `sailor-ingest.sock`), que lo arregla él; sin motor no se ha ejecutado `busybox --list` ni verificado el polling.
@@ -609,7 +676,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 **Estado: hecho y validado; comiteado tras la revisión del usuario**, en `feature/inventory-frontend`, sobre F1 (`0e0f133`) y el `style(api)` (`2dccef0`). Sin pruebas que escriban en Supabase: el usuario hace las del navegador.
 
 - **Antes, ya comiteado:**
-  - F1 + el brief literal (`docs/inventory-frontend-brief.md`), commit `0e0f133`;
+  - F1, commit `0e0f133`;
   - la unión de los imports de `typing` en `services/api/app/modules/inventory/router.py`, commit `2dccef0`. Las suites de `services/api` dan 409 y 612 antes y después; pytest cuenta un subtest menos, porque `test_no_session_is_created_at_module_level` abre uno por sentencia de nivel de módulo.
 - **Navegación:**
   - `app/inventory/layout.tsx` con `components/inventory/inventory-nav.tsx` (Activos · Entrada de activos · Salida de activos · Historial, con `aria-current` vía `NavLink`);
@@ -665,7 +732,6 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - Jest: `__tests__/utils/inventory.service.test.ts` (`parseQuantity` y validadores).
 - **Mutaciones**, todas detectadas y deshechas: sin Bearer; `quantity` como texto; `office` del formulario en vez del activo (en la entrada y, tras reforzar el test con un activo de Miami, en la salida); `insufficient_stock` sin `field`; reserva a `NEXT_PUBLIC_API_URL`.
 - **Validación** (línea base → F1): `build` correcto; `tsc` y `lint` sin errores; `node:test` 344 → 386; Jest 161 → 187.
-- **Brief literal versionado** en `docs/inventory-frontend-brief.md`, con una nota de equivalencias («BRIEFING.md» = `README.md` raíz + CONTEXT; `/backoffice/inventory/...` = `/inventory/...`), y enlazado desde `uis/backoffice/CLAUDE.md`.
 - **422 (corregido el 2026-10-20, opción 3 del usuario):** junto a cada campo, un texto propio en español y, debajo, el `msg` de la API si es utilizable. Así se cumple también el «extrae el mensaje del cuerpo» del brief.
 
 ---

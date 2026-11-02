@@ -1,6 +1,6 @@
 # Hallazgos de las skills `core-web-vitals` y `performance` (F2)
 
-Registro de la ejecución de las dos skills de agente sobre los dos frontends: qué señalan, con qué evidencia, qué código lo causa y qué corrección proponen. Es la evidencia del uso de las skills que pide el brief ([`docs/perf-audit-brief.md`](../docs/perf-audit-brief.md)) y el material de entrada de `AUDIT.md` (F3).
+Registro de la ejecución de las dos skills de agente sobre los dos frontends: qué señalan, con qué evidencia, qué código lo causa y qué corrección proponen. Es la evidencia del uso de las skills que pide el brief y el material de entrada de `AUDIT.md` (F3).
 
 **Aquí no se corrige nada.** Las correcciones se aplican después, una por commit y en el orden de §7. El usuario revisó y aprobó esta lista; sus decisiones y ajustes están en §8.
 
