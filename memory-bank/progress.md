@@ -4,9 +4,35 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-02 — Captura de telemetría en el frontend + endpoint stub, F0: análisis y decisiones
+
+**Estado: F0 hecha; pendiente de que el usuario decida D1–D9.** Rama `feature/telemetry-capture`, desde `main` en `8a23d17`. Sin push. Ningún código.
+
+- **Documento de trabajo:** `docs/telemetry/capture-analysis.md`. El enunciado del ticket no se versiona.
+- **Conflictos confirmados entre el enunciado y el plan aprobado (C1–C9):**
+  - los 5 obligatorios son de emisor API y el colector rechaza que el cliente los envíe;
+  - faltan `unit_cost` y `supplier_key` para `inbound_order_created`, y sin costes `kit_cost_variance_detected` no se puede calcular;
+  - `direct_stock_edit_rejected` solo lo ve la API;
+  - respuesta `200 {received}` frente a `202 {accepted, rejected}`, y 3 reintentos frente a ninguno;
+  - `sessionId` del cliente frente al claim `sid`;
+  - la variable va en el `.env` de la raíz y en `docker-compose.yml`, con `/backend`;
+  - `sendBeacon` no lleva `Authorization`;
+  - el único `fetch`, y un 401 que hoy borra el token.
+- **Hallazgos técnicos:**
+  - con los datos de hoy, `outbound_order_created`, `stock_threshold_triggered` (con `min_stock` de la configuración) y `direct_stock_edit_rejected` validan el esquema `1.0.0` si los emite la API (`product_category`/`programme_id` en `null`, `currency` derivada de la oficina), aunque §2.5 del plan pide esperar a las columnas;
+  - el test estático del backoffice también restringe `unknown`, `JSON.stringify` y `sessionStorage`, así que la firma literal `Record<string, unknown>` del enunciado no pasa;
+  - `next/web-vitals` viene con Next 16, sin dependencia nueva;
+  - la imagen de la API no contiene `docs/`: la allowlist de P6 tiene que ser un módulo generado;
+  - la versión del esquema es global (`SCHEMA_VERSION` del validador).
+- **Recomendación:** D1 C (la API emite los obligatorios; C-completo con una migración aditiva y reversible para tener los 5), los 10 eventos de frontend del plan y Web Vitals fuera (§8.1).
+- **Validación:** solo documentación. `techContext.md` y `projectbrief.md` no cambian.
+- **Pendiente:** las decisiones del usuario y F1 (implementación).
+
+---
+
 ## 2026-11-02 — Plan de Telemetría, F1: plan, esquemas y validación
 
-**Estado: F1 hecha y validada; pendiente de la revisión del usuario antes del push y la PR** (`docs: telemetry design plan`). Rama `docs/telemetry-plan`. Solo diseño: ningún código de instrumentación.
+**Estado: F1 hecha, validada e integrada en `main`** con la PR #28 (merge `8a23d17`). *Corregido el 2026-11-02: antes decía «pendiente de la revisión del usuario antes del push y la PR».* Rama `docs/telemetry-plan`. Solo diseño: ningún código de instrumentación.
 
 - **Decisiones del usuario (2026-11-02):**
   - D1 B, D1-a (`null`, nunca un cuarto valor) y D1-b (sin clasificar en este ticket);
@@ -30,8 +56,8 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - Ningún `package.json` ni dependencia nueva.
 - **Otros cambios:** fila nueva en la tabla de validación de `AGENTS.md` §4 y en `scripts/README*.md`; estado de `analysis.md` actualizado.
 - **Pendiente:**
-  - revisión del usuario, push y PR;
-  - el ticket de captura: P1–P10, la clasificación de activos, el catálogo de programas, los datos semilla del BRIEFING §5 y alinear el indicador «Bajo».
+  - ~~revisión del usuario, push y PR~~ hecho (PR #28);
+  - el ticket de captura (F0 en curso, entrada de arriba): P1–P10, la clasificación de activos, el catálogo de programas, los datos semilla del BRIEFING §5 y alinear el indicador «Bajo».
 
 ---
 
