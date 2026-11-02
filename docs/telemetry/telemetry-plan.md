@@ -202,7 +202,7 @@ Los pasos 5, 7 y 10 cubren los obligatorios; 4–7 cubren las validaciones falli
 
 ## 4. Catálogo
 
-Una fila por evento, con la clasificación pedida (**obligatorio**: viene del BRIEFING; **oportunidad**: identificada en este plan), su categoría, el emisor, la entrega y los prerrequisitos. Cada evento tiene su ficha en §6, con la frase «Capturamos… porque necesitamos saber…, lo que nos permite decidir…», el punto exacto, la justificación de la entrega, la allowlist, la PII y un ejemplo. Los que no superaron la frase están en §8.1.
+Una fila por evento, con la clasificación pedida (**obligatorio**: viene del BRIEFING; **oportunidad**: identificada en este plan), su categoría, el emisor, la entrega y los prerrequisitos. Cada evento tiene su ficha en §6, con la frase «Capturamos… porque necesitamos saber…, lo que nos permite tomar la decisión de…», el punto exacto, la justificación de la entrega, la allowlist, la PII y un ejemplo. Los que no superaron la frase están en §8.1.
 
 <!-- CATALOG -->
 | # | `event_type` | Clasificación | Categoría | Emisor | Entrega | Prerrequisitos |
@@ -363,13 +363,15 @@ Todas las propiedades de este plan son **obligatorias**: un dato que no aplica v
 
 Los eventos que no son de inventario no los llevan.
 
+**Coherencia oficina–moneda (BRIEFING §6):** el esquema de cada evento de inventario la exige con un `oneOf` en `properties`. Las combinaciones válidas son `valencia` con `EUR`, `miami` con `USD` y, solo en los eventos donde la oficina puede faltar, `null` con `null`. Un `valencia` con `USD` no valida.
+
 ### 6.1 Obligatorios (BRIEFING)
 
 #### `inbound_order_created`
 
 - **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P1, P3, P4, P5, P6, P9
 - **Descripción:** Se ha registrado una orden de entrada (`AssetEntry`): llega un lote de material desde un proveedor.
-- **Frase:** Capturamos `inbound_order_created` porque necesitamos saber cuánto material se produce o compra, para qué programa y con qué coste, lo que nos permite decidir planificar la producción de material según la demanda esperada de matrículas (Elena).
+- **Frase:** Capturamos `inbound_order_created` porque necesitamos saber cuánto material se produce o compra, para qué programa y con qué coste, lo que nos permite tomar la decisión de planificar la producción de material según la demanda esperada de matrículas (Elena).
 - **Se dispara:** `POST /inventory/orders/inbound` responde 201, después del commit.
 - **Punto exacto:** `services/api/app/modules/inventory/service.py:202` (`create_inbound_order`, tras `session.commit()`), con los datos de la entrada y del activo que ya tiene la función; lo llama `router.py:121`.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -417,7 +419,7 @@ Los eventos que no son de inventario no los llevan.
 
 - **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P1, P4, P5, P6
 - **Descripción:** Se ha registrado una orden de salida (`AssetExit`): se entrega un kit o certificado, o se consume material.
-- **Frase:** Capturamos `outbound_order_created` porque necesitamos saber qué programas consumen más material y a qué ritmo, lo que nos permite decidir anticipar las necesidades de reposición antes de una ola grande de matrículas (Elena).
+- **Frase:** Capturamos `outbound_order_created` porque necesitamos saber qué programas consumen más material y a qué ritmo, lo que nos permite tomar la decisión de anticipar las necesidades de reposición antes de una ola grande de matrículas (Elena).
 - **Se dispara:** `POST /inventory/orders/outbound` responde 201, después del commit.
 - **Punto exacto:** `services/api/app/modules/inventory/service.py:215` (`create_outbound_order`, tras `session.commit()`); `stock_after` es `available − quantity`, calculado en `service.py:189` bajo `FOR UPDATE`.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -465,7 +467,7 @@ Los eventos que no son de inventario no los llevan.
 
 - **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P1, P2, P4, P5, P6
 - **Descripción:** Una salida ha hecho cruzar al stock de un activo su mínimo configurado: antes estaba en `min_stock` o por encima y después queda por debajo (`<`).
-- **Frase:** Capturamos `stock_threshold_triggered` porque necesitamos saber con qué frecuencia un programa se queda sin material disponible, lo que nos permite decidir ajustar el umbral mínimo o acelerar la reimpresión o reproducción de ese material.
+- **Frase:** Capturamos `stock_threshold_triggered` porque necesitamos saber con qué frecuencia un programa se queda sin material disponible, lo que nos permite tomar la decisión de ajustar el umbral mínimo o acelerar la reimpresión o reproducción de ese material.
 - **Se dispara:** En una salida confirmada con `stock_before >= min_stock` y `stock_after < min_stock` (D4). Por cruce: no se repite mientras siga por debajo y se rearma solo cuando una entrada lo devuelve a `min_stock` o más. Nunca en el alta de un activo (nace con 0). Con `min_stock = 0` no se dispara nunca.
 - **Punto exacto:** `services/api/app/modules/inventory/service.py:189-195` (`add_outbound_order` conoce `available` y `quantity` dentro de la transacción y bajo `FOR UPDATE`); se emite tras el commit de `service.py:215`, junto a `outbound_order_created`. **Nunca** desde `StockLevelBadge` del frontend.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -515,7 +517,7 @@ Los eventos que no son de inventario no los llevan.
 
 - **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P1, P4, P5, P6, P7
 - **Descripción:** Alguien ha intentado fijar el stock fuera de una orden y la API lo ha rechazado (definición operativa D5).
-- **Frase:** Capturamos `direct_stock_edit_rejected` porque necesitamos saber si el personal intenta saltarse el control de trazabilidad del material, lo que nos permite decidir reforzar la capacitación o los permisos en la oficina donde esto ocurre con más frecuencia (Patricia).
+- **Frase:** Capturamos `direct_stock_edit_rejected` porque necesitamos saber si el personal intenta saltarse el control de trazabilidad del material, lo que nos permite tomar la decisión de reforzar la capacitación o los permisos en la oficina donde esto ocurre con más frecuencia (Patricia).
 - **Se dispara:** Exactamente uno de estos dos casos (D5): (1) `PUT`, `PATCH` o `DELETE` sobre `/inventory/products` o `/inventory/products/{id}` → 405, con o sin token; (2) `POST` a `/inventory/products`, `/inventory/orders/inbound` o `/inventory/orders/outbound` con un error `extra_forbidden` en `loc = ["body", "current_stock"]` → 422 (solo con token válido: sin él la API responde antes 401 y no se emite). No cuentan un 404 de ruta inventada, una cantidad negativa ni el SQL directo en Supabase. Si se cumple el caso (2), **no** se emite además `inventory_validation_failed` para esa petición.
 - **Punto exacto:** Caso 1: `services/api/app/core/errors.py:207-217` (`_http_exception_handler`, status 405). Caso 2: `services/api/app/core/errors.py:230-233` (`_validation_exception_handler`). Detalle de la detección en P7.
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -567,7 +569,7 @@ Los eventos que no son de inventario no los llevan.
 
 - **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P1, P3, P4, P5, P6, P9, P10
 - **Descripción:** El coste unitario de una entrada se desvía de la referencia del mismo material y proveedor más que el umbral configurado, hacia arriba o hacia abajo.
-- **Frase:** Capturamos `kit_cost_variance_detected` porque necesitamos saber cuándo un proveedor de material sube (o baja) precios de forma anómala, lo que nos permite decidir alertar a Elena y a Laura para renegociar o buscar un proveedor alternativo.
+- **Frase:** Capturamos `kit_cost_variance_detected` porque necesitamos saber cuándo un proveedor de material sube (o baja) precios de forma anómala, lo que nos permite tomar la decisión de alertar a Elena y a Laura para renegociar o buscar un proveedor alternativo.
 - **Se dispara:** Tras una entrada confirmada con `unit_cost`: referencia = media de `unit_cost` de las `N` entradas anteriores (por defecto 3) del mismo par (activo, proveedor normalizado), sin contar la actual; `variance_pct = (unit_cost − referencia) / referencia × 100`, redondeado a 2 decimales. Se emite si `|variance_pct| > umbral` (por defecto 10). Con menos de `N` entradas anteriores con coste no se evalúa (D3).
 - **Punto exacto:** `services/api/app/modules/inventory/service.py:202`, en el mismo punto que `inbound_order_created` (una consulta más de las `N` anteriores del par, en la misma sesión).
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -627,7 +629,7 @@ Los eventos que no son de inventario no los llevan.
 
 - **Clasificación:** oportunidad · **Categoría:** inventario · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P1, P2, P4, P5, P6
 - **Descripción:** Se ha dado de alta un activo (`POST /inventory/products` → 201).
-- **Frase:** Capturamos `product_created` porque necesitamos saber cuántos ítems nuevos de material se crean por programa y oficina, y con qué mínimo, lo que nos permite decidir detectar catálogos que crecen sin control (duplicados de SKU entre oficinas) o activos creados sin programa, y pedir su clasificación.
+- **Frase:** Capturamos `product_created` porque necesitamos saber cuántos ítems nuevos de material se crean por programa y oficina, y con qué mínimo, lo que nos permite tomar la decisión de detectar catálogos que crecen sin control (duplicados de SKU entre oficinas) o activos creados sin programa, y pedir su clasificación.
 - **Se dispara:** `POST /inventory/products` responde 201.
 - **Punto exacto:** `services/api/app/modules/inventory/router.py:96-98` (tras `service.create_asset`, `service.py:112`).
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -671,7 +673,7 @@ Los eventos que no son de inventario no los llevan.
 
 - **Clasificación:** oportunidad · **Categoría:** inventario · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P1, P4, P5, P6
 - **Descripción:** Una orden de entrada válida en forma ha sido rechazada por una regla del negocio: activo inexistente (404) u oficina distinta de la del activo (400).
-- **Frase:** Capturamos `inbound_order_rejected` porque necesitamos saber qué activos y oficinas acumulan entradas rechazadas y por qué motivo, lo que nos permite decidir corregir el formulario o la formación del personal (p. ej. si `office_mismatch` es frecuente, revisar cómo se elige la oficina).
+- **Frase:** Capturamos `inbound_order_rejected` porque necesitamos saber qué activos y oficinas acumulan entradas rechazadas y por qué motivo, lo que nos permite tomar la decisión de corregir el formulario o la formación del personal (p. ej. si `office_mismatch` es frecuente, revisar cómo se elige la oficina).
 - **Se dispara:** `POST /inventory/orders/inbound` responde 404 `asset_not_found` o 400 `office_mismatch`.
 - **Punto exacto:** `services/api/app/modules/inventory/router.py:121`: la ruta captura el `ApiError` de `service.add_inbound_order` (`service.py:168` y `:170`), emite y lo relanza.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -713,7 +715,7 @@ Los eventos que no son de inventario no los llevan.
 
 - **Clasificación:** oportunidad · **Categoría:** inventario · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P1, P4, P5, P6
 - **Descripción:** Una salida válida en forma ha sido rechazada por una regla del negocio: activo inexistente, oficina distinta o stock insuficiente.
-- **Frase:** Capturamos `outbound_order_rejected` porque necesitamos saber cuántas entregas no se pueden hacer por falta de stock, de qué material y programa, lo que nos permite decidir reponer de inmediato el material que impide entregas reales (una persona está esperando su kit).
+- **Frase:** Capturamos `outbound_order_rejected` porque necesitamos saber cuántas entregas no se pueden hacer por falta de stock, de qué material y programa, lo que nos permite tomar la decisión de reponer de inmediato el material que impide entregas reales (una persona está esperando su kit).
 - **Se dispara:** `POST /inventory/orders/outbound` responde 404 `asset_not_found`, 400 `office_mismatch` o 400 `insufficient_stock`.
 - **Punto exacto:** `services/api/app/modules/inventory/router.py:144`: la ruta captura el `ApiError` de `service.add_outbound_order` (`service.py:186`, `:188` y `:190-191`), emite y lo relanza.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -759,7 +761,7 @@ Los eventos que no son de inventario no los llevan.
 
 - **Clasificación:** oportunidad · **Categoría:** inventario · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P1, P4, P5, P6
 - **Descripción:** Una escritura del inventario ha llegado a la API con el body mal formado (422).
-- **Frase:** Capturamos `inventory_validation_failed` porque necesitamos saber qué productos y qué campos acumulan más errores de validación (pregunta literal del tech lead), lo que nos permite decidir mejorar la validación en cliente o el texto de ayuda de los campos que más fallan, o detectar integraciones que llaman mal a la API.
+- **Frase:** Capturamos `inventory_validation_failed` porque necesitamos saber qué productos y qué campos acumulan más errores de validación (pregunta literal del tech lead), lo que nos permite tomar la decisión de mejorar la validación en cliente o el texto de ayuda de los campos que más fallan, o detectar integraciones que llaman mal a la API.
 - **Se dispara:** 422 en `POST /inventory/products`, `/inventory/orders/inbound` u `/inventory/orders/outbound`, salvo que sea el caso 2 de `direct_stock_edit_rejected`.
 - **Punto exacto:** `services/api/app/core/errors.py:230-233` (`_validation_exception_handler`), filtrando por la plantilla de la ruta.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -813,7 +815,7 @@ Los eventos que no son de inventario no los llevan.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Login correcto: la API ha emitido un JWT (y con él un `sid` nuevo).
-- **Frase:** Capturamos `user_logged_in` porque necesitamos saber cuántas sesiones abren al día los operadores, de qué rol y a qué horas, lo que nos permite decidir dimensionar el soporte y planificar ventanas de mantenimiento fuera de las horas de uso.
+- **Frase:** Capturamos `user_logged_in` porque necesitamos saber cuántas sesiones abren al día los operadores, de qué rol y a qué horas, lo que nos permite tomar la decisión de dimensionar el soporte y planificar ventanas de mantenimiento fuera de las horas de uso.
 - **Se dispara:** `POST /auth/login` responde 200.
 - **Punto exacto:** `services/api/app/routes/auth.py:46` (antes del `return Token(...)`); `userId` y `sessionId` son el `sub` y el `sid` del token recién creado.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -845,7 +847,7 @@ Los eventos que no son de inventario no los llevan.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P5, P6
 - **Descripción:** Login rechazado (401 `invalid_credentials`).
-- **Frase:** Capturamos `login_failed` porque necesitamos saber cuántos intentos de login fallidos hay por día (pregunta literal del tech lead) y si llegan en ráfagas, lo que nos permite decidir añadir bloqueo por intentos o rate limiting (hoy no existe, SPECS §22) y detectar ataques de credenciales a tiempo.
+- **Frase:** Capturamos `login_failed` porque necesitamos saber cuántos intentos de login fallidos hay por día (pregunta literal del tech lead) y si llegan en ráfagas, lo que nos permite tomar la decisión de añadir bloqueo por intentos o rate limiting (hoy no existe, SPECS §22) y detectar ataques de credenciales a tiempo.
 - **Se dispara:** `POST /auth/login` responde 401.
 - **Punto exacto:** `services/api/app/routes/auth.py:42` (email mal formado) y `:45` (credenciales incorrectas).
 - **Identidad:** `userId` y `sessionId` siempre `null` (actor anónimo). `requestId` siempre presente.
@@ -877,7 +879,7 @@ Los eventos que no son de inventario no los llevan.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P5, P6
 - **Descripción:** Se ha creado una cuenta con el registro público (`POST /users` → 201).
-- **Frase:** Capturamos `user_registered` porque necesitamos saber cuántas cuentas se crean con un registro público que no exige aprobación, lo que nos permite decidir mantener el registro abierto o pasar a altas aprobadas por un admin.
+- **Frase:** Capturamos `user_registered` porque necesitamos saber cuántas cuentas se crean con un registro público que no exige aprobación, lo que nos permite tomar la decisión de mantener el registro abierto o pasar a altas aprobadas por un admin.
 - **Se dispara:** `POST /users` responde 201.
 - **Punto exacto:** `services/api/app/routes/users.py:21-30` (tras `service.create_user`).
 - **Identidad:** `userId` y `sessionId` siempre `null` (actor anónimo). `requestId` siempre presente.
@@ -903,7 +905,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P5, P6
 - **Descripción:** El registro público ha fallado: email ya registrado (409) o datos no válidos (422).
-- **Frase:** Capturamos `registration_failed` porque necesitamos saber si la gente se intenta registrar con emails que ya existen o tropieza con las reglas de contraseña, lo que nos permite decidir mejorar los textos del formulario o enlazar a la recuperación de contraseña desde el registro.
+- **Frase:** Capturamos `registration_failed` porque necesitamos saber si la gente se intenta registrar con emails que ya existen o tropieza con las reglas de contraseña, lo que nos permite tomar la decisión de mejorar los textos del formulario o enlazar a la recuperación de contraseña desde el registro.
 - **Se dispara:** `POST /users` responde 409 `email_already_registered` o 422.
 - **Punto exacto:** `services/api/app/core/errors.py:207-217` (409) y `:230-233` (422), filtrando `POST /users`.
 - **Identidad:** `userId` y `sessionId` siempre `null` (actor anónimo). `requestId` siempre presente.
@@ -937,7 +939,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Una petición ha llegado con un token de firma válida pero caducado: la sesión ha expirado.
-- **Frase:** Capturamos `session_expired` porque necesitamos saber si las sesiones caducan en mitad del trabajo (la vigencia de `ACCESS_TOKEN_EXPIRE_MINUTES` es corta para el uso real), lo que nos permite decidir ajustar la vigencia del token o priorizar los refresh tokens (mejora futura de SPECS §22).
+- **Frase:** Capturamos `session_expired` porque necesitamos saber si las sesiones caducan en mitad del trabajo (la vigencia de `ACCESS_TOKEN_EXPIRE_MINUTES` es corta para el uso real), lo que nos permite tomar la decisión de ajustar la vigencia del token o priorizar los refresh tokens (mejora futura de SPECS §22).
 - **Se dispara:** `get_current_user` rechaza el token y, al decodificarlo de nuevo sin comprobar `exp` (pero sí la firma), resulta válido y caducado. Una vez por `sid` (§7.2).
 - **Punto exacto:** `services/api/app/auth/dependencies.py:56-58` (rechazo) + `services/api/app/auth/security.py:84` (`decode_access_token`; P4 añade la decodificación sin `exp` para clasificar el motivo). El cliente reacciona en `uis/backoffice/lib/api-client.ts:253-256`, que no emite nada (lo hace la API).
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -971,7 +973,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P5, P6
 - **Descripción:** Una petición protegida ha traído un token que no es una sesión caducada: mal formado, con otra firma, sin claims, o de un usuario borrado o inactivo.
-- **Frase:** Capturamos `auth_token_rejected` porque necesitamos saber si hay tokens manipulados o firmados con otra clave circulando, o usuarios desactivados que siguen intentando entrar, lo que nos permite decidir rotar `JWT_SECRET_KEY`, investigar el origen o confirmar la baja de un usuario.
+- **Frase:** Capturamos `auth_token_rejected` porque necesitamos saber si hay tokens manipulados o firmados con otra clave circulando, o usuarios desactivados que siguen intentando entrar, lo que nos permite tomar la decisión de rotar `JWT_SECRET_KEY`, investigar el origen o confirmar la baja de un usuario.
 - **Se dispara:** `get_current_user` responde 401 con un `Authorization: Bearer` presente y el motivo no es la caducidad. Sin cabecera no se emite (ver exclusiones).
 - **Punto exacto:** `services/api/app/auth/dependencies.py:56-64`.
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -1005,7 +1007,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** frontend · **Entrega:** batch · **Prerrequisitos:** P4, P8
 - **Descripción:** El usuario ha cerrado la sesión desde el backoffice.
-- **Frase:** Capturamos `user_logged_out` porque necesitamos saber si los operadores cierran sesión o dejan las sesiones abiertas en equipos compartidos de la oficina, lo que nos permite decidir acortar la vigencia del token o añadir cierre por inactividad.
+- **Frase:** Capturamos `user_logged_out` porque necesitamos saber si los operadores cierran sesión o dejan las sesiones abiertas en equipos compartidos de la oficina, lo que nos permite tomar la decisión de acortar la vigencia del token o añadir cierre por inactividad.
 - **Se dispara:** Clic en «Cerrar sesión». Se envía **antes** de borrar el token (con `keepalive`), para que el colector lo atribuya.
 - **Punto exacto:** `uis/backoffice/components/auth/account-nav.tsx:46` (`header_button`) y `uis/backoffice/components/auth/auth-guard.tsx:45` (`session_error_screen`), antes de `session.logout()` (`uis/backoffice/hooks/use-auth-session.ts:210`).
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -1035,7 +1037,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P5, P6
 - **Descripción:** Alguien ha pedido un enlace de restablecimiento (`POST /auth/forgot-password`, siempre 200).
-- **Frase:** Capturamos `password_reset_requested` porque necesitamos saber cuánta gente olvida la contraseña y si se abusa de un endpoint sin rate limiting (SPECS §27), lo que nos permite decidir añadir rate limiting o revisar la política de contraseñas.
+- **Frase:** Capturamos `password_reset_requested` porque necesitamos saber cuánta gente olvida la contraseña y si se abusa de un endpoint sin rate limiting (SPECS §27), lo que nos permite tomar la decisión de añadir rate limiting o revisar la política de contraseñas.
 - **Se dispara:** `UserService.request_password_reset` registra la auditoría.
 - **Punto exacto:** `services/api/app/auth/service.py:144` (email desconocido) y `:149` (cuenta existente), junto al `record_password_event` de AUTH-03.
 - **Identidad:** `userId` y `sessionId` siempre `null` (actor anónimo). `requestId` siempre presente.
@@ -1065,7 +1067,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P5, P6
 - **Descripción:** Un enlace de restablecimiento se ha usado con éxito.
-- **Frase:** Capturamos `password_reset_completed` porque necesitamos saber qué parte de los enlaces pedidos se completa (embudo pedido → completado), lo que nos permite decidir revisar el email (texto, entrega con Resend) o la vigencia si el embudo cae.
+- **Frase:** Capturamos `password_reset_completed` porque necesitamos saber qué parte de los enlaces pedidos se completa (embudo pedido → completado), lo que nos permite tomar la decisión de revisar el email (texto, entrega con Resend) o la vigencia si el embudo cae.
 - **Se dispara:** `UserService.reset_password` termina bien.
 - **Punto exacto:** `services/api/app/auth/service.py:158`.
 - **Identidad:** `sessionId` siempre `null`; `userId` es la cuenta afectada si se conoce, si no `null`. `requestId` siempre presente.
@@ -1091,7 +1093,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P5, P6
 - **Descripción:** Un enlace de restablecimiento no se ha podido usar (400 `invalid_reset_token`).
-- **Frase:** Capturamos `password_reset_rejected` porque necesitamos saber si los enlaces caducan antes de que la gente los use, o si se reutilizan, lo que nos permite decidir ajustar `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` dentro de 15–60 o mejorar el texto del email.
+- **Frase:** Capturamos `password_reset_rejected` porque necesitamos saber si los enlaces caducan antes de que la gente los use, o si se reutilizan, lo que nos permite tomar la decisión de ajustar `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` dentro de 15–60 o mejorar el texto del email.
 - **Se dispara:** `UserService.reset_password` rechaza el token.
 - **Punto exacto:** `services/api/app/auth/service.py:156` (el `reason` de la auditoría).
 - **Identidad:** `sessionId` siempre `null`; `userId` es la cuenta afectada si se conoce, si no `null`. `requestId` siempre presente.
@@ -1121,7 +1123,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Un usuario con sesión ha cambiado su contraseña.
-- **Frase:** Capturamos `password_changed` porque necesitamos saber con qué frecuencia se cambian las contraseñas por iniciativa propia, lo que nos permite decidir decidir si hace falta una política de rotación.
+- **Frase:** Capturamos `password_changed` porque necesitamos saber con qué frecuencia se cambian las contraseñas por iniciativa propia, lo que nos permite tomar la decisión de implantar o no una política de rotación de contraseñas.
 - **Se dispara:** `POST /auth/change-password` responde 200.
 - **Punto exacto:** `services/api/app/auth/service.py:167`.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -1147,7 +1149,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Un cambio de contraseña con sesión ha fallado porque la contraseña actual no coincide (400 `incorrect_password`).
-- **Frase:** Capturamos `password_change_rejected` porque necesitamos saber si alguien con una sesión ajena (equipo compartido) intenta cambiar la contraseña, lo que nos permite decidir avisar al usuario o forzar el cierre de sesión tras varios intentos.
+- **Frase:** Capturamos `password_change_rejected` porque necesitamos saber si alguien con una sesión ajena (equipo compartido) intenta cambiar la contraseña, lo que nos permite tomar la decisión de avisar al usuario o forzar el cierre de sesión tras varios intentos.
 - **Se dispara:** `UserService.change_password` rechaza la contraseña actual.
 - **Punto exacto:** `services/api/app/auth/service.py:163`.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -1177,7 +1179,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P6
 - **Descripción:** El email de restablecimiento no se ha podido entregar (tarea en segundo plano, después de responder).
-- **Frase:** Capturamos `password_reset_email_failed` porque necesitamos saber si la gente se queda sin poder recuperar el acceso porque Resend falla o no está configurado, lo que nos permite decidir revisar la clave o el dominio de Resend en el momento.
+- **Frase:** Capturamos `password_reset_email_failed` porque necesitamos saber si la gente se queda sin poder recuperar el acceso porque Resend falla o no está configurado, lo que nos permite tomar la decisión de revisar la clave o el dominio de Resend en el momento.
 - **Se dispara:** `log_email_delivery_failure` se ejecuta.
 - **Punto exacto:** `services/api/app/core/errors.py:277-284` (lo llama la tarea de `services/api/app/routes/auth.py:76-89`).
 - **Identidad:** `userId` y `sessionId` siempre `null` (evento del sistema, sin actor). `requestId` siempre `null` (no hay petición).
@@ -1207,7 +1209,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Un usuario autenticado ha pedido algo para lo que no tiene permiso (403 `forbidden`).
-- **Frase:** Capturamos `access_denied` porque necesitamos saber si los roles asignados no encajan con lo que la gente necesita hacer, o si alguien sondea recursos ajenos, lo que nos permite decidir ajustar la asignación de roles o investigar un patrón de sondeo.
+- **Frase:** Capturamos `access_denied` porque necesitamos saber si los roles asignados no encajan con lo que la gente necesita hacer, o si alguien sondea recursos ajenos, lo que nos permite tomar la decisión de ajustar la asignación de roles o investigar un patrón de sondeo.
 - **Se dispara:** Cualquier 403 de las rutas de usuarios.
 - **Punto exacto:** `services/api/app/auth/dependencies.py:73` (`admin_required`) y `:87` (`not_owner`); `services/api/app/routes/users.py:54` (`role_change_forbidden`) y `:56` (`password_change_forbidden`).
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -1241,7 +1243,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Un admin ha cambiado el rol de un usuario (`PUT /users/{id}` con `role`).
-- **Frase:** Capturamos `user_role_changed` porque necesitamos saber quién gana privilegios de admin y cuándo, lo que nos permite decidir revertir de inmediato una escalada de privilegios no autorizada.
+- **Frase:** Capturamos `user_role_changed` porque necesitamos saber quién gana privilegios de admin y cuándo, lo que nos permite tomar la decisión de revertir de inmediato una escalada de privilegios no autorizada.
 - **Se dispara:** `PUT /users/{user_id}` responde 200 y el rol ha cambiado.
 - **Punto exacto:** `services/api/app/routes/users.py:57` (`service.update_user`; el rol anterior se lee antes con `service.get_user_by_id`).
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -1275,7 +1277,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** autenticación · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Se ha borrado un usuario (y su perfil).
-- **Frase:** Capturamos `user_deleted` porque necesitamos saber cuántas cuentas se borran y si las borra el propio usuario o un admin, lo que nos permite decidir decidir si el borrado debe pasar a desactivación (`is_active`) para conservar la trazabilidad de las órdenes.
+- **Frase:** Capturamos `user_deleted` porque necesitamos saber cuántas cuentas se borran y si las borra el propio usuario o un admin, lo que nos permite tomar la decisión de sustituir el borrado por la desactivación (`is_active`) para conservar la trazabilidad de las órdenes.
 - **Se dispara:** `DELETE /users/{user_id}` responde 204.
 - **Punto exacto:** `services/api/app/routes/users.py:71` (tras `service.delete_user`).
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -1309,7 +1311,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** navegación · **Emisor:** frontend · **Entrega:** batch · **Prerrequisitos:** P4, P8
 - **Descripción:** El usuario ha permanecido al menos 1 s en una página del backoffice.
-- **Frase:** Capturamos `page_viewed` porque necesitamos saber qué secciones visitan más los operadores (pregunta literal del tech lead) y en qué orden, lo que nos permite decidir priorizar las mejoras y la formación en las secciones más usadas, y retirar o rediseñar las que nadie visita.
+- **Frase:** Capturamos `page_viewed` porque necesitamos saber qué secciones visitan más los operadores (pregunta literal del tech lead) y en qué orden, lo que nos permite tomar la decisión de priorizar las mejoras y la formación en las secciones más usadas, y retirar o rediseñar las que nadie visita.
 - **Se dispara:** Cambio de `usePathname()` que se mantiene 1 s (descarta redirecciones como `/inventory` → `/inventory/products` o el guard → `/login`).
 - **Punto exacto:** Componente nuevo `components/telemetry/page-view-tracker.tsx` en `uis/backoffice/app/layout.tsx`, con `usePathname` (patrón de `uis/backoffice/components/ui/nav-link.tsx:33-34`).
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -1343,7 +1345,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** navegación · **Emisor:** frontend · **Entrega:** batch · **Prerrequisitos:** P4, P8
 - **Descripción:** Se ha mostrado la página 404 del backoffice.
-- **Frase:** Capturamos `page_not_found_viewed` porque necesitamos saber si hay enlaces internos rotos (la página anterior era del propio backoffice), lo que nos permite decidir corregir el enlace roto de la página de origen.
+- **Frase:** Capturamos `page_not_found_viewed` porque necesitamos saber si hay enlaces internos rotos (la página anterior era del propio backoffice), lo que nos permite tomar la decisión de corregir el enlace roto de la página de origen.
 - **Se dispara:** Montaje de `not-found.tsx`.
 - **Punto exacto:** `uis/backoffice/app/not-found.tsx:9`.
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -1375,7 +1377,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** flujos · **Emisor:** frontend · **Entrega:** batch · **Prerrequisitos:** P4, P8
 - **Descripción:** El usuario ha empezado a rellenar un formulario (primer cambio de un campo).
-- **Frase:** Capturamos `form_started` porque necesitamos saber cuántas veces se empieza cada flujo (base del embudo de abandono), lo que nos permite decidir calcular la tasa de abandono de cada formulario y priorizar el que más se abandona.
+- **Frase:** Capturamos `form_started` porque necesitamos saber cuántas veces se empieza cada flujo (base del embudo de abandono), lo que nos permite tomar la decisión de priorizar el rediseño del formulario que más se abandona (la tasa sale de comparar `form_started` con `form_submitted` correctos).
 - **Se dispara:** Primer `onChange` de cualquier campo desde el montaje o desde el último envío correcto.
 - **Punto exacto:** Hook nuevo `hooks/use-form-telemetry.ts`, usado por las vistas de formulario (p. ej. `uis/backoffice/components/inventory/inbound-form.tsx:63` y `outbound-form.tsx:116`).
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -1405,7 +1407,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** flujos · **Emisor:** frontend · **Entrega:** batch · **Prerrequisitos:** P4, P8
 - **Descripción:** Un envío de formulario ha terminado (con éxito o no).
-- **Frase:** Capturamos `form_submitted` porque necesitamos saber cuánto se tarda en completar cada flujo y cuántos intentos hacen falta, lo que nos permite decidir simplificar los formularios lentos o con muchos reintentos.
+- **Frase:** Capturamos `form_submitted` porque necesitamos saber cuánto se tarda en completar cada flujo y cuántos intentos hacen falta, lo que nos permite tomar la decisión de simplificar los formularios lentos o con muchos reintentos.
 - **Se dispara:** Fin de un envío. En el inventario: `uis/backoffice/hooks/use-inbound-form.ts:107` / `:110` y `uis/backoffice/hooks/use-outbound-form.ts:210` / `:215`.
 - **Punto exacto:** Los mismos hooks, al despachar `submit_succeeded` o `submit_failed`; `requestId` es el `X-Request-ID` de la petición del envío.
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -1441,7 +1443,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** flujos · **Emisor:** frontend · **Entrega:** batch · **Prerrequisitos:** P4, P8
 - **Descripción:** Un formulario empezado se ha dejado sin un envío correcto.
-- **Frase:** Capturamos `form_abandoned` porque necesitamos saber si hay flujos que se abandonan a la mitad (pregunta literal del tech lead) y en qué campo, lo que nos permite decidir rediseñar el paso o el campo donde se abandona.
+- **Frase:** Capturamos `form_abandoned` porque necesitamos saber si hay flujos que se abandonan a la mitad (pregunta literal del tech lead) y en qué campo, lo que nos permite tomar la decisión de rediseñar el paso o el campo donde se abandona.
 - **Se dispara:** Desmontaje de la vista o `pagehide` con el formulario empezado y sin `success` desde `form_started`.
 - **Punto exacto:** El mismo `hooks/use-form-telemetry.ts`; en `pagehide` se envía con `keepalive`.
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -1479,7 +1481,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** flujos · **Emisor:** frontend · **Entrega:** batch · **Prerrequisitos:** P4, P8
 - **Descripción:** La validación en cliente ha bloqueado un envío (sin petición a la API).
-- **Frase:** Capturamos `form_validation_failed` porque necesitamos saber qué campos se rellenan mal antes de llegar a la API, lo que nos permite decidir mejorar los textos de ayuda o los valores por defecto de esos campos.
+- **Frase:** Capturamos `form_validation_failed` porque necesitamos saber qué campos se rellenan mal antes de llegar a la API, lo que nos permite tomar la decisión de mejorar los textos de ayuda o los valores por defecto de esos campos.
 - **Se dispara:** El validador del servicio devuelve errores.
 - **Punto exacto:** `uis/backoffice/services/inventory.service.ts:289` y `:305`, `uis/backoffice/services/suppliers.service.ts:210`, `uis/backoffice/services/incident-manager.service.ts:270` y los `validate*Form` de `uis/backoffice/services/auth.service.ts:107-135`.
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -1516,7 +1518,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** errores · **Emisor:** frontend · **Entrega:** stream · **Prerrequisitos:** P4, P8
 - **Descripción:** Un límite de error de Next ha capturado un error de render en el backoffice.
-- **Frase:** Capturamos `frontend_error_captured` porque necesitamos saber qué páginas fallan en el navegador y si un despliegue ha introducido un error, lo que nos permite decidir revertir o corregir el despliegue que rompe una página.
+- **Frase:** Capturamos `frontend_error_captured` porque necesitamos saber qué páginas fallan en el navegador y si un despliegue ha introducido un error, lo que nos permite tomar la decisión de revertir o corregir el despliegue que rompe una página.
 - **Se dispara:** Montaje de `error.tsx` o `global-error.tsx`.
 - **Punto exacto:** `uis/backoffice/app/error.tsx:23` (`route`) y `uis/backoffice/app/global-error.tsx:25` (`global`), en un `useEffect`. **El error no se lee** (regla de `uis/backoffice/CLAUDE.md`).
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -1550,7 +1552,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** errores · **Emisor:** frontend · **Entrega:** stream · **Prerrequisitos:** P4, P5, P8
 - **Descripción:** Una petición del backoffice no ha obtenido respuesta de la API: red, timeout o configuración.
-- **Frase:** Capturamos `client_request_failed` porque necesitamos saber si la API es inalcanzable o lenta desde el navegador de los operadores (la API no puede contar sus propias caídas), lo que nos permite decidir investigar la red, el contenedor o el timeout del cliente.
+- **Frase:** Capturamos `client_request_failed` porque necesitamos saber si la API es inalcanzable o lenta desde el navegador de los operadores (la API no puede contar sus propias caídas), lo que nos permite tomar la decisión de investigar la red, el contenedor o el timeout del cliente.
 - **Se dispara:** `send` lanza `ApiNetworkError`, `ApiTimeoutError` o `ApiConfigError`.
 - **Punto exacto:** `uis/backoffice/lib/api-client.ts:227` (`ApiConfigError`) y `:247-251` (timeout y red).
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -1588,7 +1590,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** errores · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P5, P6
 - **Descripción:** La API ha respondido 500 `internal_error` por una excepción no prevista.
-- **Frase:** Capturamos `server_error_returned` porque necesitamos saber qué rutas tienen errores no controlados y desde cuándo, lo que nos permite decidir corregir el error o revertir el despliegue.
+- **Frase:** Capturamos `server_error_returned` porque necesitamos saber qué rutas tienen errores no controlados y desde cuándo, lo que nos permite tomar la decisión de corregir el error o revertir el despliegue.
 - **Se dispara:** `InternalErrorMiddleware` captura una excepción.
 - **Punto exacto:** `services/api/app/core/errors.py:271` (junto al `logger.error` actual).
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -1626,7 +1628,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** salud técnica · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P5, P6
 - **Descripción:** Un almacén no responde y la API ha devuelto 503 `storage_unavailable`.
-- **Frase:** Capturamos `storage_unavailable_detected` porque necesitamos saber cuándo y cuánto tiempo están caídos Supabase o los archivos TinyDB, lo que nos permite decidir actuar sobre el almacén (restaurar el archivo, revisar Supabase) y medir su disponibilidad real.
+- **Frase:** Capturamos `storage_unavailable_detected` porque necesitamos saber cuándo y cuánto tiempo están caídos Supabase o los archivos TinyDB, lo que nos permite tomar la decisión de actuar sobre el almacén (restaurar el archivo, revisar Supabase) y medir su disponibilidad real.
 - **Se dispara:** `log_storage_failure` se ejecuta.
 - **Punto exacto:** `services/api/app/core/errors.py:287-294` (TinyDB, desde `GuardedJSONStorage`) y `:220-227` (PostgreSQL del inventario).
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -1662,7 +1664,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** salud técnica · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P6
 - **Descripción:** La API no ha podido arrancar porque la base del inventario no respondía.
-- **Frase:** Capturamos `api_startup_failed` porque necesitamos saber cuántos arranques fallan por la base (Supabase pausado, credenciales), lo que nos permite decidir revisar la configuración o el plan de Supabase.
+- **Frase:** Capturamos `api_startup_failed` porque necesitamos saber cuántos arranques fallan por la base (Supabase pausado, credenciales), lo que nos permite tomar la decisión de revisar la configuración o el plan de Supabase.
 - **Se dispara:** Se lanza `InventoryStartupError` en el lifespan.
 - **Punto exacto:** `services/api/app/modules/inventory/database.py:44` (la clase) y su `raise` en el lifespan; se emite antes de relanzar.
 - **Identidad:** `userId` y `sessionId` siempre `null` (evento del sistema, sin actor). `requestId` siempre `null` (no hay petición).
@@ -1694,7 +1696,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** salud técnica · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P6
 - **Descripción:** Agregado de 60 s de la caché de lecturas de un espacio: aciertos, fallos e invalidaciones.
-- **Frase:** Capturamos `cache_lookup_recorded` porque necesitamos saber si los TTL de la caché (60 s inventario, 30 s incidencias) dan una tasa de acierto que compense, lo que nos permite decidir ajustar los TTL o retirar la caché de un espacio (Parte G de SPECS).
+- **Frase:** Capturamos `cache_lookup_recorded` porque necesitamos saber si los TTL de la caché (60 s inventario, 30 s incidencias) dan una tasa de acierto que compense, lo que nos permite tomar la decisión de ajustar los TTL o retirar la caché de un espacio (Parte G de SPECS).
 - **Se dispara:** Cierre de cada ventana de 60 s con alguna operación en el espacio.
 - **Punto exacto:** `services/api/app/core/cache.py:70` (acierto), `:72` (fallo: se ejecuta `compute`) y `:80` (`invalidate`), contados en memoria por P6.
 - **Identidad:** `userId` y `sessionId` siempre `null` (evento del sistema, sin actor). `requestId` siempre `null` (no hay petición).
@@ -1734,7 +1736,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** rendimiento · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P6
 - **Descripción:** Agregado de 60 s de la duración de las peticiones de una ruta, método y clase de estado.
-- **Frase:** Capturamos `api_latency_recorded` porque necesitamos saber qué rutas son lentas y cuándo (p. ej. el inventario en Supabase, ~400 ms sin caché), lo que nos permite decidir priorizar optimizaciones (paginación, pool de Supabase: D10 del ticket de caching).
+- **Frase:** Capturamos `api_latency_recorded` porque necesitamos saber qué rutas son lentas y cuándo (p. ej. el inventario en Supabase, ~400 ms sin caché), lo que nos permite tomar la decisión de priorizar optimizaciones (paginación, pool de Supabase: D10 del ticket de caching).
 - **Se dispara:** Cierre de cada ventana de 60 s, una por (método, plantilla, clase de estado) con peticiones.
 - **Punto exacto:** `services/api/app/core/timing.py:38-45`: la duración ya medida se añade al agregador de P6 en vez de (o además de) la línea de log. Excluye `GET /health`, como hoy.
 - **Identidad:** `userId` y `sessionId` siempre `null` (evento del sistema, sin actor). `requestId` siempre `null` (no hay petición).
@@ -1778,7 +1780,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** rendimiento · **Emisor:** frontend · **Entrega:** batch · **Prerrequisitos:** P4, P8
 - **Descripción:** Una página de datos del backoffice ha llegado a su primer estado final (datos, vacío o error).
-- **Frase:** Capturamos `page_load_recorded` porque necesitamos saber cuánto esperan los operadores a ver los datos de cada sección, lo que nos permite decidir decidir dónde invertir en rendimiento del frontend o de la API.
+- **Frase:** Capturamos `page_load_recorded` porque necesitamos saber cuánto esperan los operadores a ver los datos de cada sección, lo que nos permite tomar la decisión de invertir en el rendimiento del frontend o de la API allí donde más esperan los operadores.
 - **Se dispara:** Primer estado final del hook principal de la página tras montarla.
 - **Punto exacto:** `uis/backoffice/hooks/use-inventory-assets.ts:99` y `uis/backoffice/hooks/use-inventory-orders.ts:99` (`load`), `hooks/use-supplier-directory.ts` y `hooks/use-incident-board.ts` (su primera carga).
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -1814,7 +1816,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** proveedores · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Se ha dado de alta un proveedor en el directorio.
-- **Frase:** Capturamos `supplier_created` porque necesitamos saber qué tipos de servicio externo contrata Nexova y en qué país, lo que nos permite decidir revisar la concentración de proveedores por categoría (Patricia).
+- **Frase:** Capturamos `supplier_created` porque necesitamos saber qué tipos de servicio externo contrata Nexova y en qué país, lo que nos permite tomar la decisión de revisar la concentración de proveedores por categoría (Patricia).
 - **Se dispara:** `POST /suppliers` responde 201.
 - **Punto exacto:** `services/api/app/routes/suppliers.py:33-35`.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -1854,7 +1856,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** proveedores · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Ha cambiado la tarifa mensual de un proveedor.
-- **Frase:** Capturamos `supplier_rate_updated` porque necesitamos saber cuánto y con qué frecuencia suben las tarifas de los servicios contratados, lo que nos permite decidir renegociar o comparar alternativas antes de la renovación (Patricia).
+- **Frase:** Capturamos `supplier_rate_updated` porque necesitamos saber cuánto y con qué frecuencia suben las tarifas de los servicios contratados, lo que nos permite tomar la decisión de renegociar o comparar alternativas antes de la renovación (Patricia).
 - **Se dispara:** `PATCH /suppliers/{supplier_id}/rate` responde 200.
 - **Punto exacto:** `services/api/app/routes/suppliers.py:53-57`; la tarifa anterior se lee con `repository.get` antes de `update_rate`.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -1890,7 +1892,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** proveedores · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Un proveedor se ha activado o suspendido.
-- **Frase:** Capturamos `supplier_status_changed` porque necesitamos saber cuántos proveedores se suspenden y si vuelven a activarse, lo que nos permite decidir depurar el directorio o revisar la relación con los proveedores problemáticos.
+- **Frase:** Capturamos `supplier_status_changed` porque necesitamos saber cuántos proveedores se suspenden y si vuelven a activarse, lo que nos permite tomar la decisión de depurar el directorio o revisar la relación con los proveedores problemáticos.
 - **Se dispara:** `PATCH /suppliers/{supplier_id}/status` responde 200.
 - **Punto exacto:** `services/api/app/routes/suppliers.py:59-62`; el estado anterior se lee antes con `repository.get`.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -1924,7 +1926,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** proveedores · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Se ha borrado un proveedor por la API (la interfaz no lo permite: solo suspende).
-- **Frase:** Capturamos `supplier_deleted` porque necesitamos saber si alguien se salta la «suspensión controlada» borrando proveedores directamente por la API, lo que nos permite decidir restringir `DELETE /suppliers/{id}` a admins o retirarlo.
+- **Frase:** Capturamos `supplier_deleted` porque necesitamos saber si alguien se salta la «suspensión controlada» borrando proveedores directamente por la API, lo que nos permite tomar la decisión de restringir `DELETE /suppliers/{id}` a admins o retirarlo.
 - **Se dispara:** `DELETE /suppliers/{supplier_id}` responde 204.
 - **Punto exacto:** `services/api/app/routes/suppliers.py:72-76` (tras `repository.delete`; el estado se lee antes con `repository.get`).
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -1956,7 +1958,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** proveedores · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Se ha consultado el directorio con al menos un filtro.
-- **Frase:** Capturamos `supplier_list_filtered` porque necesitamos saber qué filtros usa Patricia y si las búsquedas devuelven listas vacías, lo que nos permite decidir añadir filtros o vistas predefinidas, o completar el directorio donde las búsquedas no encuentran nada.
+- **Frase:** Capturamos `supplier_list_filtered` porque necesitamos saber qué filtros usa Patricia y si las búsquedas devuelven listas vacías, lo que nos permite tomar la decisión de añadir filtros o vistas predefinidas, o completar el directorio donde las búsquedas no encuentran nada.
 - **Se dispara:** `GET /suppliers` con `country` o `category`.
 - **Punto exacto:** `services/api/app/routes/suppliers.py:38-45`.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -1992,7 +1994,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** gestor de incidencias · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Se ha registrado una incidencia en el gestor centralizado.
-- **Frase:** Capturamos `incident_created` porque necesitamos saber qué tipo de incidencias se registran, de qué origen y en qué sede, lo que nos permite decidir asignar recursos de soporte a la sede o categoría que se dispara (Roberto, Sergio).
+- **Frase:** Capturamos `incident_created` porque necesitamos saber qué tipo de incidencias se registran, de qué origen y en qué sede, lo que nos permite tomar la decisión de asignar recursos de soporte a la sede o categoría que se dispara (Roberto, Sergio).
 - **Se dispara:** `POST /api/incidents` responde 201.
 - **Punto exacto:** `services/api/app/modules/incident_manager/router.py:207-226` (tras crear y antes de devolver).
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -2028,7 +2030,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** gestor de incidencias · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Una incidencia ha cambiado de estado.
-- **Frase:** Capturamos `incident_status_changed` porque necesitamos saber cuánto se tarda en resolver o descartar las incidencias, por categoría y sede (hoy fuera del alcance de la API, SPECS §33), lo que nos permite decidir fijar objetivos de resolución y reforzar las sedes o categorías más lentas.
+- **Frase:** Capturamos `incident_status_changed` porque necesitamos saber cuánto se tarda en resolver o descartar las incidencias, por categoría y sede (hoy fuera del alcance de la API, SPECS §33), lo que nos permite tomar la decisión de fijar objetivos de resolución y reforzar las sedes o categorías más lentas.
 - **Se dispara:** `PATCH /api/incidents/{incident_id}/status` responde 200.
 - **Punto exacto:** `services/api/app/modules/incident_manager/router.py:284-302`; el estado anterior lo conoce `IncidentRepository.change_status` (comprueba con él la transición) y se devuelve junto a la incidencia.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -2068,7 +2070,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** gestor de incidencias · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Se ha pedido una transición de estado no permitida (400 `invalid_status_transition`).
-- **Frase:** Capturamos `incident_status_change_rejected` porque necesitamos saber si hay pantallas desactualizadas o integraciones que piden transiciones imposibles (la interfaz solo ofrece las válidas), lo que nos permite decidir recargar la vista tras cada cambio o corregir la integración.
+- **Frase:** Capturamos `incident_status_change_rejected` porque necesitamos saber si hay pantallas desactualizadas o integraciones que piden transiciones imposibles (la interfaz solo ofrece las válidas), lo que nos permite tomar la decisión de recargar la vista tras cada cambio o corregir la integración.
 - **Se dispara:** `check_transition` rechaza el cambio.
 - **Punto exacto:** `services/api/app/modules/incident_manager/router.py:296-297`.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -2102,7 +2104,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** gestor de incidencias · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** El gestor de incidencias ha rechazado un alta, un filtro o un cambio de estado por validación (400 `validation_error`).
-- **Frase:** Capturamos `incident_validation_failed` porque necesitamos saber qué campos de la incidencia se rellenan mal, lo que nos permite decidir mejorar el formulario o el texto de ayuda de esos campos.
+- **Frase:** Capturamos `incident_validation_failed` porque necesitamos saber qué campos de la incidencia se rellenan mal, lo que nos permite tomar la decisión de mejorar el formulario o el texto de ayuda de esos campos.
 - **Se dispara:** `IncidentFieldsError` en el alta, el listado o el cambio de estado.
 - **Punto exacto:** `services/api/app/modules/incident_manager/router.py` (`IncidentManagerRoute`, `:83-93`, y las validaciones de `nexova_shared` en cada ruta).
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -2140,7 +2142,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** gestor de incidencias · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Se ha consultado el listado de incidencias con al menos un filtro.
-- **Frase:** Capturamos `incident_list_filtered` porque necesitamos saber qué vistas del listado usan los responsables (por estado, sede, categoría), lo que nos permite decidir añadir vistas predefinidas o un panel por sede.
+- **Frase:** Capturamos `incident_list_filtered` porque necesitamos saber qué vistas del listado usan los responsables (por estado, sede, categoría), lo que nos permite tomar la decisión de añadir vistas predefinidas o un panel por sede.
 - **Se dispara:** `GET /api/incidents` con algún filtro válido.
 - **Punto exacto:** `services/api/app/modules/incident_manager/router.py:228-251`.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -2179,7 +2181,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** análisis de incidentes · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Un CSV del helpdesk se ha analizado correctamente (`POST /api/incidents/analyze` → 200).
-- **Frase:** Capturamos `incident_analysis_completed` porque necesitamos saber la calidad de los exports del helpdesk (proporción de filas inválidas) y su tamaño, lo que nos permite decidir pedir que se corrija el export del helpdesk o ajustar `MAX_UPLOAD_BYTES`.
+- **Frase:** Capturamos `incident_analysis_completed` porque necesitamos saber la calidad de los exports del helpdesk (proporción de filas inválidas) y su tamaño, lo que nos permite tomar la decisión de pedir que se corrija el export del helpdesk o ajustar `MAX_UPLOAD_BYTES`.
 - **Se dispara:** `POST /api/incidents/analyze` responde 200.
 - **Punto exacto:** `services/api/app/modules/incidents/router.py:33-35` (con `stored`).
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -2219,7 +2221,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** análisis de incidentes · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Un CSV se ha rechazado antes de analizarse.
-- **Frase:** Capturamos `incident_analysis_rejected` porque necesitamos saber por qué fallan las subidas (formato, tamaño, tipo), lo que nos permite decidir mejorar las instrucciones de exportación o ajustar el límite de tamaño.
+- **Frase:** Capturamos `incident_analysis_rejected` porque necesitamos saber por qué fallan las subidas (formato, tamaño, tipo), lo que nos permite tomar la decisión de mejorar las instrucciones de exportación o ajustar el límite de tamaño.
 - **Se dispara:** `POST /api/incidents/analyze` responde 400, 413, 415 o 422.
 - **Punto exacto:** Handlers de `services/api/app/core/errors.py:207-217` y `:230-233`, filtrando la ruta; el 413 lo lanza `services/api/app/core/limits.py:41-42` y pasa por el mismo handler.
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
@@ -2253,7 +2255,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 
 - **Clasificación:** oportunidad · **Categoría:** análisis de incidentes · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P5, P6
 - **Descripción:** Se ha pedido la exportación del último análisis.
-- **Frase:** Capturamos `incident_results_exported` porque necesitamos saber si la exportación se usa y si se pide sin análisis previo, lo que nos permite decidir mantener, mejorar o retirar la exportación.
+- **Frase:** Capturamos `incident_results_exported` porque necesitamos saber si la exportación se usa y si se pide sin análisis previo, lo que nos permite tomar la decisión de mantener, mejorar o retirar la exportación.
 - **Se dispara:** `GET /api/incidents/results/export` responde 200 o 404 `no_analysis`.
 - **Punto exacto:** `services/api/app/modules/incidents/router.py:60` y el handler del 404.
 - **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
@@ -2422,7 +2424,7 @@ python scripts/validate_event_schemas.py
   - `allOf` con el envelope, `event_type` en `const` igual a su nombre y con el patrón de la taxonomía, y `schemaVersion` en `const`;
   - `additionalProperties: false` en `properties`;
   - `required` ⊆ `properties`;
-- los campos mínimos y los enums literales del BRIEFING en los 9 eventos de inventario, y que los 5 obligatorios están, con su nombre exacto;
+- los campos mínimos y los enums literales del BRIEFING en los 9 eventos de inventario, la coherencia oficina–moneda (`oneOf`) y que los 5 obligatorios están, con su nombre exacto;
 - que el `oneOf` raíz referencia todos los eventos;
 - contra este plan:
   - que la lista de eventos del catálogo (§4), la de fichas (§6) y la del JSON son la misma, en el mismo orden;
@@ -2434,7 +2436,7 @@ python scripts/validate_event_schemas.py
 
 ### 9.2 Ejecución puntual de `ajv-cli` (draft-07)
 
-**Ejecución única** (D11 B), el 2026-11-02, con Node 24.18.0 y `ajv-cli` **5.0.0** fijado. `npx` lo descargó en su caché y **no se tocó ningún `package.json`**. Desde la raíz:
+**Ejecución puntual** (D11 B), el 2026-11-02 y repetida el mismo día tras añadir la coherencia oficina–moneda, con Node 24.18.0 y `ajv-cli` **5.0.0** fijado. `npx` lo descargó en su caché y **no se tocó ningún `package.json`**. Desde la raíz:
 
 ```bash
 npx --yes ajv-cli@5.0.0 compile --spec=draft7 -s docs/telemetry/event-schemas.json
@@ -2453,11 +2455,13 @@ npx --yes ajv-cli@5.0.0 validate --spec=draft7 -s docs/telemetry/event-schemas.j
 ```
 
 - **Salida:** 53 líneas `<scratch>/examples/NN-<event_type>.json valid` (los 52 ejemplos de las fichas y el de §5.2) y código de salida 0. Sin avisos de modo estricto.
-- **Control negativo:** el ejemplo de `inbound_order_created` con una clave `supplier` añadida en `properties` → `invalid` y código 1. La allowlist rechaza el nombre del proveedor.
+- **Controles negativos**, los dos con `invalid` y código 1:
+  - el ejemplo de `inbound_order_created` con una clave `supplier` añadida en `properties`: la allowlist rechaza el nombre del proveedor;
+  - el ejemplo de `outbound_order_created` con `valencia` y `USD`: lo rechaza el `oneOf` de oficina–moneda.
 
 La comprobación permanente es la del script de §9.1. Esta ejecución no se repite en cada cambio, salvo que se añadan palabras clave de draft-07 que el script no implementa.
 
-**Mutaciones del script de §9.1** (copias en memoria, sin tocar los archivos): las 10 se detectan.
+**Mutaciones del script de §9.1** (copias en memoria, sin tocar los archivos): las 13 se detectan.
 
 - una palabra clave no soportada (`format`);
 - `office` con mayúscula;
@@ -2468,4 +2472,7 @@ La comprobación permanente es la del script de §9.1. Esta ejecución no se rep
 - la entrega cambiada en una ficha;
 - una frase quitada;
 - un `sessionId` en un evento anónimo;
-- un `timestamp` sin `Z`.
+- un `timestamp` sin `Z`;
+- `valencia` con `USD` en un ejemplo;
+- el `oneOf` de oficina–moneda quitado;
+- una frase con otro conector en lugar de «lo que nos permite tomar la decisión de».

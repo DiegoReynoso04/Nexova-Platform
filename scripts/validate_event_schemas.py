@@ -14,7 +14,9 @@ Comprueba:
    false` en `properties`, `required` ⊆ `properties`, y que el `oneOf` raíz los
    referencia todos;
 3. el BRIEFING: los 5 obligatorios con su nombre exacto y, en los eventos de
-   inventario, los 6 campos mínimos con sus valores literales;
+   inventario, los 6 campos mínimos con sus valores literales y la coherencia
+   oficina–moneda (`oneOf`: `valencia`/`EUR`, `miami`/`USD` y, si la oficina
+   admite `null`, `null`/`null`);
 4. contra `telemetry-plan.md`:
    - el catálogo (§4), las fichas (§6) y el JSON listan los mismos eventos, en
      el mismo orden, con los mismos metadatos (`$comment`);
@@ -273,6 +275,17 @@ def check_minimum_fields(where: str, payload: dict[str, Any]) -> list[str]:
             declared = [option for option in fields[field].get("enum", []) if option is not None]
             if declared != values:
                 problems.append(f"{where}.{field}: valores {declared}, el BRIEFING dice {values}")
+    # BRIEFING §6: la moneda es la de la oficina (`EUR` en Valencia, `USD` en Miami).
+    expected = [("valencia", "EUR"), ("miami", "USD")]
+    if None in fields.get("office", {}).get("enum", []):
+        expected.append((None, None))
+    branches = [
+        (branch.get("properties", {}).get("office", {}).get("const", "?"),
+         branch.get("properties", {}).get("currency", {}).get("const", "?"))
+        for branch in payload.get("oneOf", [])
+    ]
+    if branches != expected:
+        problems.append(f"{where}: falta la coherencia oficina–moneda (oneOf {expected}), hay {branches}")
     return problems
 
 
@@ -350,8 +363,8 @@ def check_section(name: str, section: str, event: dict[str, Any]) -> list[str]:
     else:
         problems += compare_meta(where, meta.groups(), event)
     phrase = f"- **Frase:** Capturamos `{name}` porque necesitamos saber "
-    if phrase not in section or ", lo que nos permite decidir " not in section:
-        problems.append(f"{where}: falta la frase «Capturamos… porque necesitamos saber…, lo que nos permite decidir…»")
+    if phrase not in section or ", lo que nos permite tomar la decisión de " not in section:
+        problems.append(f"{where}: falta la frase «Capturamos… porque necesitamos saber…, lo que nos permite tomar la decisión de…»")
 
     payload = event["properties"]["properties"]
     declared = payload.get("properties", {})

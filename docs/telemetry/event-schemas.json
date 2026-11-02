@@ -108,6 +108,30 @@
             "supplier_key",
             "asset_category"
           ],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "valencia"
+                },
+                "currency": {
+                  "const": "EUR"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "miami"
+                },
+                "currency": {
+                  "const": "USD"
+                }
+              }
+            }
+          ],
           "properties": {
             "office": {
               "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6).",
@@ -223,6 +247,30 @@
             "exit_type",
             "stock_after",
             "asset_category"
+          ],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "valencia"
+                },
+                "currency": {
+                  "const": "EUR"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "miami"
+                },
+                "currency": {
+                  "const": "USD"
+                }
+              }
+            }
           ],
           "properties": {
             "office": {
@@ -342,6 +390,30 @@
             "min_stock",
             "asset_category"
           ],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "valencia"
+                },
+                "currency": {
+                  "const": "EUR"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "miami"
+                },
+                "currency": {
+                  "const": "USD"
+                }
+              }
+            }
+          ],
           "properties": {
             "office": {
               "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6).",
@@ -459,6 +531,41 @@
             "status_code",
             "authenticated",
             "suppressed_count"
+          ],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "valencia"
+                },
+                "currency": {
+                  "const": "EUR"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "miami"
+                },
+                "currency": {
+                  "const": "USD"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": null
+                },
+                "currency": {
+                  "const": null
+                }
+              }
+            }
           ],
           "properties": {
             "office": {
@@ -602,6 +709,30 @@
             "threshold_pct",
             "reference_window",
             "asset_category"
+          ],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "valencia"
+                },
+                "currency": {
+                  "const": "EUR"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "miami"
+                },
+                "currency": {
+                  "const": "USD"
+                }
+              }
+            }
           ],
           "properties": {
             "office": {
@@ -748,6 +879,30 @@
             "min_stock",
             "asset_category"
           ],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "valencia"
+                },
+                "currency": {
+                  "const": "EUR"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "miami"
+                },
+                "currency": {
+                  "const": "USD"
+                }
+              }
+            }
+          ],
           "properties": {
             "office": {
               "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6).",
@@ -852,6 +1007,41 @@
             "currency",
             "error_code"
           ],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "valencia"
+                },
+                "currency": {
+                  "const": "EUR"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "miami"
+                },
+                "currency": {
+                  "const": "USD"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": null
+                },
+                "currency": {
+                  "const": null
+                }
+              }
+            }
+          ],
           "properties": {
             "office": {
               "description": "Oficina del activo, en minúsculas (`Valencia` → `valencia`, D6). `null` si no se puede saber (ver la ficha).",
@@ -948,6 +1138,41 @@
             "error_code",
             "exit_type",
             "available_stock"
+          ],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "valencia"
+                },
+                "currency": {
+                  "const": "EUR"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "miami"
+                },
+                "currency": {
+                  "const": "USD"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": null
+                },
+                "currency": {
+                  "const": null
+                }
+              }
+            }
           ],
           "properties": {
             "office": {
@@ -1062,6 +1287,41 @@
             "route_template",
             "fields",
             "error_types"
+          ],
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "valencia"
+                },
+                "currency": {
+                  "const": "EUR"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": "miami"
+                },
+                "currency": {
+                  "const": "USD"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "office": {
+                  "const": null
+                },
+                "currency": {
+                  "const": null
+                }
+              }
+            }
           ],
           "properties": {
             "office": {

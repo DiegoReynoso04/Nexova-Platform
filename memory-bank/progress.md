@@ -19,12 +19,14 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - Resumen en `docs/telemetry/telemetry-plan.md` §1.4.
 - **Entregables:**
   - `docs/telemetry/telemetry-plan.md`: alcance y equivalencias M0–M11, prerrequisitos P1–P10 con su orden, flujo de inventario en 12 pasos con archivo y línea, catálogo, envelope, 52 fichas, entrega, throttle, riesgos, exclusiones y validación;
-  - `docs/telemetry/event-schemas.json`: draft-07, envelope común, una definición por evento, `oneOf` raíz y `$comment` con los metadatos;
+  - `docs/telemetry/event-schemas.json`: draft-07, envelope común, una definición por evento, `oneOf` raíz, `$comment` con los metadatos y, en los 9 eventos de inventario, un `oneOf` de coherencia oficina–moneda (`valencia`/`EUR`, `miami`/`USD`; `null`/`null` donde la oficina puede faltar);
   - `scripts/validate_event_schemas.py`: librería estándar.
 - **Cifras:** 52 eventos, 5 obligatorios y 47 oportunidades, en 10 categorías; 42 los emite la API y 10 el frontend; 13 van por stream y 39 por batch. 43 se pueden emitir sin prerrequisitos de modelo; los 9 de inventario esperan a P1–P3, P7, P9 y P10.
 - **Validación:**
-  - el script, OK (52 eventos, 53 ejemplos), y detecta 10 de 10 mutaciones;
-  - `npx --yes ajv-cli@5.0.0` (Node 24.18.0): metaesquema válido, 53 ejemplos `valid` y control negativo `invalid`.
+  - las 52 frases siguen literalmente la plantilla del enunciado («…, lo que nos permite tomar la decisión de…») y el script lo comprueba;
+  - el script, OK (52 eventos, 53 ejemplos), y detecta 13 de 13 mutaciones;
+  - `npx --yes ajv-cli@5.0.0` (Node 24.18.0): metaesquema válido, 53 ejemplos `valid` y los dos controles negativos `invalid` (clave fuera de la allowlist y `valencia`/`USD`);
+  - la suite `unittest` de `services/api`: 482 OK.
   - Ningún `package.json` ni dependencia nueva.
 - **Otros cambios:** fila nueva en la tabla de validación de `AGENTS.md` §4 y en `scripts/README*.md`; estado de `analysis.md` actualizado.
 - **Pendiente:**
