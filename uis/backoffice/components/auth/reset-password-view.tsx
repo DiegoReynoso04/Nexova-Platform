@@ -29,7 +29,7 @@ export function ResetPasswordView() {
     const send: AuthOperation<ResetPasswordFormValues> = (values, options) => resetPassword(token, values, options);
     return send;
   });
-  const { state, submit } = useAuthForm(operation);
+  const { state, submit } = useAuthForm(operation, 'reset_password');
   const [values, setValues] = useState<ResetPasswordFormValues>({ new_password: '', password_confirmation: '' });
   const error = state.status === 'error' ? state.error : null;
   const isBusy = state.status === 'submitting' || state.status === 'success';

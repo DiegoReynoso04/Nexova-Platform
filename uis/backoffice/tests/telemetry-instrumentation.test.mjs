@@ -7,9 +7,11 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import { ApiAbortError } from '../lib/api-client.ts';
+import { authFormOutcome, observeAuthOperation } from '../lib/auth-telemetry.ts';
 import { createFormTelemetry } from '../lib/form-telemetry.ts';
 import { inventoryFormOutcome, observeInventorySubmit, trackInboundOrder, trackOutboundOrder } from '../lib/inventory-telemetry.ts';
 import { PAGE_VIEW_DWELL_MS, createPageViewTelemetry } from '../lib/page-view-telemetry.ts';
+import { AuthServiceError } from '../services/auth.service.ts';
 import { InventoryServiceError, parseUnitCost } from '../services/inventory.service.ts';
 import { eventErrors } from './support/event-contract.mjs';
 import { inboundOrderCreated, outboundOrderCreated } from './support/inventory-fakes.mjs';
@@ -242,5 +244,35 @@ describe('coste unitario escrito por el usuario (P3)', () => {
     for (const value of ['', '0', '0,00', '-1', '1.234', '1e3', 'abc', '10000000000', '1.000,50']) {
       assert.equal(parseUnitCost(value), null, value);
     }
+  });
+});
+
+describe('embudo de los formularios de autenticación (D4)', () => {
+  test('el fallo del login queda en form_submitted, sin el email ni la contraseña', async () => {
+    const calls = [];
+    const telemetry = { validationFailed: (fields) => calls.push(['validation', fields]), submitted: (outcome) => calls.push(['submitted', outcome]) };
+    const failWith = (uiError) => observeAuthOperation(async () => { throw new AuthServiceError(uiError); }, telemetry);
+    const credentials = { email: 'leak@example.invalid', password: 'secreta-123' };
+    await observeAuthOperation(async () => {}, telemetry)(credentials, {});
+    await assert.rejects(failWith({ kind: 'invalid_credentials' })(credentials, {}), AuthServiceError);
+    await assert.rejects(failWith({ kind: 'network' })(credentials, {}), AuthServiceError);
+    await assert.rejects(failWith({ kind: 'validation', source: 'client', errors: [{ field: 'email', message: 'x' }] })(credentials, {}));
+    assert.deepEqual(calls, [
+      ['submitted', 'success'],
+      ['submitted', 'api_rejected'],
+      ['submitted', 'network_error'],
+      ['validation', ['email']],
+    ]);
+    assert.doesNotMatch(JSON.stringify(calls), /leak@example|secreta/);
+  });
+
+  test('outcome por tipo de error del servicio de autenticación', () => {
+    const cases = [
+      ['session_expired', 'session_expired'],
+      ['invalid_reset_token', 'api_rejected'],
+      ['timeout', 'network_error'],
+      ['server_error', 'server_error'],
+    ];
+    for (const [kind, outcome] of cases) assert.equal(authFormOutcome({ kind }), outcome, kind);
   });
 });

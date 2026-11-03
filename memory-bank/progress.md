@@ -65,6 +65,10 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
     - `client_request_failed` desde el oyente de `api-client`.
   - **Tests:** `tests/telemetry-instrumentation.test.mjs` (los obligatorios y el embudo validados contra el JSON, `page_viewed` con `mock.timers` y `parseUnitCost`); fixtures del inventario con las respuestas de alta; dos regex de `production-source` con `category`.
   - **Validación:** `tsc`, `lint` (0), `build`, `node:test` 574/574 y Jest 240/240.
+- **Paso 4b, embudo de autenticación (D4):**
+  - `useAuthForm(operation, form)` envuelve la operación (`lib/auth-telemetry.ts`) en los 5 formularios de auth. El fallo del login queda en `form_submitted` (`api_rejected` / `network_error`…), sin `login_failed` desde el frontend (es de la API, plan §6.3);
+  - sin aviso por campo: el embudo empieza en el primer envío;
+  - **Validación:** `node:test` 577/577, Jest 240, `lint` 0 y `build`.
 
 ---
 

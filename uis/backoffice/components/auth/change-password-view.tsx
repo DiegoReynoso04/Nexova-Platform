@@ -18,7 +18,7 @@ const EMPTY_VALUES: ChangePasswordFormValues = { current_password: '', new_passw
 // antes de llamar a la API (services/auth.service.ts). Una contraseña actual
 // incorrecta (400) se muestra junto a su campo; la sesión sigue abierta.
 export function ChangePasswordView() {
-  const { state, submit } = useAuthForm(changePassword);
+  const { state, submit } = useAuthForm(changePassword, 'change_password');
   const [values, setValues] = useState<ChangePasswordFormValues>(EMPTY_VALUES);
   const error = state.status === 'error' ? state.error : null;
   const isSaving = state.status === 'submitting';

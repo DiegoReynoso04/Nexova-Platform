@@ -20,7 +20,7 @@ const EMPTY_REGISTER_FORM: RegisterFormValues = { email: '', password: '', name:
 // Los errores 422/409 de la API se muestran junto a su campo.
 export function RegisterView() {
   const router = useRouter();
-  const { state, submit } = useAuthForm(register);
+  const { state, submit } = useAuthForm(register, 'register');
   const [values, setValues] = useState<RegisterFormValues>(EMPTY_REGISTER_FORM);
   const error = state.status === 'error' ? state.error : null;
   const isBusy = state.status === 'submitting' || state.status === 'success';

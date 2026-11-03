@@ -20,7 +20,7 @@ import { AuthError, fieldErrorFor } from './auth-error';
 export function LoginView() {
   const router = useRouter();
   const passwordWasReset = useSearchParams().get('reset') === 'success';
-  const { state, submit } = useAuthForm(login);
+  const { state, submit } = useAuthForm(login, 'login');
   const [values, setValues] = useState<LoginFormValues>({ email: '', password: '' });
   const error = state.status === 'error' ? state.error : null;
   const isBusy = state.status === 'submitting' || state.status === 'success';
