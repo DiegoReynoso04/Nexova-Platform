@@ -23,15 +23,7 @@ import {
   normalizeOutboundOrder,
 } from '../services/normalizers.ts';
 import { BASE_URL, LEAK, hangingFetch, jsonResponse, offlineFetch, recordingFetch, textResponse } from './support/http-fakes.mjs';
-import {
-  asset,
-  errorBody,
-  inboundOrder,
-  inboundValues,
-  outboundOrder,
-  outboundValues,
-  selected,
-} from './support/inventory-fakes.mjs';
+import { asset, errorBody, inboundOrder, inboundOrderCreated, inboundValues, outboundOrder, outboundOrderCreated, outboundValues, selected } from './support/inventory-fakes.mjs';
 import { validationBody } from './support/supplier-fakes.mjs';
 
 const TOKEN = 'synthetic-session-token';
@@ -71,8 +63,8 @@ function sentJson(call) {
 const OPERATIONS = [
   ['listAssets', (service) => service.listAssets(), () => jsonResponse(200, [asset()])],
   ['getAsset', (service) => service.getAsset(1), () => jsonResponse(200, asset())],
-  ['createInboundOrder', (service) => service.createInboundOrder(inboundValues()), () => jsonResponse(201, inboundOrder())],
-  ['createOutboundOrder', (service) => service.createOutboundOrder(outboundValues()), () => jsonResponse(201, outboundOrder())],
+  ['createInboundOrder', (service) => service.createInboundOrder(inboundValues()), () => jsonResponse(201, inboundOrderCreated())],
+  ['createOutboundOrder', (service) => service.createOutboundOrder(outboundValues()), () => jsonResponse(201, outboundOrderCreated())],
   ['listOrders', (service) => service.listOrders(), () => jsonResponse(200, [inboundOrder(), outboundOrder()])],
 ];
 
@@ -245,18 +237,18 @@ describe('servicio del inventario: peticiones', () => {
   });
 
   test('entrada: números, proveedor recortado y la oficina del activo', async () => {
-    const { service, transport } = serviceWith(() => jsonResponse(201, inboundOrder({ office: 'Miami' })));
+    const { service, transport } = serviceWith(() => jsonResponse(201, inboundOrderCreated({ office: 'Miami' })));
     const values = inboundValues({ asset: selected({ id: 4, office: 'Miami' }), quantity: ' 8 ', supplier: '  Office Depot Miami ' });
     const order = await service.createInboundOrder(values);
     assert.equal(order.type, 'inbound');
     const body = sentJson(transport.calls[0]);
-    assert.deepEqual(body, { asset_id: 4, quantity: 8, supplier: 'Office Depot Miami', office: 'Miami' });
+    assert.deepEqual(body, { asset_id: 4, quantity: 8, supplier: 'Office Depot Miami', office: 'Miami', unit_cost: 18.5 });
     assert.equal(typeof body.asset_id, 'number');
     assert.equal(typeof body.quantity, 'number');
   });
 
   test('salida: allocation con assigned_to recortado; consumption con null', async () => {
-    const { service, transport } = serviceWith(() => jsonResponse(201, outboundOrder()));
+    const { service, transport } = serviceWith(() => jsonResponse(201, outboundOrderCreated()));
     await service.createOutboundOrder(outboundValues({ quantity: '3', assigned_to: '  EMPLEADO-FICTICIO-01 ' }));
     await service.createOutboundOrder(
       outboundValues({ asset: selected({ id: 4, office: 'Miami' }), exit_type: 'consumption', assigned_to: 'ignored' })
@@ -288,7 +280,7 @@ describe('servicio del inventario: peticiones', () => {
   });
 
   test('validación en cliente: sin petición y con los errores por campo', async () => {
-    const { service, transport } = serviceWith(() => jsonResponse(201, inboundOrder()));
+    const { service, transport } = serviceWith(() => jsonResponse(201, inboundOrderCreated()));
     await assert.rejects(
       service.createInboundOrder(inboundValues({ asset: null, quantity: '0', supplier: '  ' })),
       (error) => {

@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { usePageLoadTelemetry } from '@/hooks/use-page-load-telemetry';
 import { useSupplierDirectory } from '@/hooks/use-supplier-directory';
 import { RENEWAL_WINDOW_DAYS, renewalInfo } from '@/lib/supplier-renewal';
 
@@ -42,6 +43,10 @@ function preloadCreateForm() {
 
 export function SupplierDirectoryView() {
   const directory = useSupplierDirectory();
+  usePageLoadTelemetry(
+    '/suppliers',
+    directory.list.status === 'error' ? 'error' : directory.loaded ? (directory.suppliers.length > 0 ? 'data' : 'empty') : null
+  );
   const { suppliers, filters, list, create, rows, loaded } = directory;
   // Fecha local fijada al montar: referencia para "renueva en los próximos 60 días".
   const [today] = useState(() => new Date());

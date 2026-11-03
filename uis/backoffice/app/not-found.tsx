@@ -1,14 +1,18 @@
 // Página no encontrada (Next 16, `app/not-found.tsx`): rutas inexistentes y
 // `notFound()`. Se renderiza dentro del layout raíz, así que el guard de
-// sesión también la protege. Server Component: no necesita estado.
+// sesión también la protege. Server Component: no necesita estado; la
+// telemetría (`page_not_found_viewed`) la emite un componente cliente que no pinta nada.
 
 import Link from 'next/link';
+
+import { NotFoundTracker } from '@/components/telemetry/not-found-tracker';
 
 import { HOME_PATH } from '@/lib/auth-routes';
 
 export default function NotFound() {
   return (
     <section aria-labelledby="not-found-heading" className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-6">
+      <NotFoundTracker />
       <h1 id="not-found-heading" className="text-lg font-semibold text-ink">
         Página no encontrada
       </h1>

@@ -13,10 +13,17 @@
 // Tras una entrada correcta `formKey` cambia: la vista lo usa como `key` del
 // formulario, que se vuelve a montar limpio (con el activo de la URL, si lo
 // había), y la confirmación se mantiene visible hasta el siguiente envío.
+//
+// Telemetría (ticket de captura): el hook envuelve el envío del servicio
+// (lib/inventory-telemetry.ts) para el embudo del formulario (`form_*`) y, con
+// la respuesta 201, `inbound_order_created` y `kit_cost_variance_detected`. La
+// sesión no sabe nada de telemetría.
 
 import { useCallback, useEffect, useReducer, useState } from 'react';
 
+import { useFormTelemetry } from '@/hooks/use-form-telemetry';
 import { ApiAbortError } from '@/lib/api-client';
+import { observeInventorySubmit, trackInboundOrder } from '@/lib/inventory-telemetry';
 import { InventoryServiceError, createInboundOrder } from '@/services/inventory.service';
 import type { InboundFormValues, InboundOrder, InventoryUiError } from '@/types/inventory';
 
@@ -117,11 +124,20 @@ export function createInboundFormSession(
 
 export interface UseInboundFormResult extends InboundFormState {
   submitInbound: (values: InboundFormValues) => void;
+  /** El formulario avisa de cada campo que cambia (solo el nombre, para `form_started`/`form_abandoned`). */
+  fieldChanged: (field: string) => void;
 }
 
 export function useInboundForm(): UseInboundFormResult {
   const [state, dispatch] = useReducer(inboundFormReducer, INITIAL_INBOUND_FORM_STATE);
-  const [session] = useState(() => createInboundFormSession(dispatch));
+  const telemetry = useFormTelemetry('inbound_order');
+  const [session] = useState(() =>
+    createInboundFormSession(dispatch, {
+      createInboundOrder: observeInventorySubmit(createInboundOrder, telemetry, (order, values) =>
+        trackInboundOrder(order, values.asset?.category)
+      ),
+    })
+  );
 
   useEffect(() => {
     session.activate();
@@ -130,5 +146,5 @@ export function useInboundForm(): UseInboundFormResult {
 
   const submitInbound = useCallback((values: InboundFormValues) => void session.submit(values), [session]);
 
-  return { ...state, submitInbound };
+  return { ...state, submitInbound, fieldChanged: telemetry.fieldChanged };
 }

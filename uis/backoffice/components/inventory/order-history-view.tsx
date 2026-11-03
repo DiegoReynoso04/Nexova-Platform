@@ -6,6 +6,8 @@
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useInventoryOrders } from '@/hooks/use-inventory-orders';
+import { pageLoadOutcome, usePageLoadTelemetry } from '@/hooks/use-page-load-telemetry';
+import { INVENTORY_ORDERS_PATH } from '@/lib/inventory-routes';
 
 import { InventoryError } from './inventory-error';
 import { OrderTable } from './order-table';
@@ -17,6 +19,7 @@ export interface OrderHistoryViewProps {
 
 export function OrderHistoryView({ labelledBy }: OrderHistoryViewProps) {
   const { view, orders, load, reload } = useInventoryOrders();
+  usePageLoadTelemetry(INVENTORY_ORDERS_PATH, pageLoadOutcome(view));
   const isLoading = load.status === 'loading';
 
   let liveMessage = '';

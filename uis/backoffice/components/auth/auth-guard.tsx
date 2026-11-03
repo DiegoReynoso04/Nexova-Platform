@@ -42,7 +42,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
           <Button onClick={session.retry} isLoading={retrying}>
             {retrying ? 'Reintentando…' : 'Reintentar'}
           </Button>
-          <Button variant="secondary" onClick={session.logout}>
+          <Button variant="secondary" onClick={() => session.logout('session_error_screen')}>
             Cerrar sesión
           </Button>
         </div>

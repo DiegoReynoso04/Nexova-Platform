@@ -6,12 +6,12 @@ import { parseQuantity, validateInboundForm, validateOutboundForm } from '@/serv
 import { QUANTITY_MAX, TEXT_MAX_LENGTH, type InboundFormValues, type OutboundFormValues } from '@/types/inventory';
 
 function inbound(changes: Partial<InboundFormValues> = {}): InboundFormValues {
-  return { asset: { id: 1, office: 'Valencia' }, quantity: '5', supplier: 'Synthetic supplier', ...changes };
+  return { asset: { id: 1, office: 'Valencia', category: 'hardware' }, quantity: '5', supplier: 'Synthetic supplier', unit_cost: '18,50', ...changes };
 }
 
 function outbound(changes: Partial<OutboundFormValues> = {}): OutboundFormValues {
   return {
-    asset: { id: 1, office: 'Valencia' },
+    asset: { id: 1, office: 'Valencia', category: 'hardware' },
     quantity: '2',
     exit_type: 'allocation',
     assigned_to: 'Synthetic employee',

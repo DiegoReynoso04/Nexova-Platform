@@ -47,7 +47,24 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - **P10:** media de las 3 entradas anteriores con coste del mismo activo y proveedor normalizado, con umbral del 10 %, configurable (`TELEMETRY_COST_VARIANCE_*`); 2 decimales con `format` (`round` y `quantize` están prohibidos por `test_architecture.py`).
   - **P7:** `StockEditReporter` vía `app.state`, llamado desde los handlers de 405 y 422 de `core/errors.py`; emisor mínimo en `nexova.telemetry` (una línea JSON); throttle de 60 s por (usuario, plantilla, método). `requestId` propio (P5 pendiente). Excepción a `test_sessions_are_only_opened_inside_get_db` para su lectura del activo: el 405 llega antes de `get_db`.
   - **Validación:** `unittest` 534 OK y `pytest` 737 passed, en el contenedor efímero; los eventos que construiría el frontend desde las respuestas validan contra `event-schemas.json`.
-  - **Aviso:** el stack de Docker en marcha apunta a la base de la demo, que no tiene las columnas de P3. Hasta migrarla (con confirmación del usuario), las rutas de entradas fallan ahí. Para la verificación se usa el Postgres efímero.
+  - **Aviso (paso 3):** el stack de Docker en marcha apunta a la base de la demo, que no tiene las columnas de P3. Hasta migrarla (con confirmación del usuario), las rutas de entradas fallan ahí. Para la verificación se usa el Postgres efímero.
+- **Paso 4, instrumentación del backoffice** (los 14 eventos de emisor frontend):
+  - **Obligatorios** (`lib/inventory-telemetry.ts`), desde la respuesta 201 en `use-inbound-form`/`use-outbound-form`:
+    - `outbound_order_created` + `stock_threshold_triggered` (cruce `>=`/`<`);
+    - `inbound_order_created` + `kit_cost_variance_detected`.
+
+    `product_category`/`programme_id` van en `null` (P1 pendiente). No se emiten sin `supplier_key` (API sin clave) ni sin coste.
+  - **Formulario de Entrada:** campo «Coste unitario» (obligatorio, coma o punto, 2 decimales; ayuda con la moneda de la oficina). `SelectedAsset` lleva la categoría, solo para la telemetría.
+  - **Embudo** (`lib/form-telemetry.ts` + `hooks/use-form-telemetry.ts`): `form_started`, `form_validation_failed`, `form_submitted` y `form_abandoned` (desmontaje y `pagehide` en captura, antes del beacon). Solo en Entrada y Salida; el resto de formularios, pendiente.
+  - **Transversal:**
+    - `TelemetryProvider` y `PageViewTracker` en el layout (`page_viewed` con 1 s de permanencia y solo plantillas);
+    - `page_not_found_viewed` en `not-found.tsx`;
+    - `frontend_error_captured` en los dos límites de error (sin pasarles el error);
+    - `page_load_recorded` en las 4 páginas de datos (`hooks/use-page-load-telemetry.ts`);
+    - `user_logged_out` en `useAuthSession.logout(trigger)`, enviado antes de borrar el token y solo con `sid`;
+    - `client_request_failed` desde el oyente de `api-client`.
+  - **Tests:** `tests/telemetry-instrumentation.test.mjs` (los obligatorios y el embudo validados contra el JSON, `page_viewed` con `mock.timers` y `parseUnitCost`); fixtures del inventario con las respuestas de alta; dos regex de `production-source` con `category`.
+  - **Validación:** `tsc`, `lint` (0), `build`, `node:test` 574/574 y Jest 240/240.
 
 ---
 

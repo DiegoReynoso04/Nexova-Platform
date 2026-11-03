@@ -18,6 +18,9 @@ import { useCallback, useEffect, useReducer, useState, useSyncExternalStore } fr
 
 import { ApiAbortError } from '@/lib/api-client';
 import { clearAuthToken, readAuthToken, subscribeAuthToken } from '@/lib/auth-token';
+import { readSessionIdentity } from '@/lib/session-identity';
+import { flushTelemetry, track } from '@/lib/telemetry';
+import type { LogoutTrigger } from '@/types/telemetry';
 import { AuthServiceError, getCurrentUser } from '@/services/auth.service';
 import type { AuthUiError, CurrentUser } from '@/types/auth';
 
@@ -181,8 +184,11 @@ export function createAuthSessionController(
 export type AuthSession = SessionStatus & {
   /** Reintenta la validación tras un error de red. */
   retry: () => void;
-  /** Elimina el token. La redirección a /login la hace quien llama (y el guard). */
-  logout: () => void;
+  /**
+   * Elimina el token. La redirección a /login la hace quien llama (y el guard).
+   * `trigger`: desde dónde se cerró, para `user_logged_out`.
+   */
+  logout: (trigger: LogoutTrigger) => void;
 };
 
 const getServerToken = (): undefined => undefined;
@@ -207,7 +213,17 @@ export function useAuthSession(): AuthSession {
     if (current !== null) void controller.validate(current, true);
   }, [controller]);
 
-  const logout = useCallback(() => clearAuthToken(), []);
+  const logout = useCallback((trigger: LogoutTrigger) => {
+    // Telemetría (plan §6.3): antes de borrar el token, para que el evento lleve
+    // la identidad de la sesión, y enviado ya (con `keepalive`). Es un evento
+    // de sesión autenticada: con un token sin `sid` (anterior a P4) no se emite.
+    const identity = readSessionIdentity();
+    if (identity.userId !== null && identity.sessionId !== null) {
+      track('user_logged_out', { trigger });
+      flushTelemetry();
+    }
+    clearAuthToken();
+  }, []);
 
   return { ...deriveSessionStatus(token, validation), retry, logout };
 }

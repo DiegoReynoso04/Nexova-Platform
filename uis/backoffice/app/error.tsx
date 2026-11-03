@@ -11,6 +11,7 @@
 import Link from 'next/link';
 
 import { Alert } from '@/components/ui/alert';
+import { ErrorBoundaryTracker } from '@/components/telemetry/error-boundary-tracker';
 import { Button } from '@/components/ui/button';
 import { HOME_PATH } from '@/lib/auth-routes';
 
@@ -23,6 +24,8 @@ interface RouteErrorProps {
 export default function RouteError({ retry }: RouteErrorProps) {
   return (
     <section aria-labelledby="route-error-heading" className="flex flex-col gap-4">
+      {/* Telemetría: solo que este límite se mostró; el error no se pasa. */}
+      <ErrorBoundaryTracker boundary="route" />
       <h1 id="route-error-heading" className="text-lg font-semibold text-ink">
         Algo ha fallado
       </h1>

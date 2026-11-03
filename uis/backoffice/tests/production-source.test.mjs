@@ -255,7 +255,7 @@ describe('código de producción', () => {
     assert.match(readOnly, /<label htmlFor=\{id\}/);
     assert.match(readOnly, /<output id=\{id\}/);
     assert.doesNotMatch(readOnly, /<input|<select|<textarea|\bborder\b|onChange/);
-    assert.match(form, /asset: selected === null \? null : \{ id: selected\.id, office: selected\.office \}/);
+    assert.match(form, /asset: selected === null \? null : \{ id: selected\.id, office: selected\.office, category: selected\.category \}/);
     assert.match(form, /<Button type="submit" isLoading=\{isSubmitting\}>/);
     const view = codeWithoutComments('components/inventory/inbound-form-view.tsx');
     assert.match(view, /<InboundForm\s+key=\{`\$\{formKey\}-\$\{preselection\.status\}`\}/);
@@ -303,7 +303,7 @@ describe('código de producción', () => {
     );
     assert.doesNotMatch(form, /<input\s+id="outbound-(office|stock)"/);
     // Se envía la oficina del activo elegido.
-    assert.match(form, /outboundFormValues\(selected === null \? null : \{ id: selected\.id, office: selected\.office \}/);
+    assert.match(form, /outboundFormValues\(selected === null \? null : \{ id: selected\.id, office: selected\.office, category: selected\.category \}/);
   });
 
   test('salida: Cantidad espera al stock, advertencia sin bloqueo y el 400 de stock bajo Cantidad', () => {

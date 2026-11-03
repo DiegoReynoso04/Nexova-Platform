@@ -17,7 +17,7 @@ import { createApiClient } from '../lib/api-client.ts';
 import { fieldMessages, summaryError, unplacedMessages } from '../lib/inventory-form-errors.ts';
 import { createInventoryService } from '../services/inventory.service.ts';
 import { BASE_URL, LEAK, hangingFetch, jsonResponse, offlineFetch, recordingFetch, textResponse } from './support/http-fakes.mjs';
-import { asset, errorBody, inboundOrder, inboundValues, selected } from './support/inventory-fakes.mjs';
+import { asset, errorBody, inboundOrderCreated, inboundValues, selected } from './support/inventory-fakes.mjs';
 import { validationBody } from './support/supplier-fakes.mjs';
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -125,7 +125,7 @@ describe('errores del formulario: campo o aviso general', () => {
 
 describe('Entrada de activos: envío', () => {
   test('éxito: confirmación con cantidad, nombre y SKU, y formulario limpio (formKey + 1)', async () => {
-    const order = inboundOrder({ quantity: 5, asset: { id: 1, name: 'Hub USB-C', sku: 'NXV-PER-002' } });
+    const order = inboundOrderCreated({ quantity: 5, asset: { id: 1, name: 'Hub USB-C', sku: 'NXV-PER-002' } });
     const { state } = await submitWith(() => jsonResponse(201, order));
     assert.equal(state.submit.status, 'success');
     assert.equal(state.formKey, 1);
@@ -136,7 +136,7 @@ describe('Entrada de activos: envío', () => {
     // La vista monta el formulario con `key = formKey-estado` e `initialAssetId = formInitialAssetId(preselección)`.
     const preselection = resolvePreselection(parseAssetIdParam('2'), [asset({ id: 1 }), asset({ id: 2, sku: 'SYN-IT-002' })]);
     const before = `${INITIAL_INBOUND_FORM_STATE.formKey}-${preselection.status}`;
-    const { state } = await submitWith(() => jsonResponse(201, inboundOrder()), inboundValues({ asset: selected({ id: 2 }) }));
+    const { state } = await submitWith(() => jsonResponse(201, inboundOrderCreated()), inboundValues({ asset: selected({ id: 2 }) }));
     assert.equal(state.submit.status, 'success');
     assert.notEqual(`${state.formKey}-${preselection.status}`, before);
     assert.equal(formInitialAssetId(preselection), 2);
@@ -144,14 +144,14 @@ describe('Entrada de activos: envío', () => {
 
   test('body: asset_id y quantity como números y la oficina del activo elegido', async () => {
     const values = inboundValues({ asset: selected({ id: 4, office: 'Miami' }), quantity: '8', supplier: ' Office Depot Miami ' });
-    const { transport } = await submitWith(() => jsonResponse(201, inboundOrder()), values);
+    const { transport } = await submitWith(() => jsonResponse(201, inboundOrderCreated()), values);
     const body = JSON.parse(transport.calls[0].init.body);
-    assert.deepEqual(body, { asset_id: 4, quantity: 8, supplier: 'Office Depot Miami', office: 'Miami' });
+    assert.deepEqual(body, { asset_id: 4, quantity: 8, supplier: 'Office Depot Miami', office: 'Miami', unit_cost: 18.5 });
     assert.equal(transport.calls[0].url, `${BASE_URL}/inventory/orders/inbound`);
   });
 
   test('validación en cliente: errores por campo y ninguna petición', async () => {
-    const { state, transport } = await submitWith(() => jsonResponse(201, inboundOrder()), inboundValues({ asset: null, quantity: 'cinco', supplier: '' }));
+    const { state, transport } = await submitWith(() => jsonResponse(201, inboundOrderCreated()), inboundValues({ asset: null, quantity: 'cinco', supplier: '' }));
     assert.equal(transport.calls.length, 0);
     assert.equal(state.submit.status, 'error');
     assert.equal(state.submit.error.source, 'client');

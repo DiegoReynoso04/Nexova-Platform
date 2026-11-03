@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { AccountNav } from '@/components/auth/account-nav';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import { SessionProvider } from '@/components/auth/session-provider';
+import { PageViewTracker } from '@/components/telemetry/page-view-tracker';
+import { TelemetryProvider } from '@/components/telemetry/telemetry-provider';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -16,6 +18,9 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
     <html lang="es" className="h-full">
       <body className="flex min-h-full flex-col bg-canvas font-sans text-ink antialiased">
         {/* AUTH-02: una sesión para toda la app; el guard protege todas las vistas salvo /login y /register. */}
+        {/* Telemetría (ticket de captura): arranque y page_viewed. No pintan nada. */}
+        <TelemetryProvider />
+        <PageViewTracker />
         <SessionProvider>
           <header className="border-b border-border bg-surface">
             <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-4">

@@ -41,24 +41,25 @@ import {
   normalizeApiErrorBody,
   normalizeAsset,
   normalizeAssetList,
-  normalizeInboundOrder,
+  normalizeInboundOrderCreated,
   normalizeInventoryValidationErrors,
   normalizeOrderList,
-  normalizeOutboundOrder,
+  normalizeOutboundOrderCreated,
 } from '@/services/normalizers';
 import {
   QUANTITY_MAX,
   TEXT_MAX_LENGTH,
+  UNIT_COST_MAX,
   type Asset,
   type ExitType,
   type InboundFormValues,
-  type InboundOrder,
+  type InboundOrderCreated,
   type InventoryField,
   type InventoryFieldError,
   type InventoryOrder,
   type InventoryUiError,
   type OutboundFormValues,
-  type OutboundOrder,
+  type OutboundOrderCreated,
   type SelectedAsset,
 } from '@/types/inventory';
 
@@ -89,8 +90,8 @@ export interface CallOptions {
 export interface InventoryService {
   listAssets(options?: CallOptions): Promise<Asset[]>;
   getAsset(id: number, options?: CallOptions): Promise<Asset>;
-  createInboundOrder(values: InboundFormValues, options?: CallOptions): Promise<InboundOrder>;
-  createOutboundOrder(values: OutboundFormValues, options?: CallOptions): Promise<OutboundOrder>;
+  createInboundOrder(values: InboundFormValues, options?: CallOptions): Promise<InboundOrderCreated>;
+  createOutboundOrder(values: OutboundFormValues, options?: CallOptions): Promise<OutboundOrderCreated>;
   listOrders(options?: CallOptions): Promise<InventoryOrder[]>;
 }
 
@@ -117,10 +118,22 @@ export function parseQuantity(input: string): number | null {
   return Number.isSafeInteger(quantity) && quantity >= 1 && quantity <= QUANTITY_MAX ? quantity : null;
 }
 
+/**
+ * Coste unitario escrito por el usuario (P3): positivo, con dos decimales como
+ * máximo y coma o punto decimal. `null` si no lo es. La API es la autoridad.
+ */
+export function parseUnitCost(input: string): number | null {
+  const normalized = input.trim().replace(',', '.');
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
+  const value = Number(normalized);
+  return Number.isFinite(value) && value > 0 && value <= UNIT_COST_MAX ? value : null;
+}
+
 const MESSAGES = {
   asset: 'Elige un activo.',
   quantity: `Introduce una cantidad entera entre 1 y ${QUANTITY_MAX.toLocaleString('es-ES')}.`,
   supplier: `Indica el proveedor (máximo ${TEXT_MAX_LENGTH} caracteres).`,
+  unitCost: 'Introduce el coste unitario: un importe mayor que 0, con dos decimales como máximo.',
   exitType: 'Elige el tipo de salida: asignación o consumo.',
   assignedToRequired: `Indica a quién se asigna el activo (máximo ${TEXT_MAX_LENGTH} caracteres).`,
   assignedToForbidden: 'En un consumo no se indica a quién se asigna.',
@@ -133,12 +146,13 @@ function requiredText(value: string): boolean {
   return trimmed !== '' && characterCount(trimmed) <= TEXT_MAX_LENGTH;
 }
 
-/** Activo, cantidad y proveedor. Devuelve [] si se puede enviar. */
+/** Activo, cantidad, proveedor y coste unitario. Devuelve [] si se puede enviar. */
 export function validateInboundForm(values: InboundFormValues): InventoryFieldError[] {
   const errors: InventoryFieldError[] = [];
   if (values.asset === null) errors.push({ field: 'asset_id', message: MESSAGES.asset });
   if (parseQuantity(values.quantity) === null) errors.push({ field: 'quantity', message: MESSAGES.quantity });
   if (!requiredText(values.supplier)) errors.push({ field: 'supplier', message: MESSAGES.supplier });
+  if (parseUnitCost(values.unit_cost) === null) errors.push({ field: 'unit_cost', message: MESSAGES.unitCost });
   return errors;
 }
 
@@ -154,9 +168,14 @@ export function validateOutboundForm(values: OutboundFormValues): InventoryField
   return errors;
 }
 
-/** Body de `POST /inventory/orders/inbound`, campo a campo. `office` es la del activo. */
-export function buildInboundPayload(asset: SelectedAsset, quantity: number, supplier: string): { [key: string]: JsonValue } {
-  return { asset_id: asset.id, quantity, supplier: supplier.trim(), office: asset.office };
+/** Body de `POST /inventory/orders/inbound`, campo a campo. `office` es la del activo; la moneda la pone la API. */
+export function buildInboundPayload(
+  asset: SelectedAsset,
+  quantity: number,
+  supplier: string,
+  unitCost: number
+): { [key: string]: JsonValue } {
+  return { asset_id: asset.id, quantity, supplier: supplier.trim(), office: asset.office, unit_cost: unitCost };
 }
 
 /** Body de `POST /inventory/orders/outbound`. `assigned_to` es `null` en un consumo. */
@@ -201,6 +220,8 @@ function validationMessage(field: InventoryField | null, exitType: ExitType | nu
       return MESSAGES.quantity;
     case 'supplier':
       return MESSAGES.supplier;
+    case 'unit_cost':
+      return MESSAGES.unitCost;
     case 'exit_type':
       return MESSAGES.exitType;
     case 'assigned_to':
@@ -288,14 +309,15 @@ export function createInventoryService(dependencies: InventoryServiceDependencie
       return guarded(async () => {
         const errors = validateInboundForm(values);
         const quantity = parseQuantity(values.quantity);
-        if (errors.length > 0 || values.asset === null || quantity === null) {
+        const unitCost = parseUnitCost(values.unit_cost);
+        if (errors.length > 0 || values.asset === null || quantity === null || unitCost === null) {
           throw fail({ kind: 'validation', source: 'client', errors });
         }
         return client.postJson(
           INBOUND_PATH,
-          buildInboundPayload(values.asset, quantity, values.supplier),
+          buildInboundPayload(values.asset, quantity, values.supplier, unitCost),
           { timeoutMs, signal: options.signal },
-          expect(201, normalizeInboundOrder)
+          expect(201, normalizeInboundOrderCreated)
         );
       });
     },
@@ -311,7 +333,7 @@ export function createInventoryService(dependencies: InventoryServiceDependencie
           OUTBOUND_PATH,
           buildOutboundPayload(values.asset, quantity, values.exit_type, values.assigned_to),
           { timeoutMs, signal: options.signal },
-          expect(201, normalizeOutboundOrder, values.exit_type)
+          expect(201, normalizeOutboundOrderCreated, values.exit_type)
         );
       });
     },

@@ -6,6 +6,8 @@
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useInventoryAssets } from '@/hooks/use-inventory-assets';
+import { pageLoadOutcome, usePageLoadTelemetry } from '@/hooks/use-page-load-telemetry';
+import { INVENTORY_PRODUCTS_PATH } from '@/lib/inventory-routes';
 import { LOW_STOCK_MAX } from '@/lib/stock-level';
 
 import { AssetTable } from './asset-table';
@@ -18,6 +20,7 @@ export interface AssetListViewProps {
 
 export function AssetListView({ labelledBy }: AssetListViewProps) {
   const { view, assets, load, loaded, reload } = useInventoryAssets();
+  usePageLoadTelemetry(INVENTORY_PRODUCTS_PATH, pageLoadOutcome(view));
   const isLoading = load.status === 'loading';
 
   let liveMessage = '';
