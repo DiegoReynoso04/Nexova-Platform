@@ -6,7 +6,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-03 — Captura de telemetría en el frontend + endpoint stub, F1: implementación
 
-**Estado: en curso, un commit por paso.** Rama `feature/telemetry-capture`. Sin push.
+**Estado: pasos 1–5 hechos y commiteados; entorno de verificación preparado. Pendiente de que el usuario verifique en Network (con la captura para la PR), confirme la migración de la demo, y del push y la PR** (`feat: telemetry event capture`). Rama `feature/telemetry-capture`. Sin push.
 
 - **Decisiones del usuario (2026-11-03):**
   - D1 «A ligera»: la API calcula y el frontend emite. Las respuestas de Entrada y Salida devuelven lo que solo sabe la API, y el frontend llama a `track()` con eso;
@@ -80,6 +80,11 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
     - `AGENTS.md` (bloque nuevo) e `infra-40-review`;
     - `capture-analysis.md` (decisiones) y `capture-review.md` (nuevo: criterios, eventos y quién los captura, recorrido de Network, migración y pendiente);
     - `techContext.md`.
+- **Paso 6, entorno de verificación (2026-11-03):**
+  - **Base:** Postgres efímero recreado limpio (`nexova-telemetry-pg`, `127.0.0.1:55433`, red `nexova-telemetry-net`, volumen `nexova-telemetry-pg-data`), con los 6 activos del CONTEXT y sin órdenes: entradas, costes y salidas los crea el usuario.
+  - **Stack:** arrancado con un override de Compose fuera del repo (scratchpad de la sesión), que da a `api` la `DATABASE_URL` del efímero y una `TELEMETRY_SUPPLIER_KEY` generada. El `.env` del usuario solo recibió la línea `NEXT_PUBLIC_TELEMETRY_ENDPOINT`.
+  - **Humo:** `/backend/health` 200; `PUT /backend/inventory/products/1` → 405 con su `direct_stock_edit_rejected` en `nexova.telemetry`; en el navegador integrado, `/login` sin sesión → un `POST /backend/telemetry/events` (`fetch`) con `page_viewed` → 200 `{"received":1}`.
+  - **Recorrido del usuario:** `docs/telemetry/capture-review.md` §3. Para volver a la demo, `docker compose up -d` sin el override, **después** de migrarla (§5.2, con su confirmación).
 
 ---
 
