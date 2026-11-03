@@ -24,6 +24,15 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - `TELEMETRY_ENDPOINT` opcional y validada, sin uso;
   - `NEXT_PUBLIC_TELEMETRY_ENDPOINT=/backend/telemetry/events` en `.env.example` y en `docker-compose.yml` (`:?`). El agente añadió esa línea al `.env` de la raíz del usuario.
   - **Validación:** `unittest` 503 OK y `pytest` 706 passed, en el contenedor efímero; Docker: `config --quiet`, `up -d --build`, `api` healthy, `/backend/health` y el stub por `/backend` → 200, sin secretos en `ui`.
+- **Paso 2, `api-client` y `lib/telemetry.ts`:**
+  - `lib/api-client.ts`: `keepalive`, `ignoreUnauthorized` (un 401 no borra el token) y `beaconJson` (el único `JSON.stringify` y `sendBeacon`, junto al único `fetch`). Además, un oyente único de fallos de transporte (`setTransportFailureListener`), para que `client_request_failed` no cree un ciclo de imports;
+  - `lib/telemetry-api-client.ts`: `NEXT_PUBLIC_TELEMETRY_ENDPOINT` como URL completa; sus propios fallos no se notifican;
+  - `lib/telemetry.ts`: `track()` tipado por evento (no `Record<string, unknown>`, que el test estático prohíbe), envelope automático, allowlist en tiempo de ejecución, cola, lote a los 10 s o con 20 eventos, 3 reintentos (1, 2 y 4 s) solo en red, timeout, 5xx y 429, beacon en `visibilitychange: hidden`/`pagehide` y throttle de 60 s con `suppressed_count`;
+  - `lib/session-identity.ts` + `normalizeTokenIdentity`: `userId`/`sessionId` desde `sub`/`sid` del JWT, sin guardar nada;
+  - `types/telemetry.ts`: los 14 eventos de emisor frontend.
+  - **Contrato (D5):** el emisor de `inbound_order_created`, `outbound_order_created`, `stock_threshold_triggered` y `kit_cost_variance_detected` pasa a frontend en el `$comment` del JSON y en los metadatos del plan. Es un metadato, no una propiedad: `1.0.0` no cambia. La prosa del plan va en el paso 5.
+  - **Tests:** `tests/telemetry.test.mjs` (`mock.timers`), `tests/telemetry-contract.test.mjs` (con un validador draft-07 mínimo en `tests/support/event-contract.mjs`, que valida contra el JSON real) y reglas estáticas nuevas. `types/telemetry.ts` queda exento de dos reglas que confundían su vocabulario (`DELETE`, `/inventory/...`) con peticiones.
+  - **Validación:** `tsc`, `lint`, `build`, `node:test` 551/551, Jest 240/240 y `validate_event_schemas.py` OK.
 
 ---
 

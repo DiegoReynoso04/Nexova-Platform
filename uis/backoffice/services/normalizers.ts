@@ -609,3 +609,31 @@ export function normalizeInventoryValidationErrors(input: unknown): InventoryVal
   }
   return issues;
 }
+
+// ---------------------------------------------------------------------------
+// Telemetría: identidad del envelope desde los claims del JWT (ticket de captura)
+// ---------------------------------------------------------------------------
+
+/** UUID v4 en minúsculas: el patrón de `sessionId`/`userId` del envelope (docs/telemetry/event-schemas.json). */
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** `sub` y `sid` del payload del JWT, o `null` si faltan o no son UUID v4. */
+export interface TokenIdentity {
+  userId: string | null;
+  sessionId: string | null;
+}
+
+function readUuidClaim(source: JsonObject, key: string): string | null {
+  const value = source[key];
+  return typeof value === 'string' && UUID_V4.test(value) ? value : null;
+}
+
+/**
+ * Payload decodificado del JWT → identidad de la telemetría. Nunca lanza: un
+ * token ilegible o anterior al claim `sid` da `null` (eventos anónimos o sin
+ * sesión). La firma no se comprueba aquí: la API es la autoridad.
+ */
+export function normalizeTokenIdentity(input: unknown): TokenIdentity {
+  if (!isObject(input)) return { userId: null, sessionId: null };
+  return { userId: readUuidClaim(input, 'sub'), sessionId: readUuidClaim(input, 'sid') };
+}

@@ -207,11 +207,11 @@ Una fila por evento, con la clasificación pedida (**obligatorio**: viene del BR
 <!-- CATALOG -->
 | # | `event_type` | Clasificación | Categoría | Emisor | Entrega | Prerrequisitos |
 |---|---|---|---|---|---|---|
-| 1 | `inbound_order_created` | obligatorio | inventario | API | batch | P1, P3, P4, P5, P6, P9 |
-| 2 | `outbound_order_created` | obligatorio | inventario | API | batch | P1, P4, P5, P6 |
-| 3 | `stock_threshold_triggered` | obligatorio | inventario | API | stream | P1, P2, P4, P5, P6 |
+| 1 | `inbound_order_created` | obligatorio | inventario | frontend | batch | P1, P3, P4, P5, P6, P9 |
+| 2 | `outbound_order_created` | obligatorio | inventario | frontend | batch | P1, P4, P5, P6 |
+| 3 | `stock_threshold_triggered` | obligatorio | inventario | frontend | stream | P1, P2, P4, P5, P6 |
 | 4 | `direct_stock_edit_rejected` | obligatorio | inventario | API | batch | P1, P4, P5, P6, P7 |
-| 5 | `kit_cost_variance_detected` | obligatorio | inventario | API | stream | P1, P3, P4, P5, P6, P9, P10 |
+| 5 | `kit_cost_variance_detected` | obligatorio | inventario | frontend | stream | P1, P3, P4, P5, P6, P9, P10 |
 | 6 | `product_created` | oportunidad | inventario | API | batch | P1, P2, P4, P5, P6 |
 | 7 | `inbound_order_rejected` | oportunidad | inventario | API | batch | P1, P4, P5, P6 |
 | 8 | `outbound_order_rejected` | oportunidad | inventario | API | stream | P1, P4, P5, P6 |
@@ -369,7 +369,7 @@ Los eventos que no son de inventario no los llevan.
 
 #### `inbound_order_created`
 
-- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P1, P3, P4, P5, P6, P9
+- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** frontend · **Entrega:** batch · **Prerrequisitos:** P1, P3, P4, P5, P6, P9
 - **Descripción:** Se ha registrado una orden de entrada (`AssetEntry`): llega un lote de material desde un proveedor.
 - **Frase:** Capturamos `inbound_order_created` porque necesitamos saber cuánto material se produce o compra, para qué programa y con qué coste, lo que nos permite tomar la decisión de planificar la producción de material según la demanda esperada de matrículas (Elena).
 - **Se dispara:** `POST /inventory/orders/inbound` responde 201, después del commit.
@@ -417,7 +417,7 @@ Los eventos que no son de inventario no los llevan.
 
 #### `outbound_order_created`
 
-- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P1, P4, P5, P6
+- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** frontend · **Entrega:** batch · **Prerrequisitos:** P1, P4, P5, P6
 - **Descripción:** Se ha registrado una orden de salida (`AssetExit`): se entrega un kit o certificado, o se consume material.
 - **Frase:** Capturamos `outbound_order_created` porque necesitamos saber qué programas consumen más material y a qué ritmo, lo que nos permite tomar la decisión de anticipar las necesidades de reposición antes de una ola grande de matrículas (Elena).
 - **Se dispara:** `POST /inventory/orders/outbound` responde 201, después del commit.
@@ -465,7 +465,7 @@ Los eventos que no son de inventario no los llevan.
 
 #### `stock_threshold_triggered`
 
-- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P1, P2, P4, P5, P6
+- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** frontend · **Entrega:** stream · **Prerrequisitos:** P1, P2, P4, P5, P6
 - **Descripción:** Una salida ha hecho cruzar al stock de un activo su mínimo configurado: antes estaba en `min_stock` o por encima y después queda por debajo (`<`).
 - **Frase:** Capturamos `stock_threshold_triggered` porque necesitamos saber con qué frecuencia un programa se queda sin material disponible, lo que nos permite tomar la decisión de ajustar el umbral mínimo o acelerar la reimpresión o reproducción de ese material.
 - **Se dispara:** En una salida confirmada con `stock_before >= min_stock` y `stock_after < min_stock` (D4). Por cruce: no se repite mientras siga por debajo y se rearma solo cuando una entrada lo devuelve a `min_stock` o más. Nunca en el alta de un activo (nace con 0). Con `min_stock = 0` no se dispara nunca.
@@ -567,7 +567,7 @@ Los eventos que no son de inventario no los llevan.
 
 #### `kit_cost_variance_detected`
 
-- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P1, P3, P4, P5, P6, P9, P10
+- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** frontend · **Entrega:** stream · **Prerrequisitos:** P1, P3, P4, P5, P6, P9, P10
 - **Descripción:** El coste unitario de una entrada se desvía de la referencia del mismo material y proveedor más que el umbral configurado, hacia arriba o hacia abajo.
 - **Frase:** Capturamos `kit_cost_variance_detected` porque necesitamos saber cuándo un proveedor de material sube (o baja) precios de forma anómala, lo que nos permite tomar la decisión de alertar a Elena y a Laura para renegociar o buscar un proveedor alternativo.
 - **Se dispara:** Tras una entrada confirmada con `unit_cost`: referencia = media de `unit_cost` de las `N` entradas anteriores (por defecto 3) del mismo par (activo, proveedor normalizado), sin contar la actual; `variance_pct = (unit_cost − referencia) / referencia × 100`, redondeado a 2 decimales. Se emite si `|variance_pct| > umbral` (por defecto 10). Con menos de `N` entradas anteriores con coste no se evalúa (D3).

@@ -50,6 +50,8 @@ export function createFakeApiClient(replies: Record<string, Reply>): { client: A
     postJson: (path, body, options, handle) => send('POST', path, body, options, handle),
     patchJson: (path, body, options, handle) => send('PATCH', path, body, options, handle),
     putJson: (path, body, options, handle) => send('PUT', path, body, options, handle),
+    // Los servicios probados con Jest no usan el beacon (solo la telemetría).
+    beaconJson: () => false,
   };
   return { client, calls };
 }
