@@ -1,6 +1,15 @@
 # Captura de telemetría en el frontend + endpoint stub — análisis (F0)
 
-Documento de trabajo del ticket «Telemetría · Captura en el frontend». **F0: análisis y decisiones; no hay código.** Las decisiones D1–D9 de §3 las toma el usuario; hasta entonces no se implementa nada.
+Documento de trabajo del ticket «Telemetría · Captura en el frontend». **F0: análisis y decisiones; no hay código.**
+
+> **Decidido por el usuario el 2026-11-03** (implementado en F1; guía de revisión en [`capture-review.md`](./capture-review.md), cambios del contrato en el plan, §1.5):
+>
+> - **D1: «A ligera», no C.** La API calcula (respuestas 201 con stock, mínimo, moneda, `supplier_key` y variación de coste; P3 con migración solo de `unit_cost`/`currency`, P9 y P10) y el frontend emite los 4 obligatorios con `track()`. `direct_stock_edit_rejected` lo emite la API (P7). P1 y P2 quedan para más adelante (`null` y `min_stock` de la configuración). El stub acepta cualquier evento del catálogo.
+> - **D2:** los 10 de frontend. **D3:** fuera. **D4–D9 y C4–C9:** como se proponen abajo.
+> - **D5:** el emisor y los prerrequisitos cambian en el plan, en los `$comment` del JSON y en el validador (que ahora comprueba las cifras de la cabecera). Son metadatos: `1.0.0` no cambia.
+> - **Base de datos:** todo el desarrollo y la verificación, contra un Postgres efímero; la demo, solo con la confirmación del usuario.
+>
+> Lo que sigue es el análisis tal como se presentó.
 
 - **Rama:** `feature/telemetry-capture`, desde `main` en `8a23d17` (PR #28 mergeada: plan y esquemas aprobados).
 - **Contrato:** [`telemetry-plan.md`](./telemetry-plan.md) y [`event-schemas.json`](./event-schemas.json), versión `1.0.0`. El BRIEFING es [`docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`](../proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md).

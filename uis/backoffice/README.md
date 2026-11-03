@@ -94,6 +94,7 @@ Guía completa (requisitos, logs, cuándo reconstruir, comandos de seed y proble
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | `/backend` | URL base de `services/api` que usa el navegador: la ruta `/backend` del propio backoffice. Se incorpora al JavaScript al arrancar `next dev` (`NEXT_PUBLIC_*`). Si falta, `/incidents` y `/suppliers` muestran un error de configuración al usarlas; el build no falla |
 | `NEXT_PUBLIC_INVENTORY_API_URL` | `/backend` | URL base de la API del inventario (el servicio añade `/inventory/...`). La pide el brief. **Sin reserva** a `NEXT_PUBLIC_API_URL`: si falta, las páginas del inventario muestran un error de configuración; el build no falla |
+| `NEXT_PUBLIC_TELEMETRY_ENDPOINT` | `/backend/telemetry/events` | URL **completa** del colector de telemetría (también para `sendBeacon`). Si falta, la telemetría se desactiva sin avisar: nunca bloquea la interfaz (ticket de captura) |
 | `API_INTERNAL_URL` | `http://api:8000` | Solo de servidor (sin `NEXT_PUBLIC_`): destino del rewrite de `/backend/*` en `next.config.ts`, por el nombre del servicio en la red de Docker. Sin ella no hay rewrite |
 | `WATCHPACK_POLLING` | `true` | Recarga de `next dev --webpack` con el código montado desde Windows |
 

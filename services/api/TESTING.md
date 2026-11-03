@@ -317,3 +317,16 @@ En Git Bash, lo mismo con `MSYS_NO_PATHCONV=1` delante y `"$(pwd -W):/repo:ro"` 
   - `test_inventory_cache.py` (12) y `test_incident_manager_cache.py` (12): acierto sin consulta, invalidación solo con escrituras correctas, 401 sin token, filtros que no se pisan, 400 que no entra y seed que se ve al pasar el TTL;
   - 5 más en `test_timing.py` (sin `/health` y `REQUEST_TIMING_LOG`).
 - **Tests ajustados:** `inventory_support.add_orders` y los conteos de consultas vacían la caché a mano: insertan como un seed. Los tests unitarios del gestor reciben una caché nueva por llamada.
+
+**Tras el ticket de captura de telemetría** (rama `feature/telemetry-capture`, mismo procedimiento): `unittest` **534 OK** y `pytest` **737 passed**.
+
+- **Tests nuevos:**
+  - `test_telemetry_events.py`: el stub `POST /telemetry/events` (lotes de 1/20/50, sin token, 422 del envelope, 413 por encima de 64 KiB, log sin datos y catálogo igual que el JSON);
+  - `test_telemetry_inventory.py`: P3, P4, P7, P9 y P10, y los eventos que construye el frontend desde las respuestas, validados contra `event-schemas.json` con el validador del repositorio (`tests/telemetry_support.py`).
+- **Tests ajustados:**
+  - las entradas llevan `unit_cost`;
+  - las respuestas de alta tienen sus claves nuevas;
+  - `test_serialization` cuenta 33 endpoints;
+  - `test_architecture` deja loguear a `core/telemetry.py` e imprimir a `inventory/migrate.py`;
+  - la lectura del activo de P7 abre su propia sesión.
+- **La migración de P3** no se prueba en la suite (es solo PostgreSQL): se probó dos veces en un Postgres efímero (`docs/telemetry/capture-review.md`).

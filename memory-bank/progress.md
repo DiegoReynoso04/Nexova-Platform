@@ -69,6 +69,17 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - `useAuthForm(operation, form)` envuelve la operación (`lib/auth-telemetry.ts`) en los 5 formularios de auth. El fallo del login queda en `form_submitted` (`api_rejected` / `network_error`…), sin `login_failed` desde el frontend (es de la API, plan §6.3);
   - sin aviso por campo: el embudo empieza en el primer envío;
   - **Validación:** `node:test` 577/577, Jest 240, `lint` 0 y `build`.
+- **Paso 5, plan, esquemas y documentación:**
+  - **Plan:** §1.5 (cambios del ticket); D10 anotada; §1.1, §2.4 (stub, reintentos, ids «no confiados», beacon), §2.5, las fichas de los 5 obligatorios (emisor, punto exacto, identidad y prerrequisitos), §8.4 y §9.1; cifras de la cabecera: 38 API / 14 frontend.
+  - **JSON:** `$comment` de emisor y prerrequisitos. `1.0.0` no cambia: son metadatos (§5.4).
+  - **Validador:** comprueba además las cifras de la cabecera; la mutación 42/10 se detecta.
+  - **Documentación:**
+    - SPECS: §7, D-AUTH-5, Parte F (§37, §39, §40) y la nueva Parte H;
+    - `services/api/README.md` (migración) y `TESTING.md` (534/737);
+    - `uis/backoffice/CLAUDE.md` («Telemetría», coste y variables) y su README;
+    - `AGENTS.md` (bloque nuevo) e `infra-40-review`;
+    - `capture-analysis.md` (decisiones) y `capture-review.md` (nuevo: criterios, eventos y quién los captura, recorrido de Network, migración y pendiente);
+    - `techContext.md`.
 
 ---
 

@@ -220,6 +220,11 @@ Variables de entorno del proceso (la API no carga archivos `.env` por sí sola; 
 | `DATABASE_URL` | **ninguno (obligatoria)** | base PostgreSQL (Supabase) del inventario (Parte F). Desde el entorno solo se aceptan `postgresql://` y `postgresql+psycopg2://`; sin ella o con otro esquema, la API no arranca. El mensaje nunca repite la URL, y `repr(Settings)` no la muestra. La usan la API y `seed-inventory` |
 | `INCIDENTS_DB_PATH` | `services/api/data/incidents.json` | archivo TinyDB del gestor centralizado de incidencias (tablas `incidents` y `seed_keys`). Lo usan el repositorio `app/modules/incident_manager/` y `scripts/seed_incidents.py`. Rutas en la Parte E |
 | `REQUEST_TIMING_LOG` | `true` | `true`/`1`/`yes`/`on` o `false`/`0`/`no`/`off` (sin distinguir mayúsculas); otro valor no arranca. Con `false`, sin middleware de timing (Parte G, §44) |
+| `TELEMETRY_ENDPOINT` | vacío | opcional; URL absoluta http(s) o path que empieza por `/`. Declarada para fijar el patrón del ticket de captura: **hoy no se usa** (el colector está siempre en `POST /telemetry/events`, Parte H) |
+| `INVENTORY_DEFAULT_MIN_STOCK` | `5` | entero ≥ 0. Mínimo de stock con el que se calcula el cruce de `stock_threshold_triggered`, igual para todos los activos hasta que exista un mínimo por activo (P2 del plan de telemetría). Va en la respuesta 201 de las salidas (Parte F, §37) |
+| `TELEMETRY_SUPPLIER_KEY` | vacío | opcional; ≥ 32 caracteres. Clave del HMAC-SHA256 del proveedor (`supplier_key`, P9). Es un secreto: nunca en `repr` ni en un log. Sin ella, `supplier_key` es `null` |
+| `TELEMETRY_COST_VARIANCE_THRESHOLD_PCT` | `10` | número > 0 y ≤ 1000. Umbral de la variación del coste unitario (P10, D3 del plan) |
+| `TELEMETRY_COST_VARIANCE_WINDOW` | `3` | entero de 1 a 100. Entradas anteriores con coste del mismo activo y proveedor con las que se calcula la referencia (P10) |
 
 ---
 
@@ -334,7 +339,7 @@ Fuente: [`docs/auth-api.md`](../../docs/auth-api.md) (ticket del tech lead; la C
 | D-AUTH-2 | `User.id` y `Profile.id` son **UUID v4** generados por el sistema y guardados como campo del documento (string). **No** se usa el `doc_id` entero de TinyDB (a diferencia de los proveedores, D-SUP-4): el id es estable, viaja en el JWT como `sub` y otros módulos lo guardarán como `user_uuid`. No afecta a ningún contrato existente: ningún dato de proveedores ni de incidentes referencia usuarios |
 | D-AUTH-3 | Login con `OAuth2PasswordRequestForm` (formulario `application/x-www-form-urlencoded`): el campo `username` es el **email**. Así funciona el botón *Authorize* de `/docs`. No hay variante JSON |
 | D-AUTH-4 | `JWT_SECRET_KEY` (≥ 32 caracteres) y `ACCESS_TOKEN_EXPIRE_MINUTES` **sin valor por defecto**: `create_app()` lanza `ConfigError` si faltan, así que la API no arranca. El seeder y `create-admin` no las necesitan |
-| D-AUTH-5 | Algoritmo `HS256`. Claims: `sub`, `iat`, `exp`. Al decodificar se exigen firma válida, algoritmo `HS256` (se rechaza `alg: none`), `sub` y `exp` no vencido |
+| D-AUTH-5 | Algoritmo `HS256`. Claims: `sub`, `sid`, `iat`, `exp`. Al decodificar se exigen firma válida, algoritmo `HS256` (se rechaza `alg: none`), `sub` y `exp` no vencido. `sid` (UUID v4, nuevo en cada login) lo añadió el ticket de captura de telemetría (P4, D7 del plan): es el `sessionId` de los eventos y **no se usa para autenticar**; un token anterior no lo tiene y sigue siendo válido |
 | D-AUTH-6 | Email normalizado (recortado y en minúsculas) y validado sin regex ni dependencias: una sola `@`, parte local y dominio no vacíos, dominio con punto interior y sin espacios. Máximo 254 caracteres |
 | D-AUTH-7 | Contraseña: mínimo 8 caracteres y **máximo 72 bytes UTF-8** (límite de bcrypt), validado antes del hash (422). No se trunca en silencio. Sin bytes NUL (bcrypt los rechaza): 422 al validar, y en el login o como contraseña actual no se comparan (misma respuesta que una contraseña incorrecta: 401 y 400) |
 | D-AUTH-8 | `POST /users` es público y **no acepta `role`**: `UserCreate` = `email`, `password`, `name`, `phone`, `address`; enviar `role` (con cualquier valor) → 422. El backend fija siempre `role=user`. Los roles los asigna un admin con `PUT /users/{id}` (valor fuera del `Enum` → 422); el primer admin se crea con `create-admin` |
@@ -702,11 +707,16 @@ Todas exigen `Authorization: Bearer <token>`: sin token válido, 401 `not_authen
 | `GET /inventory/products` | — | **200** + lista de activos ordenada por `id` (`[]` si no hay) | — |
 | `POST /inventory/products` | `{name, sku, category, office}` | **201** + activo con `current_stock: 0` | 422 · 409 `sku_already_exists` |
 | `GET /inventory/products/{id}` | — | **200** + activo | 404 `asset_not_found` · 422 (id no entero) |
-| `POST /inventory/orders/inbound` | `{asset_id, quantity, supplier, office}` | **201** + entrada | 422 · 404 `asset_not_found` · 400 `office_mismatch` |
-| `POST /inventory/orders/outbound` | `{asset_id, quantity, exit_type, assigned_to, office}` | **201** + salida | 422 · 404 `asset_not_found` · 400 `office_mismatch` · 400 `insufficient_stock` |
+| `POST /inventory/orders/inbound` | `{asset_id, quantity, supplier, office, unit_cost}` | **201** + entrada con los derivados de la telemetría | 422 · 404 `asset_not_found` · 400 `office_mismatch` |
+| `POST /inventory/orders/outbound` | `{asset_id, quantity, exit_type, assigned_to, office}` | **201** + salida con el stock calculado | 422 · 404 `asset_not_found` · 400 `office_mismatch` · 400 `insufficient_stock` |
 | `GET /inventory/orders` | — | **200** + entradas y salidas, de la más reciente a la más antigua | — |
 
-- **Requests:** `extra="forbid"`: un campo desconocido, `current_stock`, `id` o `user_uuid` en el body → 422.
+- **Requests:** `extra="forbid"`: un campo desconocido, `current_stock`, `id`, `user_uuid` o `currency` en el body → 422.
+- **Coste de una entrada (P3 del plan de telemetría, ticket de captura):** `unit_cost` es obligatorio, > 0, con 2 decimales como máximo y ≤ 9999999999.99 (`NUMERIC(12,2)`). La moneda (`currency`) la pone la API: la de la oficina (`Valencia` → `EUR`, `Miami` → `USD`, BRIEFING de telemetría §6), sin conversión.
+- **Respuestas de alta (ticket de captura, D1 «A ligera»):** el 201 de una orden añade lo que solo sabe la API, para que el backoffice emita los eventos obligatorios con `track()` sin calcular nada. Son `InboundOrderCreated` y `OutboundOrderCreated`; `GET /inventory/orders` **no** los lleva, porque son del momento del alta:
+  - **salida:** `stock_before` y `stock_after` (calculados bajo `FOR UPDATE`, en la misma transacción), `min_stock` (`INVENTORY_DEFAULT_MIN_STOCK`, §7) y `currency`;
+  - **entrada:** `supplier_key` (HMAC-SHA256 del proveedor normalizado con `TELEMETRY_SUPPLIER_KEY`, o `null` sin la clave; P9) y `cost_variance`.
+  - **`cost_variance` (P10):** `{reference_unit_cost, variance_pct, direction, threshold_pct, reference_window}` si el coste se desvía más del umbral de la media de las `N` entradas anteriores con coste del mismo activo y proveedor normalizado (NFKC, mayúsculas y espacios). Si no se desvía o no hay `N` entradas anteriores, `null`. Con 2 decimales.
 - **Orden de comprobaciones de una salida:** 422 → 404 → `office_mismatch` → `insufficient_stock`. Si falla alguna, no se escribe nada.
 
 Activo (respuesta):
@@ -715,11 +725,18 @@ Activo (respuesta):
 {"id": 1, "name": "Portátil 14\" Business", "sku": "NXV-IT-001", "category": "hardware", "office": "Valencia", "current_stock": 13}
 ```
 
-Entrada y salida (respuestas; en `GET /inventory/orders`, unión discriminada por `type`):
+Entrada y salida (en `GET /inventory/orders`, unión discriminada por `type`; `unit_cost` y `currency` son `null` en las entradas anteriores a P3 y en las del seed):
 
 ```json
-{"type": "inbound", "id": 1, "asset": {"id": 1, "name": "Portátil 14\" Business", "sku": "NXV-IT-001"}, "quantity": 10, "supplier": "TechDistrib Valencia S.L.", "office": "Valencia", "created_at": "2026-10-18T20:55:11.366024Z", "user_uuid": "<id del usuario>"}
+{"type": "inbound", "id": 1, "asset": {"id": 1, "name": "Portátil 14\" Business", "sku": "NXV-IT-001"}, "quantity": 10, "supplier": "TechDistrib Valencia S.L.", "office": "Valencia", "created_at": "2026-10-18T20:55:11.366024Z", "user_uuid": "<id del usuario>", "unit_cost": 18.5, "currency": "EUR"}
 {"type": "outbound", "id": 1, "asset": {"id": 1, "name": "Portátil 14\" Business", "sku": "NXV-IT-001"}, "quantity": 2, "exit_type": "allocation", "assigned_to": "EMPLEADO-FICTICIO-01", "office": "Valencia", "created_at": "2026-10-18T20:55:11.548019Z", "user_uuid": "<id del usuario>"}
+```
+
+Lo que añade el 201 de cada alta:
+
+```json
+{"type": "inbound", "...": "...", "unit_cost": 21.4, "currency": "EUR", "supplier_key": "<64 hex>", "cost_variance": {"reference_unit_cost": 18.5, "variance_pct": 15.68, "direction": "increase", "threshold_pct": 10.0, "reference_window": 3}}
+{"type": "outbound", "...": "...", "stock_before": 8, "stock_after": 6, "min_stock": 5, "currency": "EUR"}
 ```
 
 Vocabulario (CONTEXT): `category` ∈ `hardware`, `peripherals`, `office_supplies`, `training_materials`; `office` ∈ `Valencia`, `Miami`; `exit_type` ∈ `allocation`, `consumption`.
@@ -765,13 +782,16 @@ Lo crea `init_db` al arrancar (`create_all` solo crea lo que falta). No hay colu
 | | `office` | `VARCHAR(32)` | NOT NULL, `CHECK` |
 | | `created_at` | `TIMESTAMP WITH TIME ZONE` | NOT NULL, índice (lo pone la aplicación en UTC) |
 | | `user_uuid` | `VARCHAR(36)` | NOT NULL, **sin FK** |
+| | `unit_cost` | `NUMERIC(12,2)` | NULL (filas anteriores a P3 y seed); `CHECK (unit_cost > 0)` (`ck_asset_entries_unit_cost_positive`) |
+| | `currency` | `VARCHAR(3)` | NULL; `CHECK` `EUR`/`USD` (`ck_asset_entries_currency`) |
 | `asset_exits` | `id`, `asset_id`, `quantity`, `office`, `created_at`, `user_uuid` | como en `asset_entries` | como en `asset_entries` |
 | | `exit_type` | `VARCHAR(32)` | NOT NULL, `CHECK` `allocation`/`consumption` |
 | | `assigned_to` | `VARCHAR(200)` | NULL; `CHECK` de coherencia con `exit_type` |
 
 ## 40. Seed, persistencia y pendiente
 
-- **Seed:** `uv run --env-file .env seed-inventory --email <usuario>` (entry point `seed-inventory` en `[project.scripts]`). Carga los 6 activos del CONTEXT, 4 entradas y 3 salidas a nombre del usuario indicado. El neto es 13/0/0/7/15/0 (`NXV-IT-001`, `NXV-IT-002`, `NXV-PER-001`, `NXV-PER-002`, `NXV-OFF-001`, `NXV-TRN-001`). Una segunda ejecución inserta 0. Salida y códigos: [`README.md`](./README.md#inventario-hito-5).
+- **Migración P3 (ticket de captura):** `create_all` no altera tablas existentes, así que una base ya creada necesita `python -m app.modules.inventory.migrate` (`--dry-run` imprime la SQL pendiente). Solo PostgreSQL, idempotente, aditiva y sin pérdida: añade `unit_cost` y `currency`, nullable, con sus `CHECK`, y no rellena ningún valor. Reversible con `DROP CONSTRAINT` + `DROP COLUMN`. **Nunca la ejecuta la API**, y sobre la base de la demo solo con la confirmación del usuario. Probada dos veces en un Postgres efímero sobre el esquema anterior; comandos y comprobaciones de solo lectura en [`docs/telemetry/capture-review.md`](../../docs/telemetry/capture-review.md).
+- **Seed:** `uv run --env-file .env seed-inventory --email <usuario>` (entry point `seed-inventory` en `[project.scripts]`). Carga los 6 activos del CONTEXT, 4 entradas y 3 salidas a nombre del usuario indicado. Las entradas van **sin coste** (`unit_cost` nulo): el CONTEXT no da costes y no se inventan. El neto es 13/0/0/7/15/0 (`NXV-IT-001`, `NXV-IT-002`, `NXV-PER-001`, `NXV-PER-002`, `NXV-OFF-001`, `NXV-TRN-001`). Una segunda ejecución inserta 0. Salida y códigos: [`README.md`](./README.md#inventario-hito-5).
 - **Concurrencia:** verificada contra Supabase el 2026-10-18: dos salidas de 5 lanzadas a la vez sobre un stock de 5 dan una 201 y una 400 `Available: 0`.
 - **CORS:** sin cambios (`GET` y `POST` ya estaban permitidos).
 - **Guía de revisión** (comandos de PowerShell, recorrido en `/docs`, trazabilidad de los requisitos y lo no verificado): [`docs/inventory-review.md`](../../docs/inventory-review.md).
@@ -819,3 +839,37 @@ Medición inicial y decisiones D1–D11 (tomadas por el usuario el 2026-10-31): 
 - uvicorn solo configura sus propios loggers, así que `configure_timing_logger` le añade un `StreamHandler` una sola vez.
 - `REQUEST_TIMING_LOG=false` lo quita (§7).
 - **Pendiente (D9, fuera de este ticket):** el access log de uvicorn, que ya existía, sí registra la query string. Hoy ninguna ruta lleva datos personales en la query.
+
+---
+
+# Parte H — Telemetría: colector stub y `direct_stock_edit_rejected` (ticket de captura)
+
+Plan y esquemas (el contrato): [`docs/telemetry/telemetry-plan.md`](../../docs/telemetry/telemetry-plan.md) y [`docs/telemetry/event-schemas.json`](../../docs/telemetry/event-schemas.json). Análisis y decisiones del ticket (D1 «A ligera», D2–D9, C4–C9): [`docs/telemetry/capture-analysis.md`](../../docs/telemetry/capture-analysis.md). Guía de revisión: [`docs/telemetry/capture-review.md`](../../docs/telemetry/capture-review.md).
+
+## 45. `POST /telemetry/events` (stub)
+
+- **Qué hace:** valida el formato, registra el lote y responde. **No persiste nada:** la persistencia es del ticket de almacenamiento, que sustituirá el stub sin que el frontend cambie (no lee el cuerpo de la respuesta).
+- **Pública a propósito:** `navigator.sendBeacon` no puede llevar `Authorization`, y un 401 haría que el backoffice cerrase la sesión. Un token, si llega, se ignora.
+- **Body:** `{"events": [TelemetryEvent, …]}`, de 1 a 50 eventos y ≤ 64 KiB (`BodySizeLimitMiddleware` con `path_limits`; por encima, 413 `file_too_large`).
+- **`TelemetryEvent`** (`app/modules/telemetry/schemas.py`): las 8 claves del envelope del plan (§5), ni una más (`extra="forbid"`), con los patrones del JSON:
+  - `eventId`, `sessionId`, `userId`, `requestId`: UUID v4 en minúsculas (los tres últimos admiten `null`);
+  - `timestamp`: ISO 8601 UTC con milisegundos y `Z`;
+  - `event_type`: el patrón de la taxonomía y uno de los 52 del catálogo (`app/modules/telemetry/catalog.py`, una copia del JSON que la suite compara con él, porque la imagen no incluye `docs/`). En la fase stub se acepta cualquier evento del catálogo; la restricción a los de emisor frontend es del colector definitivo (plan §2.4);
+  - `schemaVersion`: `1.0.0`;
+  - `properties`: un objeto JSON. La allowlist por evento es un paso posterior al envelope.
+- **Respuesta:** `200 {"received": N}`. Un lote con un evento inválido → 422 entero (el descarte uno a uno es del colector definitivo).
+- **Log:** una línea en `api.telemetry` por lote, con el número de eventos y sus `event_type` (vocabulario ya validado). Nunca `properties`, ids ni el cuerpo.
+- **`userId` y `sessionId`:** los pone el cliente desde los claims `sub` y `sid` del JWT y **no se verifican** (un beacon no lleva token). El colector definitivo los sustituirá por los del token cuando la petición traiga uno válido.
+
+## 46. `direct_stock_edit_rejected` (P7): el único evento que emite la API
+
+La interfaz no tiene ninguna forma de intentar editar el stock: solo la API lo ve. Por eso, por excepción a D1 «A ligera», este obligatorio lo emite la API.
+
+- **Cuándo** (definición D5):
+  - un `PUT`, `PATCH` o `DELETE` sobre `/inventory/products` o `/inventory/products/{id}` → 405, con o sin token;
+  - un `POST` de alta del inventario con `current_stock` en el body → 422 `extra_forbidden` (solo con token: sin él, 401 antes).
+- **Dónde:** `app/modules/telemetry/stock_edit.py` (`StockEditReporter`, en `app.state`). Lo llaman los handlers de 405 y 422 de `app/core/errors.py`, que no importan ni el inventario ni la telemetría. **Nunca cambia la respuesta ni lanza.**
+- **Datos:** identidad con `read_token_claims` (sin TinyDB); oficina del activo con una sesión propia (el 405 llega antes de `get_db`); `quantity` solo si el `input` de `current_stock` es un entero. Nunca el body, el `detail` ni el token.
+- **Salida:** una línea JSON por evento en el logger `nexova.telemetry` (`app/core/telemetry.py`), con el envelope del plan. `requestId` propio mientras no exista `X-Request-ID` (P5).
+- **Throttle:** uno cada 60 s por (usuario o anónimo, plantilla, método), con `suppressed_count`; en memoria (`--workers 1`).
+

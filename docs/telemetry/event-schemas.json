@@ -69,7 +69,7 @@
       }
     },
     "inbound_order_created": {
-      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=frontend; entrega=batch; prerrequisitos=P1,P3,P4,P5,P6,P9",
+      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=frontend; entrega=batch; prerrequisitos=P3,P4,P8,P9",
       "description": "Se ha registrado una orden de entrada (`AssetEntry`): llega un lote de material desde un proveedor.",
       "type": "object",
       "allOf": [
@@ -209,7 +209,7 @@
       }
     },
     "outbound_order_created": {
-      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=frontend; entrega=batch; prerrequisitos=P1,P4,P5,P6",
+      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=frontend; entrega=batch; prerrequisitos=P4,P8",
       "description": "Se ha registrado una orden de salida (`AssetExit`): se entrega un kit o certificado, o se consume material.",
       "type": "object",
       "allOf": [
@@ -350,7 +350,7 @@
       }
     },
     "stock_threshold_triggered": {
-      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=frontend; entrega=stream; prerrequisitos=P1,P2,P4,P5,P6",
+      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=frontend; entrega=stream; prerrequisitos=P4,P8",
       "description": "Una salida ha hecho cruzar al stock de un activo su mínimo configurado: antes estaba en `min_stock` o por encima y después queda por debajo (`<`).",
       "type": "object",
       "allOf": [
@@ -497,7 +497,7 @@
       }
     },
     "direct_stock_edit_rejected": {
-      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=api; entrega=batch; prerrequisitos=P1,P4,P5,P6,P7",
+      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=api; entrega=batch; prerrequisitos=P4,P6,P7",
       "description": "Alguien ha intentado fijar el stock fuera de una orden y la API lo ha rechazado (definición operativa D5).",
       "type": "object",
       "allOf": [
@@ -666,7 +666,7 @@
       }
     },
     "kit_cost_variance_detected": {
-      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=frontend; entrega=stream; prerrequisitos=P1,P3,P4,P5,P6,P9,P10",
+      "$comment": "clasificación=obligatorio; categoría=inventario; emisor=frontend; entrega=stream; prerrequisitos=P3,P4,P8,P9,P10",
       "description": "El coste unitario de una entrada se desvía de la referencia del mismo material y proveedor más que el umbral configurado, hacia arriba o hacia abajo.",
       "type": "object",
       "allOf": [
