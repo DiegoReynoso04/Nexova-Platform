@@ -17,15 +17,38 @@ Decisiones de esquema (Hito 5, aprobadas por el usuario):
 - `asset_id` lleva índice explícito: PostgreSQL no indexa las FK por sí solo.
 - `CHECK` en la base, como segunda barrera tras los schemas: `quantity > 0`, el
   vocabulario cerrado y la coherencia de `assigned_to` con `exit_type`.
+
+Ticket de captura de telemetría (P3 del plan): `AssetEntry.unit_cost`
+(`NUMERIC(12,2)`, `> 0`) y `AssetEntry.currency` (`EUR`/`USD`, la de la
+oficina), nullable: las entradas anteriores (y las del seed, que el CONTEXT da
+sin coste) no tienen coste. `create_all` no altera tablas existentes: en una
+base ya creada se añaden con `python -m app.modules.inventory.migrate`.
 """
 
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import CheckConstraint, ColumnElement, DateTime, String, and_, column, or_
+from decimal import Decimal
+
+from sqlalchemy import CheckConstraint, ColumnElement, DateTime, Numeric, String, and_, column, or_
 from sqlmodel import Field, SQLModel
 
-from .vocabulary import TEXT_MAX_LENGTH, USER_UUID_LENGTH, AssetCategory, ExitType, Office
+from .vocabulary import (
+    TEXT_MAX_LENGTH,
+    UNIT_COST_DECIMAL_PLACES,
+    UNIT_COST_MAX_DIGITS,
+    USER_UUID_LENGTH,
+    AssetCategory,
+    Currency,
+    ExitType,
+    Office,
+)
+
+# Longitud de `currency` (código ISO 4217).
+CURRENCY_LENGTH = 3
+# Nombres de los `CHECK` de P3: los usa también la migración (`migrate.py`).
+UNIT_COST_CHECK = "ck_asset_entries_unit_cost_positive"
+CURRENCY_CHECK = "ck_asset_entries_currency"
 
 # Ancho de las columnas de vocabulario: holgado sobre el valor más largo.
 VOCABULARY_MAX_LENGTH = 32
@@ -67,7 +90,12 @@ class AssetEntry(SQLModel, table=True):
     """Equivale a `InboundOrder`: una compra o entrega recibida por Nexova."""
 
     __tablename__ = "asset_entries"
-    __table_args__ = (_positive_quantity("asset_entries"), _known_office("asset_entries"))
+    __table_args__ = (
+        _positive_quantity("asset_entries"),
+        _known_office("asset_entries"),
+        CheckConstraint(column("unit_cost") > 0, name=UNIT_COST_CHECK),
+        CheckConstraint(_one_of("currency", Currency), name=CURRENCY_CHECK),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     asset_id: int = Field(foreign_key="assets.id", index=True)
@@ -76,6 +104,10 @@ class AssetEntry(SQLModel, table=True):
     office: Office = Field(sa_type=String(VOCABULARY_MAX_LENGTH))
     created_at: datetime = Field(default_factory=utc_now, sa_type=DateTime(timezone=True), index=True)
     user_uuid: str = Field(max_length=USER_UUID_LENGTH)
+    unit_cost: Decimal | None = Field(
+        default=None, sa_type=Numeric(UNIT_COST_MAX_DIGITS, UNIT_COST_DECIMAL_PLACES, asdecimal=True)
+    )
+    currency: Currency | None = Field(default=None, sa_type=String(CURRENCY_LENGTH))
 
 
 class AssetExit(SQLModel, table=True):

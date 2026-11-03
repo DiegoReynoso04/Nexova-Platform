@@ -5,12 +5,20 @@
 // mostrar una confirmación) lo decide la vista.
 //
 // Reducer puro + controlador sin React (probado con `node --test`) + hook.
+//
+// Telemetría (ticket de captura): con `form`, el hook envuelve la operación
+// (lib/auth-telemetry.ts) para `form_validation_failed` y `form_submitted`, y
+// `form_abandoned` al salir. Estos formularios no avisan de cada campo: el
+// embudo empieza en el primer envío.
 
 import { useCallback, useEffect, useReducer, useState } from 'react';
 
+import { useFormTelemetry } from '@/hooks/use-form-telemetry';
 import { ApiAbortError } from '@/lib/api-client';
+import { observeAuthOperation } from '@/lib/auth-telemetry';
 import { AuthServiceError } from '@/services/auth.service';
 import type { AuthUiError } from '@/types/auth';
+import type { TelemetryForm } from '@/types/telemetry';
 
 export type AuthFormState =
   | { status: 'idle' }
@@ -92,10 +100,11 @@ export interface UseAuthFormResult<V> {
   submit: (values: V, onSuccess: () => void) => void;
 }
 
-export function useAuthForm<V>(operation: AuthOperation<V>): UseAuthFormResult<V> {
+export function useAuthForm<V>(operation: AuthOperation<V>, form: TelemetryForm): UseAuthFormResult<V> {
   const [state, dispatch] = useReducer(authFormReducer, INITIAL_AUTH_FORM_STATE);
+  const telemetry = useFormTelemetry(form);
   // La operación (login o register) es fija para cada vista: el controlador se crea una vez.
-  const [controller] = useState(() => createAuthFormController(dispatch, operation));
+  const [controller] = useState(() => createAuthFormController(dispatch, observeAuthOperation(operation, telemetry)));
 
   useEffect(() => {
     controller.activate();

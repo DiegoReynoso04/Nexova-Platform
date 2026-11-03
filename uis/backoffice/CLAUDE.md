@@ -103,7 +103,8 @@ Reglas específicas (lo no citado sigue las de `/incidents`: frontera de confian
   - la **oficina** es la del activo elegido y es la que se envía. Se muestra como **valor de solo lectura** (`components/inventory/read-only-field.tsx`: un `<output>` asociado a su etiqueta, con fondo atenuado y sin borde de campo), nunca como un `<input>`;
   - `asset_id` y `quantity` se envían como **números** (la API usa enteros estrictos);
   - el activo puede llegar preseleccionado con `?asset_id=` desde Activos (`lib/asset-preselection.ts`); si no existe, aviso visible y selector vacío;
-  - validación en cliente antes de enviar (activo, cantidad entera de 1 a `QUANTITY_MAX`, proveedor, tipo de salida y «Asignado a» con una asignación): si no pasa, no hay petición;
+  - validación en cliente antes de enviar (activo, cantidad entera de 1 a `QUANTITY_MAX`, proveedor, coste unitario, tipo de salida y «Asignado a» con una asignación): si no pasa, no hay petición;
+  - **Coste unitario** en Entrada (P3 del plan de telemetría): obligatorio, > 0, con coma o punto y 2 decimales como máximo (`parseUnitCost`). La moneda no se elige: es la de la oficina del activo, la pone la API y la ayuda del campo la nombra;
   - un envío a la vez (el segundo se ignora), con el botón deshabilitado y spinner;
   - tras el éxito, confirmación («Entrada registrada: N × nombre (SKU)» / «Salida registrada: …») y formulario limpio (`key = formKey`) **con el activo del enlace** (`formInitialAssetId`); sin `?asset_id=`, el selector vuelve a estar vacío;
   - el reparto de errores entre los campos y el aviso general está en `lib/inventory-form-errors.ts`.
@@ -147,13 +148,29 @@ Autorizada por el ticket AUTH-02 ([`docs/auth-frontend.md`](../../docs/auth-fron
 - **Errores:** mensajes fijos por tipo (`components/auth/auth-error.tsx`); los 422 (y el 409 de email ya registrado) se muestran junto a su campo con el `msg` de la API. Nunca se muestra la contraseña ni el token.
 - **Contraseñas (AUTH-03, [`docs/auth-password-reset.md`](../../docs/auth-password-reset.md); contrato en `services/api/SPECS.md` Parte D):** `/forgot-password` (pública), `/reset-password` (abierta: `OPEN_PATHS`, con o sin sesión, porque llega desde el enlace del email) y `/account/change-password` (protegida), más el enlace "¿Olvidaste tu contraseña?" en `/login`. Mismas capas (`hooks/use-auth-form.ts` → `services/auth.service.ts`). `/forgot-password` muestra siempre la misma confirmación tras un 200 y queda desactivado. La confirmación de la contraseña nueva se comprueba en el servicio antes de llamar a la API y nunca se envía. `/reset-password` lee `?token=` una vez, lo quita de la URL y usa `referrer: no-referrer`; el 400 `invalid_reset_token` muestra el error y un enlace a `/forgot-password`. El 400 `incorrect_password` se muestra en el campo de la contraseña actual (no cierra la sesión).
 
+## Telemetría (ticket de captura)
+
+Plan y esquemas (el contrato): [`docs/telemetry/telemetry-plan.md`](../../docs/telemetry/telemetry-plan.md) y [`docs/telemetry/event-schemas.json`](../../docs/telemetry/event-schemas.json). Decisiones: [`docs/telemetry/capture-analysis.md`](../../docs/telemetry/capture-analysis.md). Qué evento captura cada pieza: [`docs/telemetry/capture-review.md`](../../docs/telemetry/capture-review.md).
+
+- **Una sola entrada: `track()` de `lib/telemetry.ts`.** Ningún componente construye eventos ni hace HTTP para la telemetría. `track` está tipado por evento (`types/telemetry.ts`, comprobado contra el JSON por `tests/telemetry-contract.test.mjs`) y aplica la allowlist en tiempo de ejecución.
+- **Envelope:** lo rellena el servicio: `eventId`, `timestamp` de captura, `schemaVersion`, `requestId` propio, y `userId`/`sessionId` desde los claims `sub`/`sid` del JWT (`lib/session-identity.ts` + `normalizeTokenIdentity`). **Nada se guarda en el navegador:** ni `sessionStorage` ni un `localStorage` nuevo; `lib/auth-token.ts` sigue guardando solo el JWT.
+- **Transporte:** por `lib/api-client.ts` (el único `fetch`, el único `JSON.stringify` y también el único `sendBeacon`), con `keepalive` y `ignoreUnauthorized` (un 401 de la telemetría no cierra la sesión), a través de `lib/telemetry-api-client.ts` (`NEXT_PUBLIC_TELEMETRY_ENDPOINT`, la URL completa).
+  - Cola en memoria; un lote cada 10 s o con 20 eventos.
+  - 3 reintentos (1, 2 y 4 s) solo ante red, timeout, 5xx y 429.
+  - Beacon en `visibilitychange: hidden` y `pagehide`.
+  - Sin la variable, no hace nada y no avisa.
+- **Los 4 obligatorios que emite el frontend** salen de la respuesta 201 de la API, en los hooks de Entrada y Salida (`lib/inventory-telemetry.ts`). El frontend no calcula el stock, el cruce del mínimo, la clave del proveedor ni la variación de coste: lo hace la API. `direct_stock_edit_rejected` lo emite la API.
+- **Privacidad:** solo plantillas de ruta (nunca el path real ni la query string), nombres de campo (nunca valores), ni el nombre del activo, el proveedor, `assigned_to` ni el email. Los límites de error no pasan el error a su tracker.
+- **`client_request_failed`:** `api-client` avisa a un oyente único (`setTransportFailureListener`) y no importa la telemetría. Los fallos del propio envío de telemetría no se notifican.
+- **Tests:** `tests/telemetry*.test.mjs` (con `mock.timers` y un validador draft-07 mínimo en `tests/support/event-contract.mjs`, que valida contra el JSON real) y las reglas de telemetría de `tests/production-source.test.mjs`.
+
 ## Docker (#infra-40)
 
 Desde el ticket #infra-40, el backoffice se arranca **solo con Docker**, en el contenedor de interfaces (`uis/Dockerfile`, `uis/start.sh`), en el **puerto 3001** (el 3000 es del website). Guía: [`docs/local-development.md`](../../docs/local-development.md); revisión: [`docs/infra-40-review.md`](../../docs/infra-40-review.md).
 
 - **Rewrite `/backend`:** `next.config.ts` reenvía `/backend/:path*` a `API_INTERNAL_URL` (`http://api:8000`, el nombre del servicio en la red de Docker), solo si esa variable existe; sin ella, `rewrites()` devuelve `[]`. El navegador usa `NEXT_PUBLIC_API_URL=/backend` y `NEXT_PUBLIC_INVENTORY_API_URL=/backend`: mismo origen, sin CORS. `lib/api-client.ts` no cambia: concatena la base (también relativa) y la ruta.
 - **`API_INTERNAL_URL` es solo de servidor:** sin el prefijo `NEXT_PUBLIC_`, nunca llega al JavaScript del navegador. Se lee al arrancar `next dev`; con `next start`, los rewrites salen del `routes-manifest.json` de `next build`, así que en un build de producción tendría que estar definida al construir.
-- **Variables:** el contenedor `ui` solo recibe `API_INTERNAL_URL`, las dos `NEXT_PUBLIC_*` y `WATCHPACK_POLLING`, desde el `.env` de la raíz (ningún secreto de la API). Un `.env.local` del host montado en el contenedor lo carga Next, pero pierde ante el entorno del proceso (`process.env` va primero): no usarlo.
+- **Variables:** el contenedor `ui` solo recibe `API_INTERNAL_URL`, las tres `NEXT_PUBLIC_*` (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_INVENTORY_API_URL` y `NEXT_PUBLIC_TELEMETRY_ENDPOINT`) y `WATCHPACK_POLLING`, desde el `.env` de la raíz (ningún secreto de la API). Un `.env.local` del host montado en el contenedor lo carga Next, pero pierde ante el entorno del proceso (`process.env` va primero): no usarlo.
 - **`next dev --webpack`** (en `uis/start.sh`): dentro del contenedor, Turbopack no aplica los cambios del código montado; webpack con **`WATCHPACK_POLLING=true`** recarga en unos 2 s. Por eso `next.config.ts` no lleva `watchOptions`.
 - **`node_modules` y `.next`** van en volúmenes anónimos del contenedor (los del host son de Windows). Tras cambiar `package-lock.json`: `docker compose up -d --build -V`.
 - **Tests:** siguen en el host (fila de `uis/backoffice` de `AGENTS.md` §4). `tests/next-config.test.mjs` cubre el rewrite y que no vuelva `watchOptions`.

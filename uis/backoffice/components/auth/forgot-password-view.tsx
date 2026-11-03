@@ -21,7 +21,7 @@ export const FORGOT_PASSWORD_CONFIRMATION = 'Si esa dirección está registrada,
 // el formulario queda desactivado (sin peticiones duplicadas) y se muestra la
 // confirmación. Solo un fallo de red o del servidor permite volver a enviarlo.
 export function ForgotPasswordView() {
-  const { state, submit } = useAuthForm(requestPasswordReset);
+  const { state, submit } = useAuthForm(requestPasswordReset, 'forgot_password');
   const [values, setValues] = useState<ForgotPasswordFormValues>({ email: '' });
   const error = state.status === 'error' ? state.error : null;
   const isSent = state.status === 'success';

@@ -15,8 +15,10 @@
 
 import hashlib
 import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import cache
+from uuid import uuid4
 
 from jose import JWTError, jwt
 from passlib.hash import bcrypt
@@ -75,6 +77,9 @@ def create_access_token(settings: Settings, user_id: str, now: datetime | None =
     issued_at = now if now is not None else datetime.now(UTC)
     claims = {
         "sub": user_id,
+        # Plan de telemetría, P4 (D7): un id de sesión nuevo en cada login. Es el
+        # `sessionId` de los eventos; no se usa para autenticar.
+        "sid": str(uuid4()),
         "iat": issued_at,
         "exp": issued_at + timedelta(seconds=expires_in_seconds(settings)),
     }
@@ -94,3 +99,36 @@ def decode_access_token(settings: Settings, token: str) -> str | None:
         return None
     subject = claims.get("sub")
     return subject if isinstance(subject, str) and subject else None
+
+
+@dataclass(frozen=True, slots=True)
+class TokenClaims:
+    """Claims de un token con firma válida, para la telemetría (P4). Sin el token."""
+
+    sub: str
+    sid: str | None
+
+
+def read_token_claims(settings: Settings, token: str) -> TokenClaims | None:
+    """`sub` y `sid` de un token válido (firma, algoritmo y `exp`), o `None`.
+
+    No consulta TinyDB: la telemetría (p. ej. `direct_stock_edit_rejected`, que
+    se detecta antes de autenticar) solo necesita la identidad declarada por un
+    token firmado. Un token anterior a P4 no tiene `sid`.
+    """
+    if not settings.jwt_secret_key:
+        return None
+    try:
+        claims = jwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[JWT_ALGORITHM],
+            options={"require_sub": True, "require_exp": True},
+        )
+    except JWTError:
+        return None
+    subject = claims.get("sub")
+    session_id = claims.get("sid")
+    if not isinstance(subject, str) or not subject:
+        return None
+    return TokenClaims(sub=subject, sid=session_id if isinstance(session_id, str) and session_id else None)

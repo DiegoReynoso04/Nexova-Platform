@@ -25,8 +25,11 @@ from app.modules.inventory.models import AssetEntry, AssetExit
 from .inventory_support import INBOUND_URL, ORDERS_URL, OUTBOUND_URL, USER_UUID, InventoryTestCase
 from .support import with_test_auth
 
-INBOUND_KEYS = {"type", "id", "asset", "quantity", "supplier", "office", "created_at", "user_uuid"}
+INBOUND_KEYS = {"type", "id", "asset", "quantity", "supplier", "office", "created_at", "user_uuid", "unit_cost", "currency"}
 OUTBOUND_KEYS = {"type", "id", "asset", "quantity", "exit_type", "assigned_to", "office", "created_at", "user_uuid"}
+# Respuestas de alta (ticket de captura de telemetría, D1 «A ligera»): el listado no los lleva.
+INBOUND_CREATED_KEYS = INBOUND_KEYS | {"supplier_key", "cost_variance"}
+OUTBOUND_CREATED_KEYS = OUTBOUND_KEYS | {"stock_before", "stock_after", "min_stock", "currency"}
 QUANTITY_MAX = 2_147_483_647
 
 
@@ -36,7 +39,13 @@ class OrdersTestCase(InventoryTestCase):
         self.asset = self.create(name="Example laptop", sku="EXAMPLE-LAPTOP", office="Valencia")
 
     def inbound(self, quantity: int = 5, **changes: Any) -> Any:
-        body = {"asset_id": self.asset["id"], "quantity": quantity, "supplier": "Example supplier", "office": "Valencia"}
+        body = {
+            "asset_id": self.asset["id"],
+            "quantity": quantity,
+            "supplier": "Example supplier",
+            "office": "Valencia",
+            "unit_cost": 12.5,
+        }
         return self.client.post(INBOUND_URL, json=body | changes)
 
     def outbound(self, quantity: int = 1, **changes: Any) -> Any:
@@ -203,7 +212,7 @@ class CommonOrderRulesTests(OrdersTestCase):
 
     def test_inbound_response_shape(self) -> None:
         body = self.assertCreated(self.inbound(5, supplier="  TechDistrib Valencia S.L. "))
-        self.assertEqual(set(body), INBOUND_KEYS)
+        self.assertEqual(set(body), INBOUND_CREATED_KEYS)
         self.assertEqual(body["type"], "inbound")
         self.assertEqual(body["asset"], {"id": self.asset["id"], "name": "Example laptop", "sku": "EXAMPLE-LAPTOP"})
         self.assertEqual((body["quantity"], body["supplier"], body["office"]), (5, "TechDistrib Valencia S.L.", "Valencia"))

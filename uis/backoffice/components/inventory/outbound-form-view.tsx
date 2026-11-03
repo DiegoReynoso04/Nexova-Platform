@@ -26,7 +26,7 @@ export interface OutboundFormViewProps {
 
 export function OutboundFormView({ assetIdParam, labelledBy }: OutboundFormViewProps) {
   const assets = useInventoryAssets();
-  const { assetId, stock, submit, formKey, selectAsset, submitOutbound } = useOutboundForm();
+  const { assetId, stock, submit, formKey, selectAsset, submitOutbound, fieldChanged } = useOutboundForm();
   const preselection = resolvePreselection(assetIdParam, assets.loaded ? assets.assets : null);
   const initialAssetId = formInitialAssetId(preselection);
   const loadError = assets.load.status === 'error' ? assets.load.error : null;
@@ -61,6 +61,7 @@ export function OutboundFormView({ assetIdParam, labelledBy }: OutboundFormViewP
         notice={preselection.status === 'missing' ? MISSING_ASSET_NOTICE : null}
         submit={submit}
         onSubmit={handleSubmit}
+        onFieldChange={fieldChanged}
       />
     </section>
   );

@@ -317,14 +317,29 @@ Medición inicial y decisiones D1–D11 (tomadas el 2026-10-31) en [`docs/cachin
 
 Diseño sin código: [`docs/telemetry/telemetry-plan.md`](../docs/telemetry/telemetry-plan.md) y [`docs/telemetry/event-schemas.json`](../docs/telemetry/event-schemas.json). El BRIEFING está en `docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`. Las decisiones D1–D14 son del usuario; el detalle está en el plan y no se duplica aquí.
 
-- **Estado del código:** no existe ningún emisor de eventos ni cabecera de correlación. Lo que el plan exige al equipo que instrumente son los prerrequisitos P1–P10 (§2 del plan):
-  - columnas del inventario `product_category`, `programme_id`, `min_stock`, `unit_cost` y `currency`, con migración;
-  - claim `sid` en el JWT y `X-Request-ID`;
-  - emisor `app/core/telemetry.py` (logger `nexova.telemetry`);
-  - colector `POST /telemetry/events` y `lib/telemetry.ts`;
-  - clave `TELEMETRY_SUPPLIER_KEY`.
+- **Estado del código:** desde el ticket de captura (2026-11-03, rama `feature/telemetry-capture`) hay captura y un colector stub; ver la subsección siguiente. Siguen pendientes P1 (clasificación), P2 (mínimo por activo), P5 (`X-Request-ID`) y el emisor completo de P6.
 - **Esquemas:** JSON Schema draft-07. La comprobación permanente es `python scripts/validate_event_schemas.py` (librería estándar, subconjunto cerrado de palabras clave y coherencia con el plan). `ajv-cli@5.0.0` se ejecutó una vez con `npx`, sin tocar ningún `package.json`.
 - **Hallazgo técnico (F0):** `PUT`/`PATCH`/`DELETE` sobre `/inventory/products{,/{id}}` dan 405 **antes** de autenticar, porque Starlette no ejecuta las dependencias del router. Además, `Allow` solo lista `GET` en la colección.
+
+### Captura de telemetría (ticket de captura, 2026-11-03, rama `feature/telemetry-capture`)
+
+Decisiones del usuario en `docs/telemetry/capture-analysis.md` y en el plan, §1.5; revisión en `docs/telemetry/capture-review.md`; contrato en `services/api/SPECS.md` Partes F y H; reglas del frontend en `uis/backoffice/CLAUDE.md` («Telemetría»). No se duplica aquí, solo lo permanente:
+
+- **D1 «A ligera»:** la API calcula y el frontend emite 4 obligatorios con `track()`, desde las respuestas 201 de alta (`InboundOrderCreated`/`OutboundOrderCreated`). `direct_stock_edit_rejected` lo emite la API (P7, `StockEditReporter` vía `app.state`, una línea JSON en `nexova.telemetry`).
+- **API:**
+  - colector stub `POST /telemetry/events` (público, `200 {received}`, ≤ 50 eventos y ≤ 64 KiB con `BodySizeLimitMiddleware.path_limits`);
+  - `app/modules/telemetry/catalog.py`, copia del JSON comprobada por la suite (la imagen no incluye `docs/`);
+  - claim `sid` (P4);
+  - `asset_entries.unit_cost`/`currency` (P3) con `python -m app.modules.inventory.migrate`, idempotente y solo PostgreSQL (aplicada a la demo el 2026-11-03);
+  - HMAC del proveedor (P9) y variación de coste (P10);
+  - configuración nueva, toda opcional: `TELEMETRY_ENDPOINT` (sin uso), `TELEMETRY_SUPPLIER_KEY`, `INVENTORY_DEFAULT_MIN_STOCK` y `TELEMETRY_COST_VARIANCE_*`.
+  - **Restricciones de `test_architecture.py`** que condicionan el código: sin `re`, sin `\d` en literales, sin `round`/`quantize` (2 decimales con `format`) y solo `core/*` loguea.
+- **Backoffice:**
+  - `lib/telemetry.ts`: cola, 10 s / 20, 3 reintentos y beacon;
+  - el transporte sigue en `lib/api-client.ts` (`keepalive`, `ignoreUnauthorized`, `beaconJson` y un oyente de fallos de transporte);
+  - identidad desde los claims del JWT, sin guardar nada;
+  - `NEXT_PUBLIC_TELEMETRY_ENDPOINT` (la URL completa), interpolada en `ui` con `:?`.
+- **Tests de contrato a los dos lados:** comparan el código con `event-schemas.json`. El backoffice valida cada evento contra el JSON real con un validador draft-07 mínimo, sin dependencias.
 
 ### Docker (#infra-40)
 
@@ -332,7 +347,7 @@ Diseño sin código: [`docs/telemetry/telemetry-plan.md`](../docs/telemetry/tele
 
 - **Único modo de arranque en desarrollo:** `docker compose up` desde la raíz, con un solo `.env` (plantilla `.env.example` en la raíz) y puertos fijos: 3000 website, 3001 backoffice, 8000 API. `services/api/.env` y `uis/backoffice/.env.local` ya no se usan para arrancar. Los tests siguen en el host (`AGENTS.md` §4). El tracker queda fuera de Docker, en el 3002.
 - **Comunicación por nombre de servicio:** el navegador solo habla con `localhost:3001/backend/…`; el rewrite de `uis/backoffice/next.config.ts` la reenvía a `API_INTERNAL_URL=http://api:8000` (variable solo de servidor; sin ella, `rewrites()` devuelve `[]`). Mismo origen, sin CORS para el backoffice. Con `next start`, los rewrites salen del `routes-manifest.json` de `next build`: un build de producción necesitaría la variable al construir.
-- **Aislamiento de variables:** `api` recibe el `.env` entero (`env_file` obligatorio); `ui` solo `API_INTERNAL_URL`, las dos `NEXT_PUBLIC_*` y `WATCHPACK_POLLING`, interpoladas con `${VAR:?…}` (un comando de Compose falla con un mensaje claro si falta una). Nunca `docker compose config` sin `--quiet` (imprime los secretos).
+- **Aislamiento de variables:** `api` recibe el `.env` entero (`env_file` obligatorio); `ui` solo `API_INTERNAL_URL`, las tres `NEXT_PUBLIC_*` (la de telemetría desde el ticket de captura) y `WATCHPACK_POLLING`, interpoladas con `${VAR:?…}` (un comando de Compose falla con un mensaje claro si falta una). Nunca `docker compose config` sin `--quiet` (imprime los secretos).
 - **Imagen de la API:** `python:3.14.6-slim` y `uv` 0.12.21 (copiado de su imagen oficial); `uv pip install --system --require-hashes -r requirements.txt`. `requirements.txt` se exporta desde `services/api` con `uv export --frozen --no-dev --no-emit-project --format requirements-txt -o requirements.txt`; `tests/test_requirements_lock.py` comprueba que sigue a `uv.lock`. `nexova_shared` e `incident_analyzer` entran por `PYTHONPATH` desde el contexto adicional `packages` (instalarlos pediría `setuptools` a PyPI); una etapa intermedia borra el `__pycache__` del host, porque el `.dockerignore` de `services/` no se aplica a ese contexto. La imagen no instala el proyecto: los atajos de `[project.scripts]` no existen dentro (`python -m app.seed`, `python -m app.auth.create_admin`, `python -m app.modules.inventory.seed`).
 - **Imagen de interfaces:** `node:24.20.0-alpine`; `npm ci` del backoffice (el lockfile ya trae las variantes musl de `@next/swc`, `lightningcss` y `@tailwindcss/oxide`). El website (HTML estático) lo sirve `uis/serve-website.mjs` con el módulo `http` de Node (la `busybox` de Alpine no trae `httpd`); vive fuera de `uis/website/` porque Netlify publica esa carpeta.
 - **`uis/start.sh`:** en BusyBox 1.37 `wait -n` espera a todos y devuelve 0, así que se vigila con `kill -0`; cada app va en su grupo de procesos (`setsid`) y las señales van al grupo (si `next dev` muere de golpe, su `next-server` huérfano mantenía vivo el contenedor). Si una app cae, el contenedor sale con un código distinto de 0.

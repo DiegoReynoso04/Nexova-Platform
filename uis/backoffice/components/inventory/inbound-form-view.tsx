@@ -23,7 +23,7 @@ export interface InboundFormViewProps {
 
 export function InboundFormView({ assetIdParam, labelledBy }: InboundFormViewProps) {
   const assets = useInventoryAssets();
-  const { submit, formKey, submitInbound } = useInboundForm();
+  const { submit, formKey, submitInbound, fieldChanged } = useInboundForm();
   const preselection = resolvePreselection(assetIdParam, assets.loaded ? assets.assets : null);
   const loadError = assets.load.status === 'error' ? assets.load.error : null;
 
@@ -46,6 +46,7 @@ export function InboundFormView({ assetIdParam, labelledBy }: InboundFormViewPro
         notice={preselection.status === 'missing' ? MISSING_ASSET_NOTICE : null}
         submit={submit}
         onSubmit={submitInbound}
+        onFieldChange={fieldChanged}
       />
     </section>
   );

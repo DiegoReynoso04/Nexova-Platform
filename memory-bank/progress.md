@@ -4,9 +4,126 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-03 — Captura de telemetría en el frontend + endpoint stub, F1: implementación
+
+**Estado: hecho y verificado por el usuario en Network; demo migrada; PR `feat: telemetry event capture` abierta contra `main`, pendiente de que el usuario suba las capturas y de la revisión.** Rama `feature/telemetry-capture`.
+
+- **Decisiones del usuario (2026-11-03):**
+  - D1 «A ligera»: la API calcula y el frontend emite. Las respuestas de Entrada y Salida devuelven lo que solo sabe la API, y el frontend llama a `track()` con eso;
+  - `direct_stock_edit_rejected` es la única excepción: lo emite la API (P7), con un emisor mínimo;
+  - `min_stock` = `INVENTORY_DEFAULT_MIN_STOCK` (5), sin columna; P1 y P2 quedan para más adelante;
+  - P3 con migración solo de `unit_cost`/`currency`, en un Postgres efímero; la base de la demo, solo con su confirmación, antes del merge;
+  - el stub acepta cualquier `event_type` del catálogo;
+  - D2 los 10 eventos de frontend; D3 fuera; D4–D9 y C4–C9 como se propusieron.
+- **Paso 1, stub y configuración:**
+  - `POST /telemetry/events` (`app/modules/telemetry/`), público, que responde `200 {"received": N}`;
+  - `TelemetryEvent` con las 8 claves del envelope y los patrones del JSON (`[0-9]` en lugar de `\d`, que prohíbe `test_architecture.py`);
+  - lotes de 1 a 50 eventos y 64 KiB por ruta (`BodySizeLimitMiddleware.path_limits`);
+  - log `api.telemetry` con el número de eventos y sus tipos;
+  - `catalog.py` como copia del JSON, comprobada por la suite;
+  - `TELEMETRY_ENDPOINT` opcional y validada, sin uso;
+  - `NEXT_PUBLIC_TELEMETRY_ENDPOINT=/backend/telemetry/events` en `.env.example` y en `docker-compose.yml` (`:?`). El agente añadió esa línea al `.env` de la raíz del usuario.
+  - **Validación:** `unittest` 503 OK y `pytest` 706 passed, en el contenedor efímero; Docker: `config --quiet`, `up -d --build`, `api` healthy, `/backend/health` y el stub por `/backend` → 200, sin secretos en `ui`.
+- **Paso 2, `api-client` y `lib/telemetry.ts`:**
+  - `lib/api-client.ts`: `keepalive`, `ignoreUnauthorized` (un 401 no borra el token) y `beaconJson` (el único `JSON.stringify` y `sendBeacon`, junto al único `fetch`). Además, un oyente único de fallos de transporte (`setTransportFailureListener`), para que `client_request_failed` no cree un ciclo de imports;
+  - `lib/telemetry-api-client.ts`: `NEXT_PUBLIC_TELEMETRY_ENDPOINT` como URL completa; sus propios fallos no se notifican;
+  - `lib/telemetry.ts`: `track()` tipado por evento (no `Record<string, unknown>`, que el test estático prohíbe), envelope automático, allowlist en tiempo de ejecución, cola, lote a los 10 s o con 20 eventos, 3 reintentos (1, 2 y 4 s) solo en red, timeout, 5xx y 429, beacon en `visibilitychange: hidden`/`pagehide` y throttle de 60 s con `suppressed_count`;
+  - `lib/session-identity.ts` + `normalizeTokenIdentity`: `userId`/`sessionId` desde `sub`/`sid` del JWT, sin guardar nada;
+  - `types/telemetry.ts`: los 14 eventos de emisor frontend.
+  - **Contrato (D5):** el emisor de `inbound_order_created`, `outbound_order_created`, `stock_threshold_triggered` y `kit_cost_variance_detected` pasa a frontend en el `$comment` del JSON y en los metadatos del plan. Es un metadato, no una propiedad: `1.0.0` no cambia. La prosa del plan va en el paso 5.
+  - **Tests:** `tests/telemetry.test.mjs` (`mock.timers`), `tests/telemetry-contract.test.mjs` (con un validador draft-07 mínimo en `tests/support/event-contract.mjs`, que valida contra el JSON real) y reglas estáticas nuevas. `types/telemetry.ts` queda exento de dos reglas que confundían su vocabulario (`DELETE`, `/inventory/...`) con peticiones.
+  - **Validación:** `tsc`, `lint`, `build`, `node:test` 551/551, Jest 240/240 y `validate_event_schemas.py` OK.
+- **Paso 3, API:**
+  - **Respuestas de alta** (`InboundOrderCreated`, `OutboundOrderCreated`, solo en el 201; el listado no los lleva):
+    - salida: `stock_before`, `stock_after` (bajo `FOR UPDATE`), `min_stock` (= `INVENTORY_DEFAULT_MIN_STOCK`, 5) y `currency`;
+    - entrada: `supplier_key` y `cost_variance`.
+
+    **Desviación del enunciado del usuario:** dijo «`OutboundOrderRead`/`InboundOrderRead` añade», pero el listado no tiene esos valores para órdenes pasadas. Por eso van en subclases de las respuestas de alta. `InboundOrderRead` sí añade `unit_cost` y `currency`, también en el listado.
+  - **P3:** `AssetEntry.unit_cost NUMERIC(12,2)` y `currency VARCHAR(3)`, nullable, con `CHECK`; `unit_cost` obligatorio en `InboundOrderCreate` (> 0, 2 decimales); `currency` la pone la API desde la oficina (un `currency` en el body → 422).
+    - **Seed:** usa `InboundOrderFields` (sin coste): el CONTEXT no da costes y no se inventan.
+    - **Migración:** `python -m app.modules.inventory.migrate [--dry-run]`, idempotente y solo PostgreSQL. Probada en un Postgres efímero (`nexova-telemetry-pg`, `127.0.0.1:55433`) sobre el esquema de `2d5c1d8`: dry-run, aplicar y una segunda ejecución sin cambios; columnas, `CHECK` y RLS comprobados; la fila previa sigue igual, con coste `NULL`. **La demo no se ha tocado.**
+  - **P4:** claim `sid` (`uuid4`) en cada token; `read_token_claims` (sin TinyDB).
+  - **P9:** `supplier_key` = HMAC-SHA256 del proveedor normalizado (NFKC, casefold, espacios), con `TELEMETRY_SUPPLIER_KEY` (≥ 32, opcional).
+  - **P10:** media de las 3 entradas anteriores con coste del mismo activo y proveedor normalizado, con umbral del 10 %, configurable (`TELEMETRY_COST_VARIANCE_*`); 2 decimales con `format` (`round` y `quantize` están prohibidos por `test_architecture.py`).
+  - **P7:** `StockEditReporter` vía `app.state`, llamado desde los handlers de 405 y 422 de `core/errors.py`; emisor mínimo en `nexova.telemetry` (una línea JSON); throttle de 60 s por (usuario, plantilla, método). `requestId` propio (P5 pendiente). Excepción a `test_sessions_are_only_opened_inside_get_db` para su lectura del activo: el 405 llega antes de `get_db`.
+  - **Validación:** `unittest` 534 OK y `pytest` 737 passed, en el contenedor efímero; los eventos que construiría el frontend desde las respuestas validan contra `event-schemas.json`.
+  - **Aviso (paso 3):** el stack de Docker en marcha apunta a la base de la demo, que no tiene las columnas de P3. Hasta migrarla (con confirmación del usuario), las rutas de entradas fallan ahí. Para la verificación se usa el Postgres efímero.
+- **Paso 4, instrumentación del backoffice** (los 14 eventos de emisor frontend):
+  - **Obligatorios** (`lib/inventory-telemetry.ts`), desde la respuesta 201 en `use-inbound-form`/`use-outbound-form`:
+    - `outbound_order_created` + `stock_threshold_triggered` (cruce `>=`/`<`);
+    - `inbound_order_created` + `kit_cost_variance_detected`.
+
+    `product_category`/`programme_id` van en `null` (P1 pendiente). No se emiten sin `supplier_key` (API sin clave) ni sin coste.
+  - **Formulario de Entrada:** campo «Coste unitario» (obligatorio, coma o punto, 2 decimales; ayuda con la moneda de la oficina). `SelectedAsset` lleva la categoría, solo para la telemetría.
+  - **Embudo** (`lib/form-telemetry.ts` + `hooks/use-form-telemetry.ts`): `form_started`, `form_validation_failed`, `form_submitted` y `form_abandoned` (desmontaje y `pagehide` en captura, antes del beacon). Solo en Entrada y Salida; el resto de formularios, pendiente.
+  - **Transversal:**
+    - `TelemetryProvider` y `PageViewTracker` en el layout (`page_viewed` con 1 s de permanencia y solo plantillas);
+    - `page_not_found_viewed` en `not-found.tsx`;
+    - `frontend_error_captured` en los dos límites de error (sin pasarles el error);
+    - `page_load_recorded` en las 4 páginas de datos (`hooks/use-page-load-telemetry.ts`);
+    - `user_logged_out` en `useAuthSession.logout(trigger)`, enviado antes de borrar el token y solo con `sid`;
+    - `client_request_failed` desde el oyente de `api-client`.
+  - **Tests:** `tests/telemetry-instrumentation.test.mjs` (los obligatorios y el embudo validados contra el JSON, `page_viewed` con `mock.timers` y `parseUnitCost`); fixtures del inventario con las respuestas de alta; dos regex de `production-source` con `category`.
+  - **Validación:** `tsc`, `lint` (0), `build`, `node:test` 574/574 y Jest 240/240.
+- **Paso 4b, embudo de autenticación (D4):**
+  - `useAuthForm(operation, form)` envuelve la operación (`lib/auth-telemetry.ts`) en los 5 formularios de auth. El fallo del login queda en `form_submitted` (`api_rejected` / `network_error`…), sin `login_failed` desde el frontend (es de la API, plan §6.3);
+  - sin aviso por campo: el embudo empieza en el primer envío;
+  - **Validación:** `node:test` 577/577, Jest 240, `lint` 0 y `build`.
+- **Paso 5, plan, esquemas y documentación:**
+  - **Plan:** §1.5 (cambios del ticket); D10 anotada; §1.1, §2.4 (stub, reintentos, ids «no confiados», beacon), §2.5, las fichas de los 5 obligatorios (emisor, punto exacto, identidad y prerrequisitos), §8.4 y §9.1; cifras de la cabecera: 38 API / 14 frontend.
+  - **JSON:** `$comment` de emisor y prerrequisitos. `1.0.0` no cambia: son metadatos (§5.4).
+  - **Validador:** comprueba además las cifras de la cabecera; la mutación 42/10 se detecta.
+  - **Documentación:**
+    - SPECS: §7, D-AUTH-5, Parte F (§37, §39, §40) y la nueva Parte H;
+    - `services/api/README.md` (migración) y `TESTING.md` (534/737);
+    - `uis/backoffice/CLAUDE.md` («Telemetría», coste y variables) y su README;
+    - `AGENTS.md` (bloque nuevo) e `infra-40-review`;
+    - `capture-analysis.md` (decisiones) y `capture-review.md` (nuevo: criterios, eventos y quién los captura, recorrido de Network, migración y pendiente);
+    - `techContext.md`.
+- **Paso 6, entorno de verificación (2026-11-03):**
+  - **Base:** Postgres efímero recreado limpio (`nexova-telemetry-pg`, `127.0.0.1:55433`, red `nexova-telemetry-net`, volumen `nexova-telemetry-pg-data`), con los 6 activos del CONTEXT y sin órdenes: entradas, costes y salidas los crea el usuario.
+  - **Stack:** arrancado con un override de Compose fuera del repo (scratchpad de la sesión), que da a `api` la `DATABASE_URL` del efímero y una `TELEMETRY_SUPPLIER_KEY` generada. El `.env` del usuario solo recibió la línea `NEXT_PUBLIC_TELEMETRY_ENDPOINT`.
+  - **Humo:** `/backend/health` 200; `PUT /backend/inventory/products/1` → 405 con su `direct_stock_edit_rejected` en `nexova.telemetry`; en el navegador integrado, `/login` sin sesión → un `POST /backend/telemetry/events` (`fetch`) con `page_viewed` → 200 `{"received":1}`.
+  - **Recorrido del usuario:** `docs/telemetry/capture-review.md` §3. Para volver a la demo, `docker compose up -d` sin el override, **después** de migrarla (§5.2, con su confirmación).
+- **Paso 7, verificación, demo y PR (2026-11-03):**
+  - **Network:** verificado por el usuario (lotes, beacon, los 4 obligatorios del frontend, `direct_stock_edit_rejected` y su throttle, sin PII); detalle en `capture-review.md` §3.
+  - **Demo:** P3 aplicada con su confirmación. Antes y después, en `READ ONLY`, iguales: conteos (6/5/5), stock, huellas md5 de entradas y salidas, RLS y lo previo; solo 2 columnas y 2 `CHECK` nuevos.
+  - **Stack normal:** contra la demo, sin override; `GET /inventory/products`, `/{id}` y `/orders` → 200 por `/backend`, con stock 12/1/0/7/15/0, sin ninguna escritura (la foto final es idéntica).
+  - **Limpieza:** Postgres efímero borrado (contenedor, volumen y red), con su override y su contraseña. La imagen `postgres:17.6-alpine3.22` se conserva: ya estaba.
+  - **`.env.example`:** añadidas `TELEMETRY_SUPPLIER_KEY`, `INVENTORY_DEFAULT_MIN_STOCK` y `TELEMETRY_COST_VARIANCE_*`, que faltaban.
+  - **Pendiente del usuario:** poner `TELEMETRY_SUPPLIER_KEY` en el `.env` de la raíz; sin ella, el stack normal no emite `inbound_order_created` ni `kit_cost_variance_detected`.
+
+---
+
+## 2026-11-02 — Captura de telemetría en el frontend + endpoint stub, F0: análisis y decisiones
+
+**Estado: F0 hecha; el usuario decidió D1–D9 el 2026-11-03 (ver la entrada de F1, arriba).** Rama `feature/telemetry-capture`, desde `main` en `8a23d17`. Sin push. Ningún código.
+
+- **Documento de trabajo:** `docs/telemetry/capture-analysis.md`. El enunciado del ticket no se versiona.
+- **Conflictos confirmados entre el enunciado y el plan aprobado (C1–C9):**
+  - los 5 obligatorios son de emisor API y el colector rechaza que el cliente los envíe;
+  - faltan `unit_cost` y `supplier_key` para `inbound_order_created`, y sin costes `kit_cost_variance_detected` no se puede calcular;
+  - `direct_stock_edit_rejected` solo lo ve la API;
+  - respuesta `200 {received}` frente a `202 {accepted, rejected}`, y 3 reintentos frente a ninguno;
+  - `sessionId` del cliente frente al claim `sid`;
+  - la variable va en el `.env` de la raíz y en `docker-compose.yml`, con `/backend`;
+  - `sendBeacon` no lleva `Authorization`;
+  - el único `fetch`, y un 401 que hoy borra el token.
+- **Hallazgos técnicos:**
+  - con los datos de hoy, `outbound_order_created`, `stock_threshold_triggered` (con `min_stock` de la configuración) y `direct_stock_edit_rejected` validan el esquema `1.0.0` si los emite la API (`product_category`/`programme_id` en `null`, `currency` derivada de la oficina), aunque §2.5 del plan pide esperar a las columnas;
+  - el test estático del backoffice también restringe `unknown`, `JSON.stringify` y `sessionStorage`, así que la firma literal `Record<string, unknown>` del enunciado no pasa;
+  - `next/web-vitals` viene con Next 16, sin dependencia nueva;
+  - la imagen de la API no contiene `docs/`: la allowlist de P6 tiene que ser un módulo generado;
+  - la versión del esquema es global (`SCHEMA_VERSION` del validador).
+- **Recomendación:** D1 C (la API emite los obligatorios; C-completo con una migración aditiva y reversible para tener los 5), los 10 eventos de frontend del plan y Web Vitals fuera (§8.1).
+- **Validación:** solo documentación. `techContext.md` y `projectbrief.md` no cambian.
+- **Pendiente:** las decisiones del usuario y F1 (implementación).
+
+---
+
 ## 2026-11-02 — Plan de Telemetría, F1: plan, esquemas y validación
 
-**Estado: F1 hecha y validada; pendiente de la revisión del usuario antes del push y la PR** (`docs: telemetry design plan`). Rama `docs/telemetry-plan`. Solo diseño: ningún código de instrumentación.
+**Estado: F1 hecha, validada e integrada en `main`** con la PR #28 (merge `8a23d17`). *Corregido el 2026-11-02: antes decía «pendiente de la revisión del usuario antes del push y la PR».* Rama `docs/telemetry-plan`. Solo diseño: ningún código de instrumentación.
 
 - **Decisiones del usuario (2026-11-02):**
   - D1 B, D1-a (`null`, nunca un cuarto valor) y D1-b (sin clasificar en este ticket);
@@ -30,8 +147,8 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - Ningún `package.json` ni dependencia nueva.
 - **Otros cambios:** fila nueva en la tabla de validación de `AGENTS.md` §4 y en `scripts/README*.md`; estado de `analysis.md` actualizado.
 - **Pendiente:**
-  - revisión del usuario, push y PR;
-  - el ticket de captura: P1–P10, la clasificación de activos, el catálogo de programas, los datos semilla del BRIEFING §5 y alinear el indicador «Bajo».
+  - ~~revisión del usuario, push y PR~~ hecho (PR #28);
+  - el ticket de captura (F0 en curso, entrada de arriba): P1–P10, la clasificación de activos, el catálogo de programas, los datos semilla del BRIEFING §5 y alinear el indicador «Bajo».
 
 ---
 

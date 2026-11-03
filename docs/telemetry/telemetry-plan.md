@@ -6,7 +6,7 @@ Respuesta al RFI de gestión: qué datos capturar en la plataforma de Nexova, pa
 - **Análisis previo:** [`analysis.md`](./analysis.md) (inventario de puntos, desajustes M0–M11 y decisiones D1–D14 con sus opciones).
 - **Código de referencia:** `main` en `390d3aa`. Las líneas citadas son de ese commit; si el código se mueve, manda el nombre de la función citada junto a la línea.
 
-**Cifras: 52 eventos.** 5 son obligatorios (BRIEFING) y 47, oportunidades identificadas, en 10 categorías: inventario 9, autenticación 16, navegación 2, flujos 4, errores 3, salud técnica 3, rendimiento 2, proveedores 5, gestor de incidencias 5 y análisis de incidentes 3. 42 los emite la API y 10 el frontend. 13 van por stream y 39 por batch.
+**Cifras: 52 eventos.** 5 son obligatorios (BRIEFING) y 47, oportunidades identificadas, en 10 categorías: inventario 9, autenticación 16, navegación 2, flujos 4, errores 3, salud técnica 3, rendimiento 2, proveedores 5, gestor de incidencias 5 y análisis de incidentes 3. 38 los emite la API y 14 el frontend. 13 van por stream y 39 por batch.
 
 ---
 
@@ -15,8 +15,8 @@ Respuesta al RFI de gestión: qué datos capturar en la plataforma de Nexova, pa
 ### 1.1 Alcance
 
 - **Dentro:**
-  - la API (`services/api`), que emite todo lo de negocio, seguridad y salud técnica;
-  - el backoffice (`uis/backoffice`), que emite navegación, flujos, rendimiento percibido y errores de render.
+  - la API (`services/api`), que emite lo de seguridad y salud técnica, el resto de eventos de negocio y `direct_stock_edit_rejected`;
+  - el backoffice (`uis/backoffice`), que emite navegación, flujos, rendimiento percibido, errores de render y, desde el ticket de captura, 4 de los 5 obligatorios con lo que le devuelve la API (§1.5).
 - **Fuera (D10):**
   - el Talent Pipeline Tracker (`uis/talent-pipeline-tracker`): fuera de Docker, con su propio `SPECS.md` y sin ninguna métrica del BRIEFING;
   - el website público (`uis/website`): sin autenticación ni sesión, así que ni `userId` ni `sessionId`, y su analítica de marketing es otro encargo.
@@ -65,11 +65,27 @@ Respuesta al RFI de gestión: qué datos capturar en la plataforma de Nexova, pa
 | D7 | `sessionId` = claim `sid` (UUID v4) del JWT, creado en el login; `null` en los eventos anónimos |
 | D8 | `requestId` = `X-Request-ID` (UUID v4) generado en el cliente y validado en el servidor (o generado si falta o no es válido); devuelto en la respuesta y añadido al log de timing |
 | D9 | Nada de texto libre ni de emails o IP; `userId` en claro (seudónimo). Proveedor como clave **HMAC** + `inbound_order_id` en `kit_cost_variance_detected` (la renegociación se resuelve desde la base, con control de acceso). **Retención:** eventos en bruto con `userId`, 90 días; agregados sin `userId`, sin límite |
-| D10 | La API emite lo de negocio y seguridad; el frontend, solo lo que la API no ve, por un colector propio `POST /telemetry/events`. Tracker y website fuera |
+| D10 | La API emite lo de negocio y seguridad; el frontend, solo lo que la API no ve, por un colector propio `POST /telemetry/events`. Tracker y website fuera. **Modificada en el ticket de captura** para 4 obligatorios (§1.5) |
 | D11 | JSON Schema draft-07 + validación con la librería estándar comiteada (A) + una ejecución puntual de `ajv-cli` con versión fija (B) |
 | D12 | Stream si la decisión tiene un responsable que actúa el mismo día o si detectar tarde aumenta el daño; el resto, batch. Throttle y agregados en §7 |
 | D13 | Taxonomía `entidad_accion`, verbos cerrados (§5.3) |
 | D14 | Los cambios de modelo e infraestructura son **prerrequisitos** documentados aquí (§2); no se implementan en este ticket |
+
+### 1.5 Cambios del ticket de captura (decididos por el usuario el 2026-11-03)
+
+Análisis y opciones: [`capture-analysis.md`](./capture-analysis.md). Guía de revisión: [`capture-review.md`](./capture-review.md).
+
+- **D1 «A ligera» — la API calcula y el frontend emite:** el enunciado de la captura evalúa que los obligatorios pasen por `track()` y se vean en la pestaña Network.
+  - **Emisor:** `inbound_order_created`, `outbound_order_created`, `stock_threshold_triggered` y `kit_cost_variance_detected` pasan de API a **frontend**.
+  - **Respuestas 201:** las de alta devuelven lo que solo sabe la API: el stock antes y después (bajo `FOR UPDATE`), el mínimo, la moneda, `supplier_key` y la variación de coste (SPECS Parte F, §37). Los hooks de los formularios de Entrada y Salida los emiten sin calcular nada.
+  - **Riesgo aceptado:** un evento de negocio se pierde si la pestaña se cierra entre el 201 y el envío y el beacon tampoco sale (§8.4).
+- **Excepción:** `direct_stock_edit_rejected` sigue siendo de la API (P7), porque la interfaz no tiene forma de provocarlo (D5). Emisor mínimo: una línea JSON en `nexova.telemetry`.
+- **Prerrequisitos reducidos:**
+  - **P1** (clasificación) y **P2** (mínimo por activo) quedan para más adelante. Hasta entonces, `product_category` y `programme_id` van en `null` (el esquema lo admite, D1-a) y `min_stock` sale de `INVENTORY_DEFAULT_MIN_STOCK` (5, D4), igual para todos los activos.
+  - **P3** (coste y moneda, con migración aditiva), **P4** (`sid`), **P7**, **P8** (colector y `lib/telemetry.ts`), **P9** y **P10** están hechos.
+  - **P5** (`X-Request-ID`) y el emisor completo de **P6** (allowlist, agregados) siguen pendientes: `requestId` es un UUID propio de cada evento.
+- **Colector, fase stub:** `200 {"received": N}`, acepta cualquier evento del catálogo y no persiste (§2.4).
+- **Versión:** cambiar el emisor y los prerrequisitos son metadatos (`$comment`), no propiedades: según §5.4, **`1.0.0` no cambia**.
 
 ---
 
@@ -139,10 +155,11 @@ Nada se puede emitir hoy: no hay emisor. Los prerrequisitos se dividen en dos bl
 
 **Colector `POST /telemetry/events`** (API):
 
+- **Fase stub (ticket de captura, implementada):** `200 {"received": N}`, sin token, con el envelope validado (`TelemetryEvent`, las 8 claves), cualquier `event_type` del catálogo, un 422 al lote entero si un evento es inválido, y sin persistir nada (SPECS Parte H). Lo que sigue es el **colector definitivo**, del ticket de almacenamiento; el frontend no cambia, porque solo mira si la respuesta es 2xx.
 - **Petición:** body `{"events": [...]}`, de 1 a 50 eventos, ≤ 64 KiB (por debajo del límite general).
-- **Cada evento:** `{eventId, timestamp, event_type, requestId, properties}`. **`userId` y `sessionId` no se aceptan del cliente**: los pone el colector desde el token, si lo hay y es válido; si no, `null`.
+- **Cada evento:** el envelope completo (§5). **`userId` y `sessionId` no se confían del cliente**: el cliente los rellena con los claims `sub` y `sid` del JWT, y el colector los sustituye por los del token cuando la petición trae uno válido. Un beacon no lleva token: sus ids son los declarados por el cliente.
 - **Qué acepta:**
-  - solo los 10 `event_type` de emisor *frontend* (§4). Un evento de la API enviado por el cliente se rechaza: el frontend no puede fabricar órdenes ni intentos de edición;
+  - solo los `event_type` de emisor *frontend* (§4; 14 desde el ticket de captura). Un evento de la API enviado por el cliente se rechaza: el frontend no puede fabricar intentos de edición del stock;
   - cada evento se valida contra su allowlist (como P6). Los inválidos se descartan uno a uno.
 - **`timestamp`:** el del cliente si está a ±5 min de la recepción; si no, la hora de recepción.
 - **Respuesta:** `202 {"accepted": n, "rejected": m}`. Responde 202 también **sin token** (página de login, error global), sin 401, para que el cliente no cierre la sesión por la telemetría.
@@ -151,12 +168,12 @@ Nada se puede emitir hoy: no hay emisor. Los prerrequisitos se dividen en dos bl
 **Emisor `lib/telemetry.ts`** (backoffice):
 
 - **API:** `track(event_type, properties)`.
-- **Envelope:** genera `eventId` y `timestamp`. El `requestId` es el `X-Request-ID` de la petición asociada (`form_submitted`, `client_request_failed`) o un UUID propio.
-- **Cola en memoria:** se envía cada 10 s, al llegar a 20 eventos, o en `pagehide` / `visibilitychange: hidden`.
+- **Envelope:** genera `eventId`, `timestamp`, `requestId` (un UUID propio mientras no exista `X-Request-ID`, P5), y `userId`/`sessionId` desde los claims del JWT (`sub`, `sid`), sin guardar nada en el navegador.
+- **Cola en memoria:** se envía cada 10 s o al llegar a 20 eventos. En `pagehide` / `visibilitychange: hidden`, lo pendiente sale con `navigator.sendBeacon`, que no lleva `Authorization`.
 - **Transporte:** a través de `lib/api-client.ts` (el único `fetch`), con dos opciones nuevas:
   - `keepalive: true`;
   - `ignoreUnauthorized: true`: un 401 de la telemetría **no** borra el token.
-- **Si falla el envío:** se descarta (sin reintentos) y no muestra nada.
+- **Si falla el envío** (ticket de captura): hasta 3 reintentos, con esperas de 1, 2 y 4 s, solo ante red, timeout, 5xx o 429. Un 4xx no se reintenta. Después se descarta, sin mostrar nada. `sendBeacon` no se reintenta. La deduplicación por `eventId` (§7.3) absorbe un reintento de un lote que sí había llegado.
 - **Prohibido:** `console.*`, `localStorage` y `sessionStorage`, según las reglas de `uis/backoffice/CLAUDE.md`.
 - `tests/production-source.test.mjs` tendrá que admitir `lib/telemetry.ts` como cliente de `api-client`.
 
@@ -168,12 +185,19 @@ Nada se puede emitir hoy: no hay emisor. Los prerrequisitos se dividen en dos bl
 | 2 | P5 (`X-Request-ID`) | el resto de eventos anónimos de la API (`login_failed`, `user_registered`, `registration_failed`, `auth_token_rejected`, la recuperación de contraseña, `server_error_returned`, `storage_unavailable_detected`) |
 | 3 | P4 (`sid`) | todos los eventos autenticados de la API que no son de inventario: `user_logged_in`, `session_expired`, `access_denied`, `password_changed`, `password_change_rejected`, `user_role_changed`, `user_deleted`, proveedores, gestor y análisis de incidentes |
 | 4 | P8 (colector + `lib/telemetry.ts`) | los 10 eventos del frontend |
-| 5 | P1 (+ la migración) | `outbound_order_created`, `inbound_order_rejected`, `outbound_order_rejected` e `inventory_validation_failed` |
-| 6 | P7 | `direct_stock_edit_rejected` |
-| 7 | P2 | `stock_threshold_triggered` y `product_created` |
-| 8 | P3 + P9 + P10 | `inbound_order_created` y `kit_cost_variance_detected` |
+| 5 | P1 (+ la migración) | `inbound_order_rejected`, `outbound_order_rejected` e `inventory_validation_failed` |
+| 6 | P7 | `direct_stock_edit_rejected` (hecho en el ticket de captura) |
+| 7 | P2 | `product_created`, y el mínimo por activo de `stock_threshold_triggered` |
+| 8 | P3 + P9 + P10 | `inbound_order_created` y `kit_cost_variance_detected` (hechos en el ticket de captura) |
 
-**Sin prerrequisitos de modelo (pasos 1–4): 43 eventos. Esperan a la migración del inventario (pasos 5–8): los 9 de inventario, entre ellos los 5 obligatorios.** Ningún evento se emite «a medias»: un evento de inventario no se activa hasta que existe la columna de la que salen sus campos mínimos. Sí puede emitirse con `product_category` o `programme_id` en `null` mientras no se hayan clasificado los activos (D1-b): ese `null` es un valor válido y documentado.
+**Sin prerrequisitos de modelo (pasos 1–4): 43 eventos. Esperan a la migración del inventario (pasos 5–8): los 9 de inventario.**
+
+- **Antes del ticket de captura:** ningún evento se emitía «a medias», y un evento de inventario no se activaba hasta que existía la columna de la que salen sus campos mínimos.
+- **Desde el ticket de captura (§1.5):** los 5 obligatorios se emiten ya, sin P1 ni P2:
+  - `product_category` y `programme_id` van en `null` mientras no se clasifiquen los activos (D1-b): un valor válido y documentado;
+  - `min_stock` es el de la configuración.
+
+  Los demás de inventario siguen esperando a P1.
 
 ---
 
@@ -207,11 +231,11 @@ Una fila por evento, con la clasificación pedida (**obligatorio**: viene del BR
 <!-- CATALOG -->
 | # | `event_type` | Clasificación | Categoría | Emisor | Entrega | Prerrequisitos |
 |---|---|---|---|---|---|---|
-| 1 | `inbound_order_created` | obligatorio | inventario | API | batch | P1, P3, P4, P5, P6, P9 |
-| 2 | `outbound_order_created` | obligatorio | inventario | API | batch | P1, P4, P5, P6 |
-| 3 | `stock_threshold_triggered` | obligatorio | inventario | API | stream | P1, P2, P4, P5, P6 |
-| 4 | `direct_stock_edit_rejected` | obligatorio | inventario | API | batch | P1, P4, P5, P6, P7 |
-| 5 | `kit_cost_variance_detected` | obligatorio | inventario | API | stream | P1, P3, P4, P5, P6, P9, P10 |
+| 1 | `inbound_order_created` | obligatorio | inventario | frontend | batch | P3, P4, P8, P9 |
+| 2 | `outbound_order_created` | obligatorio | inventario | frontend | batch | P4, P8 |
+| 3 | `stock_threshold_triggered` | obligatorio | inventario | frontend | stream | P4, P8 |
+| 4 | `direct_stock_edit_rejected` | obligatorio | inventario | API | batch | P4, P6, P7 |
+| 5 | `kit_cost_variance_detected` | obligatorio | inventario | frontend | stream | P3, P4, P8, P9, P10 |
 | 6 | `product_created` | oportunidad | inventario | API | batch | P1, P2, P4, P5, P6 |
 | 7 | `inbound_order_rejected` | oportunidad | inventario | API | batch | P1, P4, P5, P6 |
 | 8 | `outbound_order_rejected` | oportunidad | inventario | API | stream | P1, P4, P5, P6 |
@@ -369,12 +393,12 @@ Los eventos que no son de inventario no los llevan.
 
 #### `inbound_order_created`
 
-- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P1, P3, P4, P5, P6, P9
+- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** frontend · **Entrega:** batch · **Prerrequisitos:** P3, P4, P8, P9
 - **Descripción:** Se ha registrado una orden de entrada (`AssetEntry`): llega un lote de material desde un proveedor.
 - **Frase:** Capturamos `inbound_order_created` porque necesitamos saber cuánto material se produce o compra, para qué programa y con qué coste, lo que nos permite tomar la decisión de planificar la producción de material según la demanda esperada de matrículas (Elena).
 - **Se dispara:** `POST /inventory/orders/inbound` responde 201, después del commit.
-- **Punto exacto:** `services/api/app/modules/inventory/service.py:202` (`create_inbound_order`, tras `session.commit()`), con los datos de la entrada y del activo que ya tiene la función; lo llama `router.py:121`.
-- **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
+- **Punto exacto:** desde el ticket de captura (§1.5), el backoffice al recibir el 201: `uis/backoffice/hooks/use-inbound-form.ts` → `lib/inventory-telemetry.ts` (`trackInboundOrder`), con lo que devuelve `create_inbound_order` (`services/api/app/modules/inventory/service.py`, tras `session.commit()`): `unit_cost`, `currency` y `supplier_key`. `asset_category` es la del activo elegido. No se emite si la API no tiene `TELEMETRY_SUPPLIER_KEY` (`supplier_key` nulo).
+- **Identidad:** `userId` y `sessionId` de los claims del JWT de la sesión (nunca `null`). `requestId` siempre presente.
 - **Por qué batch:** Alimenta una planificación de producción que se decide por semanas: un lote diario basta y nadie actúa en minutos sobre una entrada.
 - **PII y sanitización:** Ninguna en `properties`. `supplier` (texto libre, puede ser un autónomo con nombre propio) se sustituye por `supplier_key` (D9). `userId` es seudónimo (ver §5).
 
@@ -417,12 +441,12 @@ Los eventos que no son de inventario no los llevan.
 
 #### `outbound_order_created`
 
-- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P1, P4, P5, P6
+- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** frontend · **Entrega:** batch · **Prerrequisitos:** P4, P8
 - **Descripción:** Se ha registrado una orden de salida (`AssetExit`): se entrega un kit o certificado, o se consume material.
 - **Frase:** Capturamos `outbound_order_created` porque necesitamos saber qué programas consumen más material y a qué ritmo, lo que nos permite tomar la decisión de anticipar las necesidades de reposición antes de una ola grande de matrículas (Elena).
 - **Se dispara:** `POST /inventory/orders/outbound` responde 201, después del commit.
-- **Punto exacto:** `services/api/app/modules/inventory/service.py:215` (`create_outbound_order`, tras `session.commit()`); `stock_after` es `available − quantity`, calculado en `service.py:189` bajo `FOR UPDATE`.
-- **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
+- **Punto exacto:** desde el ticket de captura (§1.5), el backoffice al recibir el 201: `uis/backoffice/hooks/use-outbound-form.ts` → `lib/inventory-telemetry.ts` (`trackOutboundOrder`). `stock_after` viene en la respuesta: la API lo calcula en `create_outbound_order` (`services/api/app/modules/inventory/service.py`) bajo `FOR UPDATE`, en la misma transacción.
+- **Identidad:** `userId` y `sessionId` de los claims del JWT de la sesión (nunca `null`). `requestId` siempre presente.
 - **Por qué batch:** El ritmo de consumo se lee en tendencias diarias o semanales. La urgencia de reponer la cubre `stock_threshold_triggered`, que sí es stream.
 - **PII y sanitización:** `assigned_to` (nombre o ID del empleado, texto libre) **no** se emite nunca: solo `exit_type` (D9, regla del BRIEFING).
 
@@ -465,12 +489,12 @@ Los eventos que no son de inventario no los llevan.
 
 #### `stock_threshold_triggered`
 
-- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P1, P2, P4, P5, P6
+- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** frontend · **Entrega:** stream · **Prerrequisitos:** P4, P8
 - **Descripción:** Una salida ha hecho cruzar al stock de un activo su mínimo configurado: antes estaba en `min_stock` o por encima y después queda por debajo (`<`).
 - **Frase:** Capturamos `stock_threshold_triggered` porque necesitamos saber con qué frecuencia un programa se queda sin material disponible, lo que nos permite tomar la decisión de ajustar el umbral mínimo o acelerar la reimpresión o reproducción de ese material.
 - **Se dispara:** En una salida confirmada con `stock_before >= min_stock` y `stock_after < min_stock` (D4). Por cruce: no se repite mientras siga por debajo y se rearma solo cuando una entrada lo devuelve a `min_stock` o más. Nunca en el alta de un activo (nace con 0). Con `min_stock = 0` no se dispara nunca.
-- **Punto exacto:** `services/api/app/modules/inventory/service.py:189-195` (`add_outbound_order` conoce `available` y `quantity` dentro de la transacción y bajo `FOR UPDATE`); se emite tras el commit de `service.py:215`, junto a `outbound_order_created`. **Nunca** desde `StockLevelBadge` del frontend.
-- **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
+- **Punto exacto:** desde el ticket de captura (§1.5), junto a `outbound_order_created`, en `lib/inventory-telemetry.ts` (`trackOutboundOrder`). Usa `stock_before`, `stock_after` y `min_stock` de la respuesta 201, que la API calcula bajo `FOR UPDATE`; el frontend solo compara. `min_stock` = `INVENTORY_DEFAULT_MIN_STOCK` hasta P2. **Nunca** desde `StockLevelBadge` ni desde una lectura previa del stock.
+- **Identidad:** `userId` y `sessionId` de los claims del JWT de la sesión (nunca `null`). `requestId` siempre presente.
 - **Por qué stream:** La decisión es acelerar una reimpresión: cada hora que pasa sin aviso retrasa la entrega de kits a matrículas que ya existen.
 - **PII y sanitización:** Ninguna.
 
@@ -515,11 +539,11 @@ Los eventos que no son de inventario no los llevan.
 
 #### `direct_stock_edit_rejected`
 
-- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P1, P4, P5, P6, P7
+- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** batch · **Prerrequisitos:** P4, P6, P7
 - **Descripción:** Alguien ha intentado fijar el stock fuera de una orden y la API lo ha rechazado (definición operativa D5).
 - **Frase:** Capturamos `direct_stock_edit_rejected` porque necesitamos saber si el personal intenta saltarse el control de trazabilidad del material, lo que nos permite tomar la decisión de reforzar la capacitación o los permisos en la oficina donde esto ocurre con más frecuencia (Patricia).
 - **Se dispara:** Exactamente uno de estos dos casos (D5): (1) `PUT`, `PATCH` o `DELETE` sobre `/inventory/products` o `/inventory/products/{id}` → 405, con o sin token; (2) `POST` a `/inventory/products`, `/inventory/orders/inbound` o `/inventory/orders/outbound` con un error `extra_forbidden` en `loc = ["body", "current_stock"]` → 422 (solo con token válido: sin él la API responde antes 401 y no se emite). No cuentan un 404 de ruta inventada, una cantidad negativa ni el SQL directo en Supabase. Si se cumple el caso (2), **no** se emite además `inventory_validation_failed` para esa petición.
-- **Punto exacto:** Caso 1: `services/api/app/core/errors.py:207-217` (`_http_exception_handler`, status 405). Caso 2: `services/api/app/core/errors.py:230-233` (`_validation_exception_handler`). Detalle de la detección en P7.
+- **Punto exacto:** Caso 1: `services/api/app/core/errors.py` (`_http_exception_handler`, status 405). Caso 2: `services/api/app/core/errors.py` (`_validation_exception_handler`). Los dos llaman a `app.state.stock_edit_reporter` (`services/api/app/modules/telemetry/stock_edit.py`, ticket de captura). Detalle de la detección en P7.
 - **Identidad:** `userId` y `sessionId` del token si lo hay y es válido; si no, `null`. `requestId` siempre presente.
 - **Por qué batch:** La decisión de Patricia (formación o permisos) se toma con el recuento por oficina de días o semanas: lote diario. Una ráfaga sí es urgente (posible abuso de la API): la regla de alerta de §7.2 la eleva a stream sin cambiar el evento.
 - **PII y sanitización:** Ninguna. Nunca se copia el body ni el `detail`. `userId` es `null` en los intentos anónimos.
@@ -567,12 +591,12 @@ Los eventos que no son de inventario no los llevan.
 
 #### `kit_cost_variance_detected`
 
-- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** API · **Entrega:** stream · **Prerrequisitos:** P1, P3, P4, P5, P6, P9, P10
+- **Clasificación:** obligatorio · **Categoría:** inventario · **Emisor:** frontend · **Entrega:** stream · **Prerrequisitos:** P3, P4, P8, P9, P10
 - **Descripción:** El coste unitario de una entrada se desvía de la referencia del mismo material y proveedor más que el umbral configurado, hacia arriba o hacia abajo.
 - **Frase:** Capturamos `kit_cost_variance_detected` porque necesitamos saber cuándo un proveedor de material sube (o baja) precios de forma anómala, lo que nos permite tomar la decisión de alertar a Elena y a Laura para renegociar o buscar un proveedor alternativo.
 - **Se dispara:** Tras una entrada confirmada con `unit_cost`: referencia = media de `unit_cost` de las `N` entradas anteriores (por defecto 3) del mismo par (activo, proveedor normalizado), sin contar la actual; `variance_pct = (unit_cost − referencia) / referencia × 100`, redondeado a 2 decimales. Se emite si `|variance_pct| > umbral` (por defecto 10). Con menos de `N` entradas anteriores con coste no se evalúa (D3).
-- **Punto exacto:** `services/api/app/modules/inventory/service.py:202`, en el mismo punto que `inbound_order_created` (una consulta más de las `N` anteriores del par, en la misma sesión).
-- **Identidad:** `userId` y `sessionId` del token de la petición (nunca `null`). `requestId` siempre presente.
+- **Punto exacto:** desde el ticket de captura (§1.5), junto a `inbound_order_created`, en `lib/inventory-telemetry.ts` (`trackInboundOrder`), si la respuesta 201 trae `cost_variance`. La API la calcula en `create_inbound_order`, con una consulta más de las `N` anteriores del par en la misma sesión.
+- **Identidad:** `userId` y `sessionId` de los claims del JWT de la sesión (nunca `null`). `requestId` siempre presente.
 - **Por qué stream:** Hay que avisar antes de que se comprometan más compras al precio nuevo: esperar al lote del día siguiente puede significar otra entrada al mismo precio.
 - **PII y sanitización:** El proveedor va solo como `supplier_key` (HMAC); el nombre se consulta en la base, desde `inbound_order_id`, con control de acceso (D9).
 
@@ -2397,7 +2421,7 @@ Todo en memoria del proceso de la API (P6) o de la pestaña del navegador (P8).
 | Activos sin clasificar (D1-b) | Hasta que se clasifiquen, `product_category` y `programme_id` son `null` y las métricas por programa salen vacías | La clasificación es un prerrequisito del ticket de captura. Hasta entonces, el agregado usa `asset_category` |
 | Un solo proceso | El agregador, el throttle y el deduplicado de `session_expired` viven en memoria: con varios workers o réplicas cada uno tendría los suyos (como la caché, SPECS §43) | Uvicorn arranca con `--workers 1`. Subirlos obliga a revisar P6 |
 | Reinicio del proceso | Se pierden las ventanas abiertas (hasta 60 s de agregados) y los contadores de throttle | Aceptado: los agregados son aproximados por diseño |
-| Pérdida de eventos del frontend | Sin reintentos, ni almacenamiento local, ni envío al cerrar si `keepalive` falla | Aceptado: los eventos del frontend son de UX; los de negocio, que cuentan, los emite la API |
+| Pérdida de eventos del frontend | Sin almacenamiento local: lo pendiente se pierde si fallan los 3 reintentos o si el beacon no sale al cerrar. Desde el ticket de captura incluye 4 obligatorios (§1.5) | Aceptado por el usuario (D1 «A ligera»): reintentos con backoff y beacon; el almacén deduplica por `eventId`. Si la pérdida medida importa, la alternativa es que la API emita también esos 4 |
 | Desfase del reloj del navegador | `timestamp` erróneo | El colector lo sustituye si se desvía más de ±5 min (§2.4) |
 | El emisor rompe una petición | Una excepción en la telemetría devolvería un 500 | `emit` nunca lanza (P6) y los eventos de negocio se emiten tras el commit |
 | Rotación de `TELEMETRY_SUPPLIER_KEY` | Cambia todas las `supplier_key`: se corta la continuidad de las referencias | Rotarla solo con un corte documentado; la referencia de coste se calcula siempre en la API con el texto normalizado, no con la clave |
@@ -2429,6 +2453,7 @@ python scripts/validate_event_schemas.py
 - contra este plan:
   - que la lista de eventos del catálogo (§4), la de fichas (§6) y la del JSON son la misma, en el mismo orden;
   - que los metadatos de cada fila y de cada ficha coinciden con el `$comment` del esquema;
+  - que las cifras de emisor (API/frontend) y de entrega (stream/batch) de la cabecera son las del catálogo (desde el ticket de captura, que cambió el emisor de 4 eventos);
   - que la tabla de propiedades de cada ficha coincide con su esquema (nombres, tipo y obligatoriedad);
   - que cada ficha tiene su frase y que **cada bloque JSON del plan valida contra el esquema**.
 

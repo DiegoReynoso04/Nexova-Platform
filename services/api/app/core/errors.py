@@ -5,7 +5,7 @@ contener emails reales (ver docs/COMPANY_INCIDENT_FILE_ANALIZER_PROJECT.md).
 """
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from http import HTTPStatus
 
 from fastapi import FastAPI, HTTPException, Request
@@ -213,6 +213,8 @@ async def _http_exception_handler(request: Request, exc: Exception) -> JSONRespo
     # Errores de Starlette/FastAPI (404 de ruta, 405, multipart ilegible...):
     # se responde con la frase estándar del código, no con `exc.detail`.
     status = HTTPStatus(exc.status_code)
+    if status == HTTPStatus.METHOD_NOT_ALLOWED:
+        _stock_edit_reporter(request, "method_not_allowed")(request)
     code = status.phrase.lower().replace(" ", "_").replace("-", "_")
     return error_response(status.value, code, status.phrase, exc.headers)
 
@@ -229,8 +231,26 @@ async def _database_unavailable_handler(request: Request, exc: Exception) -> JSO
 
 async def _validation_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, RequestValidationError)
+    # Telemetría (P7): `current_stock` en el body de un alta. El reporter es el
+    # único que mira `input`, y solo si es un entero; nunca llega a la respuesta.
+    _stock_edit_reporter(request, "validation_failed")(request, exc.errors(), exc.body)
     errors = [{key: error[key] for key in _VALIDATION_ERROR_KEYS if key in error} for error in exc.errors()]
     return error_response(422, "validation_error", errors)
+
+
+def _noop(*args: object) -> None:
+    return None
+
+
+def _stock_edit_reporter(request: Request, method: str) -> Callable[..., object]:
+    """`app.state.stock_edit_reporter.<method>` (ticket de captura, P7), o nada si no está.
+
+    Va por `app.state` para que este módulo no importe el inventario ni la
+    telemetría (que dependen de él). El reporter nunca lanza.
+    """
+    reporter = getattr(request.app.state, "stock_edit_reporter", None)
+    handler = getattr(reporter, method, None)
+    return handler if callable(handler) else _noop
 
 
 def install_error_handlers(app: FastAPI) -> None:

@@ -11,6 +11,7 @@ import {
   ApiTimeoutError,
   ApiUnexpectedResponseError,
   createApiClient,
+  setTransportFailureListener,
 } from '../lib/api-client.ts';
 import { BASE_URL, LEAK, hangingFetch, jsonResponse, offlineFetch, recordingFetch, textResponse } from './support/http-fakes.mjs';
 
@@ -204,5 +205,70 @@ describe('errores de transporte', () => {
     const client = createApiClient({ fetch: transport.fetch, getBaseUrl: () => BASE_URL });
     class HandlerError extends Error {}
     await assert.rejects(client.get('/x', OPTIONS, async () => { throw new HandlerError('x'); }), HandlerError);
+  });
+});
+
+describe('opciones de la telemetría (ticket de captura)', () => {
+  test('keepalive llega al fetch', async () => {
+    const transport = recordingFetch(() => jsonResponse(200, {}));
+    const client = createApiClient({ fetch: transport.fetch, getBaseUrl: () => BASE_URL, getToken: () => 'jwt' });
+    await client.postJson('/x', { a: 1 }, { ...OPTIONS, keepalive: true }, readStatus);
+    await client.postJson('/x', { a: 1 }, OPTIONS, readStatus);
+    assert.equal(transport.calls[0].init.keepalive, true);
+    assert.equal(transport.calls[1].init.keepalive, undefined);
+  });
+
+  test('ignoreUnauthorized: un 401 no borra el token y llega al handler', async () => {
+    let cleared = 0;
+    const transport = recordingFetch(() => jsonResponse(401, { code: 'not_authenticated' }));
+    const client = createApiClient({ fetch: transport.fetch, getBaseUrl: () => BASE_URL, getToken: () => 'jwt', onUnauthorized: () => { cleared += 1; } });
+    assert.equal(await client.postJson('/x', {}, { ...OPTIONS, ignoreUnauthorized: true }, readStatus), 401);
+    assert.equal(cleared, 0);
+    assert.equal(transport.calls[0].init.headers.Authorization, 'Bearer jwt');
+  });
+
+  test('beaconJson serializa un Blob application/json a la URL completa', async () => {
+    const beacons = [];
+    const client = createApiClient({ getBaseUrl: () => '/backend/telemetry/events', sendBeacon: (url, data) => { beacons.push({ url, data }); return true; } });
+    assert.equal(client.beaconJson('', { events: [{ a: 1 }] }), true);
+    assert.equal(beacons[0].url, '/backend/telemetry/events');
+    assert.equal(beacons[0].data.type, 'application/json');
+    assert.deepEqual(JSON.parse(await beacons[0].data.text()), { events: [{ a: 1 }] });
+  });
+
+  test('beaconJson devuelve false sin URL, sin beacon o si el navegador lo rechaza o lanza', () => {
+    const accept = () => true;
+    assert.equal(createApiClient({ getBaseUrl: () => '', sendBeacon: accept }).beaconJson('', {}), false);
+    assert.equal(createApiClient({ getBaseUrl: () => BASE_URL, sendBeacon: () => false }).beaconJson('', {}), false);
+    assert.equal(createApiClient({ getBaseUrl: () => BASE_URL, sendBeacon: () => { throw new TypeError('quota'); } }).beaconJson('', {}), false);
+  });
+
+  test('los fallos de transporte avisan al oyente con método, ruta y tipo; nunca con la URL ni el error', async (t) => {
+    const failures = [];
+    setTransportFailureListener((failure) => failures.push(failure));
+    t.after(() => setTransportFailureListener(null));
+    await assert.rejects(createApiClient({ fetch: offlineFetch(), getBaseUrl: () => BASE_URL }).get('/inventory/products', OPTIONS, readStatus), ApiNetworkError);
+    await assert.rejects(createApiClient({ fetch: hangingFetch(), getBaseUrl: () => BASE_URL }).get('/suppliers', { timeoutMs: 5 }, readStatus), ApiTimeoutError);
+    await assert.rejects(createApiClient({ getBaseUrl: () => undefined }).postJson('/auth/login', {}, OPTIONS, readStatus), ApiConfigError);
+    assert.deepEqual(failures, [
+      { kind: 'network', method: 'GET', path: '/inventory/products', timeoutMs: null },
+      { kind: 'timeout', method: 'GET', path: '/suppliers', timeoutMs: 5 },
+      { kind: 'config', method: 'POST', path: '/auth/login', timeoutMs: null },
+    ]);
+    assert.equal(JSON.stringify(failures).includes(LEAK), false);
+  });
+
+  test('una cancelación no es un fallo, el cliente de telemetría no avisa y un oyente que lanza no rompe la petición', async (t) => {
+    const failures = [];
+    setTransportFailureListener((failure) => failures.push(failure));
+    t.after(() => setTransportFailureListener(null));
+    const controller = new AbortController();
+    const pending = createApiClient({ fetch: hangingFetch(), getBaseUrl: () => BASE_URL }).get('/x', { ...OPTIONS, signal: controller.signal }, readStatus);
+    controller.abort();
+    await assert.rejects(pending, ApiAbortError);
+    await assert.rejects(createApiClient({ fetch: offlineFetch(), getBaseUrl: () => BASE_URL, reportTransportFailures: false }).get('/x', OPTIONS, readStatus), ApiNetworkError);
+    assert.deepEqual(failures, []);
+    setTransportFailureListener(() => { throw new Error('boom'); });
+    await assert.rejects(createApiClient({ fetch: offlineFetch(), getBaseUrl: () => BASE_URL }).get('/x', OPTIONS, readStatus), ApiNetworkError);
   });
 });

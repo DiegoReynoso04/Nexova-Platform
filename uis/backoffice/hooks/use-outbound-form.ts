@@ -23,7 +23,9 @@
 
 import { useCallback, useEffect, useReducer, useState } from 'react';
 
+import { useFormTelemetry } from '@/hooks/use-form-telemetry';
 import { ApiAbortError } from '@/lib/api-client';
+import { observeInventorySubmit, trackOutboundOrder } from '@/lib/inventory-telemetry';
 import { InventoryServiceError, createOutboundOrder, getAsset } from '@/services/inventory.service';
 import type { ExitType, InventoryUiError, OutboundFormValues, OutboundOrder, SelectedAsset } from '@/types/inventory';
 
@@ -228,11 +230,23 @@ export function createOutboundFormSession(
 export interface UseOutboundFormResult extends OutboundFormState {
   selectAsset: (assetId: number | null) => void;
   submitOutbound: (values: OutboundFormValues, nextAssetId: number | null) => void;
+  /** El formulario avisa de cada campo que cambia (solo el nombre, para `form_started`/`form_abandoned`). */
+  fieldChanged: (field: string) => void;
 }
 
 export function useOutboundForm(): UseOutboundFormResult {
   const [state, dispatch] = useReducer(outboundFormReducer, INITIAL_OUTBOUND_FORM_STATE);
-  const [session] = useState(() => createOutboundFormSession(dispatch));
+  const telemetry = useFormTelemetry('outbound_order');
+  // Telemetría (ticket de captura): embudo del formulario y, con la respuesta
+  // 201, `outbound_order_created` y `stock_threshold_triggered` (lib/inventory-telemetry.ts).
+  const [session] = useState(() =>
+    createOutboundFormSession(dispatch, {
+      getAsset,
+      createOutboundOrder: observeInventorySubmit(createOutboundOrder, telemetry, (order, values) =>
+        trackOutboundOrder(order, values.asset?.category)
+      ),
+    })
+  );
 
   useEffect(() => {
     session.activate();
@@ -245,5 +259,5 @@ export function useOutboundForm(): UseOutboundFormResult {
     [session]
   );
 
-  return { ...state, selectAsset, submitOutbound };
+  return { ...state, selectAsset, submitOutbound, fieldChanged: telemetry.fieldChanged };
 }

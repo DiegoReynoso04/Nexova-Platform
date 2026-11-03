@@ -11,6 +11,7 @@
 // es lo que hace falta si el layout raíz ha fallado.
 
 import { Alert } from '@/components/ui/alert';
+import { ErrorBoundaryTracker } from '@/components/telemetry/error-boundary-tracker';
 import { Button } from '@/components/ui/button';
 import { HOME_PATH } from '@/lib/auth-routes';
 
@@ -28,6 +29,8 @@ export default function GlobalError({ retry }: GlobalErrorProps) {
       <body className="flex min-h-full flex-col bg-canvas font-sans text-ink antialiased">
         <title>Error · Backoffice · Nexova</title>
         <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-8">
+          {/* Telemetría: solo que este límite se mostró; el error no se pasa. */}
+          <ErrorBoundaryTracker boundary="global" />
           <h1 className="text-lg font-semibold text-ink">Algo ha fallado</h1>
           <Alert variant="error" title="No se pudo cargar el backoffice">
             <p>Ha ocurrido un error inesperado. Puedes reintentarlo o volver a la página principal.</p>

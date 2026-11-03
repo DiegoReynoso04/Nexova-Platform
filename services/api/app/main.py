@@ -22,6 +22,7 @@ from app.core.cache import ResponseCache
 from app.core.config import Settings
 from app.core.errors import InternalErrorMiddleware, install_error_handlers
 from app.core.limits import BodySizeLimitMiddleware
+from app.core.telemetry import configure_telemetry_logger
 from app.core.timing import configure_timing_logger, timing_middleware
 from app.database import SupplierRepository
 from app.modules.incident_manager.repository import IncidentRepository
@@ -31,6 +32,9 @@ from app.modules.incidents.router import router as incidents_router
 from app.modules.incidents.store import LastResultStore
 from app.modules.inventory.database import build_engine, inventory_lifespan
 from app.modules.inventory.router import router as inventory_router
+from app.modules.telemetry.router import TELEMETRY_EVENTS_PATH, TELEMETRY_MAX_BODY_BYTES
+from app.modules.telemetry.router import router as telemetry_router
+from app.modules.telemetry.stock_edit import StockEditReporter
 from app.routes.auth import router as auth_router
 from app.routes.profiles import router as profiles_router
 from app.routes.suppliers import router as suppliers_router
@@ -72,6 +76,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.response_cache = ResponseCache()
     # AUTH-03: envío del enlace de restablecimiento (los tests lo sustituyen).
     app.state.email_sender = build_email_sender(settings)
+    # Telemetría (P7): `direct_stock_edit_rejected` desde los handlers de error.
+    app.state.stock_edit_reporter = StockEditReporter(settings, app.state.inventory_engine)
 
     install_error_handlers(app)
     # Rutas existentes con datos sensibles: todas exigen un JWT válido (AUTH-01).
@@ -88,6 +94,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router, prefix="/auth")
     app.include_router(users_router, prefix="/users")
     app.include_router(profiles_router, prefix="/profiles")
+    # Telemetría (ticket de captura), fase stub: pública a propósito (sendBeacon
+    # no lleva Authorization) y sin persistencia. Ver app/modules/telemetry/router.py.
+    app.include_router(telemetry_router)
+    configure_telemetry_logger()
 
     # OpenAPI del gestor de incidencias: sin el 422 que nunca responde (valida con 400).
     default_openapi = app.openapi
@@ -106,7 +116,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # add_middleware apila hacia fuera: el último añadido es el más externo.
     # Orden resultante: timing → CORS → errores internos (500) → límite de body → app.
-    app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_upload_bytes)
+    app.add_middleware(
+        BodySizeLimitMiddleware,
+        max_bytes=settings.max_upload_bytes,
+        path_limits={TELEMETRY_EVENTS_PATH: TELEMETRY_MAX_BODY_BYTES},
+    )
     app.add_middleware(InternalErrorMiddleware)
     app.add_middleware(
         CORSMiddleware,

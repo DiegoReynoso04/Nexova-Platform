@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { hasActiveFilters, useIncidentBoard } from '@/hooks/use-incident-board';
 import { useIncidentSummary } from '@/hooks/use-incident-summary';
+import { pageLoadOutcome, usePageLoadTelemetry } from '@/hooks/use-page-load-telemetry';
 import { NEW_INCIDENT_PATH } from '@/lib/incident-manager-routes';
 
 import { IncidentError } from './incident-error';
@@ -23,6 +24,7 @@ export function IncidentBoardView() {
   const summary = useIncidentSummary();
   // `summary.reload` es estable (useCallback sobre la sesión).
   const board = useIncidentBoard(summary.reload);
+  usePageLoadTelemetry('/incident-manager', pageLoadOutcome(board.view));
   const { view, incidents, filters, rows, list, loaded } = board;
   const isLoading = list.status === 'loading';
 

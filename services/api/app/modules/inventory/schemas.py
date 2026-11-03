@@ -7,20 +7,40 @@ guarda (se calcula con las entradas y las salidas, ver `service.py`), y las
 órdenes llevan el activo embebido (`AssetSummary`) en vez de `asset_id`.
 
 Ningún request acepta `user_uuid` (`extra="forbid"`): lo pone la API con el
-usuario del token.
+usuario del token. Tampoco `currency` (P3 del plan de telemetría): la deriva la
+API de la oficina.
+
+Ticket de captura de telemetría (D1 «A ligera»): las respuestas de alta de
+entradas y salidas (`InboundOrderCreated`, `OutboundOrderCreated`) añaden lo que
+solo sabe la API, para que el frontend emita los eventos obligatorios con
+`track()` sin calcular nada: el stock antes y después y el mínimo en la salida,
+y la clave seudónima del proveedor y la variación de coste en la entrada. El
+listado (`GET /inventory/orders`) no lleva esos campos: son del momento del alta.
 """
 
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, ValidationInfo, field_validator
 
-from .vocabulary import QUANTITY_MAX, TEXT_MAX_LENGTH, AssetCategory, ExitType, Office
+from .vocabulary import (
+    QUANTITY_MAX,
+    TEXT_MAX_LENGTH,
+    UNIT_COST_DECIMAL_PLACES,
+    UNIT_COST_MAX_DIGITS,
+    AssetCategory,
+    Currency,
+    ExitType,
+    Office,
+)
 
 # Texto libre: sin espacios en los extremos, no vacío y con el tope técnico.
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=TEXT_MAX_LENGTH)]
 # Enteros estrictos: ni "5" ni `true` ni 5.0 pasan por una cantidad o un id.
 Quantity = Annotated[int, Field(strict=True, ge=1, le=QUANTITY_MAX)]
 AssetId = Annotated[int, Field(strict=True)]
+# P3: coste unitario positivo, con 2 decimales como máximo (NUMERIC(12,2)).
+UnitCost = Annotated[Decimal, Field(gt=0, max_digits=UNIT_COST_MAX_DIGITS, decimal_places=UNIT_COST_DECIMAL_PLACES)]
 
 _ASSET_EXAMPLE = {
     "name": 'Portátil 14" Business',
@@ -54,22 +74,36 @@ class AssetRead(BaseModel):
     current_stock: int
 
 
-class InboundOrderCreate(BaseModel):
-    """`POST /inventory/orders/inbound`: una compra o entrega recibida (`AssetEntry`)."""
+class InboundOrderFields(BaseModel):
+    """Campos comunes de una entrada. Sin coste: así entran las del seed, que el CONTEXT da sin coste."""
 
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "examples": [
-                {"asset_id": 1, "quantity": 10, "supplier": "TechDistrib Valencia S.L.", "office": Office.VALENCIA.value}
-            ]
-        },
-    )
+    model_config = ConfigDict(extra="forbid")
 
     asset_id: AssetId
     quantity: Quantity
     supplier: Text
     office: Office
+
+
+class InboundOrderCreate(InboundOrderFields):
+    """`POST /inventory/orders/inbound`: una compra o entrega recibida (`AssetEntry`), con su coste unitario."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "asset_id": 1,
+                    "quantity": 10,
+                    "supplier": "TechDistrib Valencia S.L.",
+                    "office": Office.VALENCIA.value,
+                    "unit_cost": 18.5,
+                }
+            ]
+        },
+    )
+
+    unit_cost: UnitCost
 
 
 class OutboundOrderCreate(BaseModel):
@@ -141,6 +175,30 @@ class InboundOrderRead(BaseModel):
     office: Office
     created_at: AwareDatetime
     user_uuid: str
+    # P3: `null` en las entradas anteriores al coste (y en las del seed).
+    unit_cost: float | None
+    currency: Currency | None
+
+
+class CostVariance(BaseModel):
+    """Variación del coste unitario frente a la referencia del mismo activo y proveedor (P10)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    reference_unit_cost: float
+    variance_pct: float
+    direction: Literal["increase", "decrease"]
+    threshold_pct: float
+    reference_window: int
+
+
+class InboundOrderCreated(InboundOrderRead):
+    """Respuesta 201 de `POST /inventory/orders/inbound`: la entrada y lo que el frontend emite con ella."""
+
+    # P9: HMAC-SHA256 del proveedor normalizado; `null` sin `TELEMETRY_SUPPLIER_KEY`.
+    supplier_key: str | None
+    # P10: `null` si no se desvía más del umbral o no hay bastantes entradas anteriores con coste.
+    cost_variance: CostVariance | None
 
 
 class OutboundOrderRead(BaseModel):
@@ -155,6 +213,16 @@ class OutboundOrderRead(BaseModel):
     office: Office
     created_at: AwareDatetime
     user_uuid: str
+
+
+class OutboundOrderCreated(OutboundOrderRead):
+    """Respuesta 201 de `POST /inventory/orders/outbound`: la salida y el stock que calculó la API bajo `FOR UPDATE`."""
+
+    stock_before: int
+    stock_after: int
+    # `INVENTORY_DEFAULT_MIN_STOCK` (5 por defecto): aún no hay mínimo por activo (P2 pendiente).
+    min_stock: int
+    currency: Currency
 
 
 # `GET /inventory/orders`: entradas y salidas en una sola lista, distinguidas por `type`.

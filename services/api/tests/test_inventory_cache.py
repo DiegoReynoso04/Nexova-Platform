@@ -21,7 +21,7 @@ from .support import authorize, with_test_auth
 
 
 def inbound(asset_id: int, quantity: int = 5) -> dict[str, Any]:
-    return {"asset_id": asset_id, "quantity": quantity, "supplier": "Example supplier", "office": "Valencia"}
+    return {"asset_id": asset_id, "quantity": quantity, "supplier": "Example supplier", "office": "Valencia", "unit_cost": 10}
 
 
 def outbound(asset_id: int, quantity: int = 1) -> dict[str, Any]:

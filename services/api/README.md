@@ -55,6 +55,7 @@ Columna *Auth*: 🔓 pública · 🔒 JWT válido · 👤 propio usuario o admin
 | `POST` | `/inventory/orders/inbound` | 🔒 | Registra una entrada (201) |
 | `POST` | `/inventory/orders/outbound` | 🔒 | Registra una asignación o un consumo (201); 400 `insufficient_stock` si supera el stock |
 | `GET` | `/inventory/orders` | 🔒 | Entradas y salidas con el activo embebido, de la más reciente a la más antigua |
+| `POST` | `/telemetry/events` | 🔓 | Telemetría, fase stub: valida el envelope de 1 a 50 eventos y responde `200 {"received": N}`; no persiste (`SPECS.md` Parte H) |
 
 Sin token válido → **401**; token válido sobre un recurso ajeno o una acción de admin → **403** (`SPECS.md` §21). Ninguna respuesta incluye `password` ni `hashed_password`.
 
@@ -320,8 +321,17 @@ Todos con 🔒 (JWT válido). Detalle de request, response y errores en `SPECS.m
 | `GET` | `/inventory/products` | 200, activos con `current_stock` (ordenados por `id`) | — |
 | `POST` | `/inventory/products` | 201, activo con `current_stock: 0` | 422 · 409 `sku_already_exists` |
 | `GET` | `/inventory/products/{id}` | 200, activo con su stock | 404 `asset_not_found` |
-| `POST` | `/inventory/orders/inbound` | 201, entrada (`AssetEntry`) | 422 · 404 · 400 `office_mismatch` |
-| `POST` | `/inventory/orders/outbound` | 201, salida (`AssetExit`) | 422 · 404 · 400 `office_mismatch` · 400 `insufficient_stock` |
+| `POST` | `/inventory/orders/inbound` | 201, entrada (`AssetEntry`) con `unit_cost`, `currency`, `supplier_key` y `cost_variance` | 422 (también sin `unit_cost`) · 404 · 400 `office_mismatch` |
+| `POST` | `/inventory/orders/outbound` | 201, salida (`AssetExit`) con `stock_before`, `stock_after`, `min_stock` y `currency` | 422 · 404 · 400 `office_mismatch` · 400 `insufficient_stock` |
+
+**Migración del coste (ticket de captura de telemetría, P3).** Una base creada antes de P3 necesita las columnas `unit_cost` y `currency` de `asset_entries`: `create_all` no altera tablas existentes. Con la `DATABASE_URL` de esa base en el entorno:
+
+```bash
+python -m app.modules.inventory.migrate --dry-run
+python -m app.modules.inventory.migrate
+```
+
+Es idempotente (una segunda ejecución dice «Nada que migrar»), aditiva y solo para PostgreSQL. **Sobre la base de la demo, solo con la confirmación del usuario.** Las comprobaciones de solo lectura, en [`docs/telemetry/capture-review.md`](../../docs/telemetry/capture-review.md).
 | `GET` | `/inventory/orders` | 200, entradas y salidas con `type`, el activo embebido y `user_uuid`, de la más reciente a la más antigua | — |
 
 ## Tests

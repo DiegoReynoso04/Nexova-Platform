@@ -43,7 +43,7 @@ export function AccountNav() {
   const mode = headerNavMode(pathname, session.status);
 
   function handleLogout() {
-    session.logout();
+    session.logout('header_button');
     router.replace(LOGIN_PATH);
   }
 

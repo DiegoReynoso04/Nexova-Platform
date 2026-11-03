@@ -27,7 +27,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
-from app.auth.dependencies import CurrentUserDep
+from app.auth.dependencies import CurrentUserDep, SettingsDep
 from app.core.cache import CacheDep
 from app.core.errors import (
     AssetNotFoundError,
@@ -45,10 +45,10 @@ from .schemas import (
     AssetRead,
     ErrorResponse,
     InboundOrderCreate,
-    InboundOrderRead,
+    InboundOrderCreated,
     OrderRead,
     OutboundOrderCreate,
-    OutboundOrderRead,
+    OutboundOrderCreated,
 )
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -108,7 +108,7 @@ def get_product(id: int, session: SessionDep, cache: CacheDep) -> AssetRead:  # 
 @router.post(
     "/orders/inbound",
     status_code=201,
-    response_model=InboundOrderRead,
+    response_model=InboundOrderCreated,
     responses={
         **COMMON_ERRORS,
         400: _error("La oficina de la orden no es la del activo", OfficeMismatchError()),
@@ -116,9 +116,9 @@ def get_product(id: int, session: SessionDep, cache: CacheDep) -> AssetRead:  # 
     },
 )
 def create_inbound_order(
-    payload: InboundOrderCreate, session: SessionDep, user: CurrentUserDep, cache: CacheDep
-) -> InboundOrderRead:
-    order = service.create_inbound_order(session, payload, user_uuid=str(user.id))
+    payload: InboundOrderCreate, session: SessionDep, user: CurrentUserDep, cache: CacheDep, settings: SettingsDep
+) -> InboundOrderCreated:
+    order = service.create_inbound_order(session, payload, user_uuid=str(user.id), settings=settings)
     cache.invalidate(CACHE_NAMESPACE)
     return order
 
@@ -126,7 +126,7 @@ def create_inbound_order(
 @router.post(
     "/orders/outbound",
     status_code=201,
-    response_model=OutboundOrderRead,
+    response_model=OutboundOrderCreated,
     responses={
         **COMMON_ERRORS,
         400: _error(
@@ -138,10 +138,10 @@ def create_inbound_order(
     },
 )
 def create_outbound_order(
-    payload: OutboundOrderCreate, session: SessionDep, user: CurrentUserDep, cache: CacheDep
-) -> OutboundOrderRead:
+    payload: OutboundOrderCreate, session: SessionDep, user: CurrentUserDep, cache: CacheDep, settings: SettingsDep
+) -> OutboundOrderCreated:
     # La regla del stock se comprueba en la base (`FOR UPDATE`), nunca contra la caché.
-    order = service.create_outbound_order(session, payload, user_uuid=str(user.id))
+    order = service.create_outbound_order(session, payload, user_uuid=str(user.id), settings=settings)
     cache.invalidate(CACHE_NAMESPACE)
     return order
 

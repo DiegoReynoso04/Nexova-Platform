@@ -50,17 +50,23 @@ import {
 } from '@/types/incident-manager';
 import {
   ASSET_CATEGORIES,
+  CURRENCIES,
   EXIT_TYPES,
   OFFICES,
   ORDER_TYPES,
   type Asset,
   type AssetSummary,
+  type CostVariance,
   type InboundOrder,
+  type InboundOrderCreated,
   type InventoryField,
   API_MESSAGE_MAX_LENGTH,
   type InventoryOrder,
   type OutboundOrder,
+  type OutboundOrderCreated,
 } from '@/types/inventory';
+
+const COST_VARIANCE_DIRECTIONS = ['increase', 'decrease'] as const;
 import {
   SUPPLIER_CATEGORIES,
   SUPPLIER_COUNTRIES,
@@ -547,7 +553,13 @@ function parseOrder(input: unknown, path: string): InventoryOrder {
     user_uuid: readString(value, 'user_uuid', path),
   };
   if (type === 'inbound') {
-    return { type, ...common, supplier: readString(value, 'supplier', path) };
+    return {
+      type,
+      ...common,
+      supplier: readString(value, 'supplier', path),
+      unit_cost: value.unit_cost === null ? null : readFiniteNumber(value, 'unit_cost', path),
+      currency: value.currency === null ? null : readOneOf(value, 'currency', path, CURRENCIES),
+    };
   }
   return {
     type,
@@ -571,13 +583,50 @@ export function normalizeOutboundOrder(input: unknown): OutboundOrder {
   return order;
 }
 
+function parseCostVariance(source: JsonObject, path: string): CostVariance | null {
+  if (source.cost_variance === null) return null;
+  const value = readObject(source, 'cost_variance', path);
+  const variancePath = `${path}.cost_variance`;
+  return {
+    reference_unit_cost: readFiniteNumber(value, 'reference_unit_cost', variancePath),
+    variance_pct: readFiniteNumber(value, 'variance_pct', variancePath),
+    direction: readOneOf(value, 'direction', variancePath, COST_VARIANCE_DIRECTIONS),
+    threshold_pct: readFiniteNumber(value, 'threshold_pct', variancePath),
+    reference_window: readInteger(value, 'reference_window', variancePath),
+  };
+}
+
+/** Respuesta 201 de `POST /inventory/orders/inbound` con los derivados de la telemetría (P9, P10). */
+export function normalizeInboundOrderCreated(input: unknown): InboundOrderCreated {
+  const order = normalizeInboundOrder(input);
+  const body = expectObject(input, 'response');
+  return {
+    ...order,
+    supplier_key: readNullableString(body, 'supplier_key', 'response'),
+    cost_variance: parseCostVariance(body, 'response'),
+  };
+}
+
+/** Respuesta 201 de `POST /inventory/orders/outbound` con el stock que calculó la API. */
+export function normalizeOutboundOrderCreated(input: unknown): OutboundOrderCreated {
+  const order = normalizeOutboundOrder(input);
+  const body = expectObject(input, 'response');
+  return {
+    ...order,
+    stock_before: readInteger(body, 'stock_before', 'response'),
+    stock_after: readInteger(body, 'stock_after', 'response'),
+    min_stock: readInteger(body, 'min_stock', 'response'),
+    currency: readOneOf(body, 'currency', 'response', CURRENCIES),
+  };
+}
+
 /** Respuesta 200 de `GET /inventory/orders`: entradas y salidas, distinguidas por `type`. */
 export function normalizeOrderList(input: unknown): InventoryOrder[] {
   if (!Array.isArray(input)) throw new UnexpectedResponseError('response', 'array', describeType(input));
   return input.map((item, index) => parseOrder(item, `response[${index}]`));
 }
 
-const INVENTORY_FIELDS: readonly InventoryField[] = ['asset_id', 'quantity', 'supplier', 'exit_type', 'assigned_to', 'office'];
+const INVENTORY_FIELDS: readonly InventoryField[] = ['asset_id', 'quantity', 'supplier', 'unit_cost', 'exit_type', 'assigned_to', 'office'];
 
 /** Un error de un 422 del inventario tal como lo lee el frontend. */
 export interface InventoryValidationIssue {
@@ -608,4 +657,32 @@ export function normalizeInventoryValidationErrors(input: unknown): InventoryVal
     issues.push({ field, apiMessage });
   }
   return issues;
+}
+
+// ---------------------------------------------------------------------------
+// Telemetría: identidad del envelope desde los claims del JWT (ticket de captura)
+// ---------------------------------------------------------------------------
+
+/** UUID v4 en minúsculas: el patrón de `sessionId`/`userId` del envelope (docs/telemetry/event-schemas.json). */
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/** `sub` y `sid` del payload del JWT, o `null` si faltan o no son UUID v4. */
+export interface TokenIdentity {
+  userId: string | null;
+  sessionId: string | null;
+}
+
+function readUuidClaim(source: JsonObject, key: string): string | null {
+  const value = source[key];
+  return typeof value === 'string' && UUID_V4.test(value) ? value : null;
+}
+
+/**
+ * Payload decodificado del JWT → identidad de la telemetría. Nunca lanza: un
+ * token ilegible o anterior al claim `sid` da `null` (eventos anónimos o sin
+ * sesión). La firma no se comprueba aquí: la API es la autoridad.
+ */
+export function normalizeTokenIdentity(input: unknown): TokenIdentity {
+  if (!isObject(input)) return { userId: null, sessionId: null };
+  return { userId: readUuidClaim(input, 'sub'), sessionId: readUuidClaim(input, 'sid') };
 }

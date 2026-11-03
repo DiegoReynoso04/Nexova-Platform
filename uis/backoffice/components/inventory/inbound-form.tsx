@@ -17,8 +17,12 @@ import { ReadOnlyField } from './read-only-field';
 // HTTP: entrega los valores a la vista (useInboundForm). La oficina no la
 // elige el usuario: es la del activo, en solo lectura, y es la que se envía.
 // La validación en cliente la hace el servicio antes de enviar.
+// Coste unitario (P3 del plan de telemetría): obligatorio, en la moneda de la
+// oficina del activo (la pone la API; aquí solo se indica).
+// Telemetría: `onFieldChange` recibe solo el nombre del campo, nunca su valor.
 
-const FORM_FIELDS: readonly InventoryField[] = ['asset_id', 'quantity', 'supplier', 'office'];
+const FORM_FIELDS: readonly InventoryField[] = ['asset_id', 'quantity', 'supplier', 'unit_cost', 'office'];
+const OFFICE_CURRENCY_LABEL: Record<Asset['office'], string> = { Valencia: 'EUR', Miami: 'USD' };
 
 export interface InboundFormProps {
   view: AssetsView;
@@ -30,12 +34,24 @@ export interface InboundFormProps {
   notice: string | null;
   submit: InboundSubmitState;
   onSubmit: (values: InboundFormValues) => void;
+  onFieldChange: (field: InventoryField) => void;
 }
 
-export function InboundForm({ view, assets, loadError, onRetryAssets, initialAssetId, notice, submit, onSubmit }: InboundFormProps) {
+export function InboundForm({
+  view,
+  assets,
+  loadError,
+  onRetryAssets,
+  initialAssetId,
+  notice,
+  submit,
+  onSubmit,
+  onFieldChange,
+}: InboundFormProps) {
   const [assetId, setAssetId] = useState<number | null>(initialAssetId);
   const [quantity, setQuantity] = useState('');
   const [supplier, setSupplier] = useState('');
+  const [unitCost, setUnitCost] = useState('');
   const [attempt, setAttempt] = useState(0);
 
   const selected = assets.find((asset) => asset.id === assetId) ?? null;
@@ -45,11 +61,17 @@ export function InboundForm({ view, assets, loadError, onRetryAssets, initialAss
   const unplaced = unplacedMessages(error, FORM_FIELDS);
   const quantityMessages = fieldMessages(error, 'quantity');
   const supplierMessages = fieldMessages(error, 'supplier');
+  const unitCostMessages = fieldMessages(error, 'unit_cost');
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAttempt((current) => current + 1);
-    onSubmit({ asset: selected === null ? null : { id: selected.id, office: selected.office }, quantity, supplier });
+    onSubmit({
+      asset: selected === null ? null : { id: selected.id, office: selected.office, category: selected.category },
+      quantity,
+      supplier,
+      unit_cost: unitCost,
+    });
   }
 
   // Tras un intento fallido, el foco va al aviso general (si lo hay).
@@ -79,7 +101,10 @@ export function InboundForm({ view, assets, loadError, onRetryAssets, initialAss
         loadError={loadError}
         onRetry={onRetryAssets}
         value={assetId}
-        onChange={setAssetId}
+        onChange={(value) => {
+          onFieldChange('asset_id');
+          setAssetId(value);
+        }}
         messages={fieldMessages(error, 'asset_id')}
         notice={notice}
         disabled={isSubmitting}
@@ -103,7 +128,10 @@ export function InboundForm({ view, assets, loadError, onRetryAssets, initialAss
           inputMode="numeric"
           autoComplete="off"
           value={quantity}
-          onChange={(event) => setQuantity(event.target.value)}
+          onChange={(event) => {
+            onFieldChange('quantity');
+            setQuantity(event.target.value);
+          }}
           disabled={isSubmitting}
           aria-invalid={quantityMessages.length > 0 || undefined}
           aria-describedby={quantityMessages.length > 0 ? 'inbound-quantity-messages' : undefined}
@@ -120,13 +148,42 @@ export function InboundForm({ view, assets, loadError, onRetryAssets, initialAss
           id="inbound-supplier"
           autoComplete="off"
           value={supplier}
-          onChange={(event) => setSupplier(event.target.value)}
+          onChange={(event) => {
+            onFieldChange('supplier');
+            setSupplier(event.target.value);
+          }}
           disabled={isSubmitting}
           aria-invalid={supplierMessages.length > 0 || undefined}
           aria-describedby={supplierMessages.length > 0 ? 'inbound-supplier-messages' : undefined}
           className={`${CONTROL_CLASSES} ${supplierMessages.length > 0 ? 'border-danger-ink' : 'border-border'}`}
         />
         <FieldMessages id="inbound-supplier-messages" messages={supplierMessages} />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor="inbound-unit-cost" className="text-sm font-medium text-ink">
+          Coste unitario *
+        </label>
+        <input
+          id="inbound-unit-cost"
+          inputMode="decimal"
+          autoComplete="off"
+          value={unitCost}
+          onChange={(event) => {
+            onFieldChange('unit_cost');
+            setUnitCost(event.target.value);
+          }}
+          disabled={isSubmitting}
+          aria-invalid={unitCostMessages.length > 0 || undefined}
+          aria-describedby={`inbound-unit-cost-help${unitCostMessages.length > 0 ? ' inbound-unit-cost-messages' : ''}`}
+          className={`${CONTROL_CLASSES} ${unitCostMessages.length > 0 ? 'border-danger-ink' : 'border-border'}`}
+        />
+        <p id="inbound-unit-cost-help" className="text-xs text-ink-muted">
+          {selected === null
+            ? 'En la moneda de la oficina del activo, con dos decimales como máximo.'
+            : `En ${OFFICE_CURRENCY_LABEL[selected.office]}, la moneda de ${selected.office}, con dos decimales como máximo.`}
+        </p>
+        <FieldMessages id="inbound-unit-cost-messages" messages={unitCostMessages} />
       </div>
 
       <div>

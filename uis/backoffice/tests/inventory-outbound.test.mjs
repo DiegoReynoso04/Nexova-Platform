@@ -22,7 +22,7 @@ import { fieldMessages, summaryError } from '../lib/inventory-form-errors.ts';
 import { exceedsStock } from '../lib/stock-check.ts';
 import { createInventoryService } from '../services/inventory.service.ts';
 import { BASE_URL, jsonResponse, recordingFetch } from './support/http-fakes.mjs';
-import { asset, errorBody, outboundOrder, outboundValues, selected } from './support/inventory-fakes.mjs';
+import { asset, errorBody, outboundOrderCreated, outboundValues, selected } from './support/inventory-fakes.mjs';
 import { validationBody } from './support/supplier-fakes.mjs';
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -54,7 +54,7 @@ function controllableStock() {
 }
 
 /** Sesión con un `getAsset` controlado y el envío real sobre `fetch`. */
-function sessionWith({ getAsset = controllableStock().fn, fetch = recordingFetch(() => jsonResponse(201, outboundOrder())).fetch } = {}) {
+function sessionWith({ getAsset = controllableStock().fn, fetch = recordingFetch(() => jsonResponse(201, outboundOrderCreated())).fetch } = {}) {
   const client = createApiClient({ fetch, getBaseUrl: () => BASE_URL, getToken: () => 'synthetic-token' });
   const service = createInventoryService({ client, timeoutMs: 1_000 });
   const { dispatch, state, actions } = store();
@@ -167,7 +167,7 @@ describe('advertencia de stock', () => {
   });
 
   test('no bloquea el envío: la salida llega a la API', async () => {
-    const transport = recordingFetch(() => jsonResponse(201, outboundOrder()));
+    const transport = recordingFetch(() => jsonResponse(201, outboundOrderCreated()));
     const { session, state } = await withKnownStock(1, 5, transport.fetch);
     const values = outboundValues({ quantity: '8' });
     assert.equal(exceedsStock(values.quantity, knownStock(state().stock)), true);
@@ -191,7 +191,7 @@ describe('«Asignado a» solo con una asignación', () => {
       ['allocation', 'Synthetic employee'],
       ['consumption', null],
     ]) {
-      const transport = recordingFetch(() => jsonResponse(201, outboundOrder()));
+      const transport = recordingFetch(() => jsonResponse(201, outboundOrderCreated()));
       const { session } = sessionWith({ fetch: transport.fetch });
       await session.submit(outboundFormValues(selected({ id: 4, office: 'Miami' }), '2', exitType, ' Synthetic employee '), null);
       assert.deepEqual(JSON.parse(transport.calls[0].init.body), {
@@ -206,7 +206,7 @@ describe('«Asignado a» solo con una asignación', () => {
   });
 
   test('validación en cliente: asignación sin «Asignado a», ninguna petición', async () => {
-    const transport = recordingFetch(() => jsonResponse(201, outboundOrder()));
+    const transport = recordingFetch(() => jsonResponse(201, outboundOrderCreated()));
     const { session, state } = sessionWith({ fetch: transport.fetch });
     await session.submit(outboundFormValues(selected(), '2', 'allocation', ' '), null);
     assert.equal(transport.calls.length, 0);
@@ -252,7 +252,7 @@ describe('Salida de activos: errores del envío', () => {
 
 describe('Salida de activos: éxito, doble envío y desmontaje', () => {
   test('éxito: confirmación, formulario limpio con el activo de la URL y stock leído de nuevo', async () => {
-    const order = outboundOrder({ quantity: 2, asset: { id: 1, name: 'Hub USB-C', sku: 'NXV-PER-002' } });
+    const order = outboundOrderCreated({ quantity: 2, asset: { id: 1, name: 'Hub USB-C', sku: 'NXV-PER-002' } });
     const transport = recordingFetch(() => jsonResponse(201, order));
     const { session, state, stock } = await withKnownStock(1, 5, transport.fetch);
     await session.submit(outboundValues(), 1);

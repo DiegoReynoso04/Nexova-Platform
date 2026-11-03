@@ -16,6 +16,8 @@ function inbound(overrides: Partial<InboundOrder> = {}): InboundOrder {
     office: 'Valencia',
     created_at: '2026-10-18T20:55:11.366024Z',
     user_uuid: USER_UUID,
+    unit_cost: null,
+    currency: null,
     ...overrides,
   };
 }

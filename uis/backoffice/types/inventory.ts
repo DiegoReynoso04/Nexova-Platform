@@ -14,16 +14,21 @@ export const ASSET_CATEGORIES = ['hardware', 'peripherals', 'office_supplies', '
 export const OFFICES = ['Valencia', 'Miami'] as const;
 export const EXIT_TYPES = ['allocation', 'consumption'] as const;
 export const ORDER_TYPES = ['inbound', 'outbound'] as const;
+/** Moneda de las entradas: la de la oficina, la pone la API (P3 del plan de telemetría). */
+export const CURRENCIES = ['EUR', 'USD'] as const;
 
 /** Cantidad máxima de una orden: el máximo de `int4` que acepta la API (SPECS §35, F3-2). */
 export const QUANTITY_MAX = 2_147_483_647;
 /** Tope de los textos libres de la API (`supplier`, `assigned_to`; SPECS §35, F3-1). */
 export const TEXT_MAX_LENGTH = 200;
+/** Coste unitario máximo que acepta la API: `NUMERIC(12,2)` (P3). */
+export const UNIT_COST_MAX = 9_999_999_999.99;
 
 export type AssetCategory = (typeof ASSET_CATEGORIES)[number];
 export type Office = (typeof OFFICES)[number];
 export type ExitType = (typeof EXIT_TYPES)[number];
 export type OrderType = (typeof ORDER_TYPES)[number];
+export type Currency = (typeof CURRENCIES)[number];
 
 /** Activo tal como lo devuelve la API (`GET /inventory/products`, `GET /inventory/products/{id}`). */
 export interface Asset {
@@ -54,6 +59,25 @@ export interface InboundOrder {
   /** ISO 8601 en UTC. */
   created_at: string;
   user_uuid: string;
+  /** Coste unitario (P3); `null` en las entradas anteriores al coste y en las del seed. */
+  unit_cost: number | null;
+  currency: Currency | null;
+}
+
+/** Variación del coste frente a la media de las entradas anteriores del mismo activo y proveedor (P10). */
+export interface CostVariance {
+  reference_unit_cost: number;
+  variance_pct: number;
+  direction: 'increase' | 'decrease';
+  threshold_pct: number;
+  reference_window: number;
+}
+
+/** Respuesta 201 de una entrada: además, lo que el frontend necesita para la telemetría (D1 «A ligera»). */
+export interface InboundOrderCreated extends InboundOrder {
+  /** HMAC del proveedor (P9); `null` si la API no tiene la clave configurada. */
+  supplier_key: string | null;
+  cost_variance: CostVariance | null;
 }
 
 /** Salida de activos (`AssetExit`): una asignación a un empleado o un consumo. */
@@ -71,17 +95,30 @@ export interface OutboundOrder {
   user_uuid: string;
 }
 
+/** Respuesta 201 de una salida: el stock que calculó la API (bajo `FOR UPDATE`) y el mínimo configurado. */
+export interface OutboundOrderCreated extends OutboundOrder {
+  stock_before: number;
+  stock_after: number;
+  min_stock: number;
+  currency: Currency;
+}
+
 /** Elemento de `GET /inventory/orders`, distinguido por `type`. */
 export type InventoryOrder = InboundOrder | OutboundOrder;
 
-/** Lo que el formulario necesita del activo elegido: su id y su oficina, que es la que se envía. */
-export type SelectedAsset = Pick<Asset, 'id' | 'office'>;
+/**
+ * Lo que el formulario necesita del activo elegido: su id y su oficina, que es
+ * la que se envía. La categoría no se envía: la usa la telemetría.
+ */
+export type SelectedAsset = Pick<Asset, 'id' | 'office' | 'category'>;
 
 /** Valores del formulario de entrada tal como los escribe el usuario. */
 export interface InboundFormValues {
   asset: SelectedAsset | null;
   quantity: string;
   supplier: string;
+  /** Coste unitario tal como lo escribe el usuario (admite coma decimal). */
+  unit_cost: string;
 }
 
 /** Valores del formulario de salida tal como los escribe el usuario. */
@@ -94,7 +131,7 @@ export interface OutboundFormValues {
 }
 
 /** Campos que pueden tener un error asociado (los del request de la API). */
-export type InventoryField = 'asset_id' | 'quantity' | 'supplier' | 'exit_type' | 'assigned_to' | 'office';
+export type InventoryField = 'asset_id' | 'quantity' | 'supplier' | 'unit_cost' | 'exit_type' | 'assigned_to' | 'office';
 
 /**
  * Un error de validación, del cliente o de un 422 de la API. `message` es

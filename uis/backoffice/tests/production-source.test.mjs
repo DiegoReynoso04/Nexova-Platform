@@ -115,7 +115,9 @@ describe('código de producción', () => {
     // que las rutas de la API, pero son rutas de navegación, no peticiones. Por
     // lo mismo se ignora el argumento de `PageProps<'…'>`/`LayoutProps<'…'>`:
     // es el tipo de ruta que genera Next para las props de una página, no una URL.
-    const allowed = ['services/inventory.service.ts', 'lib/inventory-routes.ts'];
+    // types/telemetry.ts también: son las plantillas de ruta del contrato de
+    // telemetría (event-schemas.json), que nunca se piden.
+    const allowed = ['services/inventory.service.ts', 'lib/inventory-routes.ts', 'types/telemetry.ts'];
     for (const file of PRODUCTION_FILES.filter((path) => !allowed.includes(path))) {
       const code = codeWithoutComments(file).replace(/\b(PageProps|LayoutProps)<'[^']*'>/g, '$1<>');
       assert.doesNotMatch(code, /['`]\/inventory\/(products|orders)['`/]/, file);
@@ -253,7 +255,7 @@ describe('código de producción', () => {
     assert.match(readOnly, /<label htmlFor=\{id\}/);
     assert.match(readOnly, /<output id=\{id\}/);
     assert.doesNotMatch(readOnly, /<input|<select|<textarea|\bborder\b|onChange/);
-    assert.match(form, /asset: selected === null \? null : \{ id: selected\.id, office: selected\.office \}/);
+    assert.match(form, /asset: selected === null \? null : \{ id: selected\.id, office: selected\.office, category: selected\.category \}/);
     assert.match(form, /<Button type="submit" isLoading=\{isSubmitting\}>/);
     const view = codeWithoutComments('components/inventory/inbound-form-view.tsx');
     assert.match(view, /<InboundForm\s+key=\{`\$\{formKey\}-\$\{preselection\.status\}`\}/);
@@ -301,7 +303,7 @@ describe('código de producción', () => {
     );
     assert.doesNotMatch(form, /<input\s+id="outbound-(office|stock)"/);
     // Se envía la oficina del activo elegido.
-    assert.match(form, /outboundFormValues\(selected === null \? null : \{ id: selected\.id, office: selected\.office \}/);
+    assert.match(form, /outboundFormValues\(selected === null \? null : \{ id: selected\.id, office: selected\.office, category: selected\.category \}/);
   });
 
   test('salida: Cantidad espera al stock, advertencia sin bloqueo y el 400 de stock bajo Cantidad', () => {
@@ -557,7 +559,9 @@ describe('código de producción', () => {
   });
 
   test('la UI no puede eliminar proveedores (sin DELETE ni borrado en el cliente)', () => {
-    for (const file of PRODUCTION_FILES) {
+    // types/telemetry.ts: `DELETE` es un valor del enum `http_method` del
+    // contrato de telemetría, no una petición.
+    for (const file of PRODUCTION_FILES.filter((path) => path !== 'types/telemetry.ts')) {
       const code = codeWithoutComments(file);
       assert.equal(/['"]DELETE['"]/.test(code), false, `${file} issues DELETE`);
       assert.equal(/deleteSupplier|removeSupplier|Eliminar/i.test(code), false, `${file} exposes deletion`);
@@ -590,6 +594,26 @@ describe('código de producción', () => {
     for (const file of PRODUCTION_FILES) {
       const callsFetch = /\bfetch\(/.test(codeWithoutComments(file));
       assert.equal(callsFetch, file === 'lib/api-client.ts', file);
+    }
+  });
+
+  // Ticket de captura de telemetría (docs/telemetry/capture-analysis.md, C9):
+  // el beacon también es transporte, así que vive junto al único fetch, y el
+  // cliente de la telemetría solo lo usa el TelemetryService. Todo el tracking
+  // pasa por `track()` de lib/telemetry.ts.
+  test('sendBeacon solo en lib/api-client.ts y el cliente de telemetría solo en lib/telemetry.ts', () => {
+    for (const file of PRODUCTION_FILES) {
+      const code = codeWithoutComments(file);
+      assert.equal(/\bsendBeacon\b/.test(code), file === 'lib/api-client.ts', `${file} usa sendBeacon`);
+      const usesClient = /telemetry-api-client|telemetryApiClient/.test(code);
+      assert.equal(usesClient, ['lib/telemetry.ts', 'lib/telemetry-api-client.ts'].includes(file), `${file} usa el cliente de telemetría`);
+    }
+  });
+
+  test('la telemetría no guarda nada en el navegador ni registra en consola', () => {
+    for (const file of ['lib/telemetry.ts', 'lib/telemetry-api-client.ts', 'lib/session-identity.ts', 'types/telemetry.ts']) {
+      const code = codeWithoutComments(file);
+      assert.doesNotMatch(code, /\b(localStorage|sessionStorage|indexedDB|console)\b|document\.cookie/, file);
     }
   });
 

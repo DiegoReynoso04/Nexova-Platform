@@ -29,6 +29,9 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
+/** `navigator.sendBeacon` (o un doble en los tests): `true` si el navegador encoló el envío. */
+export type BeaconLike = (url: string, data: Blob) => boolean;
+
 export interface ApiClientDependencies {
   /** Transporte; por defecto el `fetch` global. Inyectable en tests. */
   fetch?: FetchLike;
@@ -43,6 +46,35 @@ export interface ApiClientDependencies {
   getToken?: () => string | null;
   /** Qué hacer ante un 401 de una petición protegida; por defecto, borrar el token. */
   onUnauthorized?: () => void;
+  /** Envío al ocultar la pestaña; por defecto `navigator.sendBeacon` si existe. Inyectable en tests. */
+  sendBeacon?: BeaconLike;
+  /**
+   * Avisar al oyente de `setTransportFailureListener` cuando una petición no
+   * obtiene respuesta (red, timeout o configuración). Por defecto sí; el
+   * cliente de la telemetría lo apaga (sus fallos no se pueden enviar).
+   */
+  reportTransportFailures?: boolean;
+}
+
+/** Petición sin respuesta de la API (telemetría `client_request_failed`). Sin URL, cuerpo ni error. */
+export interface TransportFailure {
+  kind: 'network' | 'timeout' | 'config';
+  method: OutgoingMethod;
+  /** Ruta pedida, relativa a la base URL (puede llevar ids y query string: quien la recibe la normaliza). */
+  path: string;
+  /** Timeout aplicado si `kind = timeout`. */
+  timeoutMs: number | null;
+}
+
+let transportFailureListener: ((failure: TransportFailure) => void) | null = null;
+
+/**
+ * Un único oyente (lib/telemetry.ts) para los fallos de transporte de todos los
+ * clientes. Así este módulo no importa la telemetría (que depende de él).
+ * Un oyente que lanza nunca rompe la petición.
+ */
+export function setTransportFailureListener(listener: ((failure: TransportFailure) => void) | null): void {
+  transportFailureListener = listener;
 }
 
 export interface RequestOptions {
@@ -55,6 +87,17 @@ export interface RequestOptions {
    * sesión caducada. Por defecto toda petición es protegida.
    */
   skipAuth?: boolean;
+  /**
+   * `fetch` con `keepalive`: la petición sobrevive a la navegación o al cierre
+   * de la pestaña (telemetría). El navegador limita su cuerpo a unos 64 KiB.
+   */
+  keepalive?: boolean;
+  /**
+   * Telemetría: un 401 **no** borra el token ni lanza `ApiUnauthorizedError`;
+   * lo recibe el handler como cualquier otro status. La telemetría nunca cierra
+   * la sesión del operador.
+   */
+  ignoreUnauthorized?: boolean;
 }
 
 /** Respuesta HTTP mientras se procesa: el timeout sigue activo al leer el cuerpo. */
@@ -76,6 +119,12 @@ export interface ApiClient {
   postJson<T>(path: string, body: JsonValue, options: RequestOptions, handle: ResponseHandler<T>): Promise<T>;
   patchJson<T>(path: string, body: JsonValue, options: RequestOptions, handle: ResponseHandler<T>): Promise<T>;
   putJson<T>(path: string, body: JsonValue, options: RequestOptions, handle: ResponseHandler<T>): Promise<T>;
+  /**
+   * `POST` JSON con `navigator.sendBeacon` (telemetría al ocultar la pestaña).
+   * Sin cabeceras propias (el beacon no admite `Authorization`) ni respuesta.
+   * `false` si no hay base URL, no hay beacon o el navegador no lo encola.
+   */
+  beaconJson(path: string, body: JsonValue): boolean;
 }
 
 const DEFAULT_BASE_URL_VARIABLE = 'NEXT_PUBLIC_API_URL';
@@ -151,6 +200,11 @@ function defaultBaseUrl(): string | undefined {
   return process.env.NEXT_PUBLIC_API_URL;
 }
 
+function defaultBeacon(): BeaconLike | undefined {
+  if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return undefined;
+  return (url, data) => navigator.sendBeacon(url, data);
+}
+
 function isAbortLike(error: Error): boolean {
   // Por nombre, no por clase: el objeto de un fetch abortado varía entre entornos.
   return error.name === 'AbortError';
@@ -195,8 +249,10 @@ function wrapResponse(raw: Response): ApiResponse {
   };
 }
 
+type OutgoingMethod = 'GET' | 'POST' | 'PATCH' | 'PUT';
+
 interface OutgoingRequest {
-  method: 'GET' | 'POST' | 'PATCH' | 'PUT';
+  method: OutgoingMethod;
   body?: BodyInit;
   contentType?: string;
 }
@@ -207,6 +263,17 @@ export function createApiClient(dependencies: ApiClientDependencies = {}): ApiCl
   const baseUrlVariable = dependencies.baseUrlVariable ?? DEFAULT_BASE_URL_VARIABLE;
   const getToken = dependencies.getToken ?? readAuthToken;
   const onUnauthorized = dependencies.onUnauthorized ?? clearAuthToken;
+  const sendBeacon = dependencies.sendBeacon ?? defaultBeacon();
+  const reportTransportFailures = dependencies.reportTransportFailures ?? true;
+
+  function report(kind: TransportFailure['kind'], method: OutgoingMethod, path: string, timeoutMs: number | null): void {
+    if (!reportTransportFailures || transportFailureListener === null) return;
+    try {
+      transportFailureListener({ kind, method, path, timeoutMs });
+    } catch {
+      // La telemetría nunca rompe una petición.
+    }
+  }
 
   function buildInit(request: OutgoingRequest, options: RequestOptions): RequestInit {
     const headers: Record<string, string> = {};
@@ -218,14 +285,22 @@ export function createApiClient(dependencies: ApiClientDependencies = {}): ApiCl
     }
     const init: RequestInit = { method: request.method };
     if (request.body !== undefined) init.body = request.body;
+    if (options.keepalive) init.keepalive = true;
     if (Object.keys(headers).length > 0) init.headers = headers;
     return init;
   }
 
-  async function send<T>(path: string, request: OutgoingRequest, options: RequestOptions, handle: ResponseHandler<T>): Promise<T> {
+  function resolveUrl(path: string): string | null {
     const baseUrl = getBaseUrl()?.trim();
-    if (!baseUrl) throw new ApiConfigError(baseUrlVariable);
-    const url = `${baseUrl.replace(/\/+$/, '')}${path}`;
+    return baseUrl ? `${baseUrl.replace(/\/+$/, '')}${path}` : null;
+  }
+
+  async function send<T>(path: string, request: OutgoingRequest, options: RequestOptions, handle: ResponseHandler<T>): Promise<T> {
+    const url = resolveUrl(path);
+    if (url === null) {
+      report('config', request.method, path, null);
+      throw new ApiConfigError(baseUrlVariable);
+    }
     if (options.signal?.aborted) throw new ApiAbortError();
     const init = buildInit(request, options);
 
@@ -245,12 +320,16 @@ export function createApiClient(dependencies: ApiClientDependencies = {}): ApiCl
         // credentials). El JWT viaja solo en la cabecera Authorization.
         raw = await transport(url, { ...init, signal: controller.signal });
       } catch (error) {
-        if (timedOut) throw new ApiTimeoutError();
+        if (timedOut) {
+          report('timeout', request.method, path, options.timeoutMs);
+          throw new ApiTimeoutError();
+        }
         if (controller.signal.aborted) throw new ApiAbortError();
         if (error instanceof Error && isAbortLike(error)) throw new ApiAbortError();
+        report('network', request.method, path, null);
         throw new ApiNetworkError();
       }
-      if (raw.status === 401 && !options.skipAuth) {
+      if (raw.status === 401 && !options.skipAuth && !options.ignoreUnauthorized) {
         onUnauthorized();
         throw new ApiUnauthorizedError();
       }
@@ -276,7 +355,21 @@ export function createApiClient(dependencies: ApiClientDependencies = {}): ApiCl
     return { method, contentType: 'application/json', body: JSON.stringify(body) };
   }
 
+  function beaconJson(path: string, body: JsonValue): boolean {
+    const url = resolveUrl(path);
+    if (url === null || sendBeacon === undefined) return false;
+    // Blob `application/json`: la API lo lee como un POST JSON normal. Mismo
+    // origen (`/backend`), así que el tipo no necesita CORS.
+    try {
+      return sendBeacon(url, new Blob([JSON.stringify(body)], { type: 'application/json' }));
+    } catch {
+      // Un beacon por encima del límite del navegador puede lanzar en vez de devolver false.
+      return false;
+    }
+  }
+
   return {
+    beaconJson,
     get: (path, options, handle) => send(path, { method: 'GET' }, options, handle),
     postJson: (path, body, options, handle) => send(path, jsonRequest('POST', body), options, handle),
     patchJson: (path, body, options, handle) => send(path, jsonRequest('PATCH', body), options, handle),

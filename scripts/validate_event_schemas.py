@@ -20,6 +20,8 @@ Comprueba:
 4. contra `telemetry-plan.md`:
    - el catálogo (§4), las fichas (§6) y el JSON listan los mismos eventos, en
      el mismo orden, con los mismos metadatos (`$comment`);
+   - las cifras de emisor (API/frontend) y de entrega (stream/batch) de la
+     cabecera del plan son las del catálogo;
    - la tabla de propiedades de cada ficha coincide con su esquema (nombre,
      tipo y obligatoriedad);
    - cada ficha tiene su frase;
@@ -309,6 +311,7 @@ def check_plan(plan: str, schema: dict[str, Any], events: list[str]) -> tuple[li
         name = row.group(2)
         if name in definitions:
             problems += compare_meta(f"catálogo/{name}", row.groups()[2:], definitions[name])
+    problems += check_figures(plan, rows)
 
     headings = list(SECTION_HEADING.finditer(plan))
     if [heading.group(1) for heading in headings] != events:
@@ -338,6 +341,33 @@ def check_plan(plan: str, schema: dict[str, Any], events: list[str]) -> tuple[li
                 problems.append(f"ejemplo en la línea {line}: no valida contra su evento: " + "; ".join(errors[:3]))
         examples.append(example)
     return problems, examples
+
+
+def check_figures(plan: str, rows: list[re.Match[str]]) -> list[str]:
+    """Las cifras de la cabecera del plan (emisor y entrega) cuadran con el catálogo.
+
+    Desde el ticket de captura, el emisor de un evento puede cambiar (D1 «A
+    ligera»): las cifras del texto tienen que seguir al catálogo.
+    """
+    problems: list[str] = []
+    emitters = re.search(r"(\d+) los emite la API y (\d+) el frontend", plan)
+    deliveries = re.search(r"(\d+) van por stream y (\d+) por batch", plan)
+    if emitters is None or deliveries is None:
+        return ["plan: faltan las cifras de emisor o de entrega en la cabecera"]
+    counts = {"API": 0, "frontend": 0, "stream": 0, "batch": 0}
+    for row in rows:
+        counts[row.group(5)] += 1
+        counts[row.group(6)] += 1
+    declared = {
+        "API": int(emitters.group(1)),
+        "frontend": int(emitters.group(2)),
+        "stream": int(deliveries.group(1)),
+        "batch": int(deliveries.group(2)),
+    }
+    for key, value in declared.items():
+        if value != counts[key]:
+            problems.append(f"plan: la cabecera dice {value} de {key} y el catálogo tiene {counts[key]}")
+    return problems
 
 
 def compare_meta(where: str, values: tuple[str, ...], event: dict[str, Any]) -> list[str]:

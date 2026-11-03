@@ -42,6 +42,8 @@ export interface OutboundFormProps {
   notice: string | null;
   submit: OutboundSubmitState;
   onSubmit: (values: OutboundFormValues) => void;
+  /** Telemetría: solo el nombre del campo que cambia el usuario, nunca su valor. */
+  onFieldChange: (field: InventoryField) => void;
 }
 
 function StockValue({ stock }: { stock: StockState }) {
@@ -75,6 +77,7 @@ export function OutboundForm({
   notice,
   submit,
   onSubmit,
+  onFieldChange,
 }: OutboundFormProps) {
   const [quantity, setQuantity] = useState('');
   const [exitType, setExitType] = useState<ExitType | ''>('');
@@ -98,7 +101,7 @@ export function OutboundForm({
     event.preventDefault();
     setAttempt((value) => value + 1);
     // La advertencia de stock no impide enviar.
-    onSubmit(outboundFormValues(selected === null ? null : { id: selected.id, office: selected.office }, quantity, exitType, assignedTo));
+    onSubmit(outboundFormValues(selected === null ? null : { id: selected.id, office: selected.office, category: selected.category }, quantity, exitType, assignedTo));
   }
 
   // Tras un intento fallido, el foco va al aviso general (si lo hay).
@@ -132,7 +135,10 @@ export function OutboundForm({
         loadError={loadError}
         onRetry={onRetryAssets}
         value={assetId}
-        onChange={onAssetChange}
+        onChange={(value) => {
+          onFieldChange('asset_id');
+          onAssetChange(value);
+        }}
         messages={fieldMessages(error, 'asset_id')}
         notice={notice}
         disabled={isSubmitting}
@@ -175,7 +181,10 @@ export function OutboundForm({
                 name="exit_type"
                 value={option.value}
                 checked={exitType === option.value}
-                onChange={() => setExitType(option.value)}
+                onChange={() => {
+                  onFieldChange('exit_type');
+                  setExitType(option.value);
+                }}
                 disabled={isSubmitting}
                 className="mt-0.5"
               />
@@ -198,7 +207,10 @@ export function OutboundForm({
             id="outbound-assigned-to"
             autoComplete="off"
             value={assignedTo}
-            onChange={(event) => setAssignedTo(event.target.value)}
+            onChange={(event) => {
+              onFieldChange('assigned_to');
+              setAssignedTo(event.target.value);
+            }}
             disabled={isSubmitting}
             aria-invalid={assignedToMessages.length > 0 || undefined}
             aria-describedby={assignedToMessages.length > 0 ? 'outbound-assigned-to-help outbound-assigned-to-messages' : 'outbound-assigned-to-help'}
@@ -220,7 +232,10 @@ export function OutboundForm({
           inputMode="numeric"
           autoComplete="off"
           value={quantity}
-          onChange={(event) => setQuantity(event.target.value)}
+          onChange={(event) => {
+            onFieldChange('quantity');
+            setQuantity(event.target.value);
+          }}
           disabled={isSubmitting || !quantityEnabled(stock)}
           aria-invalid={quantityMessages.length > 0 || undefined}
           aria-describedby={quantityDescribedBy}
