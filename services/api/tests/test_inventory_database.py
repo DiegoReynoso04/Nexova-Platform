@@ -345,8 +345,17 @@ class NoGlobalSessionTests(unittest.TestCase):
             for function in ast.walk(tree):
                 if isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef) and self.calls(function):
                     owners.append(f"{path.relative_to(APP_DIR).as_posix()}:{function.name}")
-        # get_db (una sesión por petición) y el seed (una sesión por ejecución del comando).
-        self.assertEqual(owners, ["modules/inventory/database.py:get_db", "modules/inventory/seed.py:_seed_database"])
+        # get_db (una sesión por petición), el seed (una sesión por ejecución del
+        # comando) y la oficina del activo de `direct_stock_edit_rejected` (P7):
+        # el 405 llega antes de las dependencias, así que no hay `get_db`.
+        self.assertEqual(
+            owners,
+            [
+                "modules/inventory/database.py:get_db",
+                "modules/inventory/seed.py:_seed_database",
+                "modules/telemetry/stock_edit.py:_office_of",
+            ],
+        )
 
 
 class SpySession(Session):

@@ -42,7 +42,7 @@ from app.core.errors import DATABASE_UNAVAILABLE_ERRORS, ApiError, StorageUnavai
 from . import service
 from .database import InventoryStartupError, build_engine, init_db
 from .models import Asset, AssetEntry, AssetExit
-from .schemas import AssetCreate, InboundOrderCreate, OutboundOrderCreate
+from .schemas import AssetCreate, InboundOrderFields, OutboundOrderCreate
 
 # Los 6 activos del CONTEXT, literales.
 SEED_ASSETS: list[dict[str, str]] = [
@@ -76,7 +76,9 @@ SEED_EXITS: list[dict[str, object]] = [
 CONFIG_ERROR_EXIT = 1
 DATABASE_UNAVAILABLE_EXIT = 2
 
-Payload = TypeVar("Payload", InboundOrderCreate, OutboundOrderCreate)
+# Entradas sin coste (`InboundOrderFields`): el CONTEXT no da costes y no se
+# inventan; quedan como las entradas anteriores a P3 (`unit_cost` nulo).
+Payload = TypeVar("Payload", InboundOrderFields, OutboundOrderCreate)
 
 
 class SeedDataError(Exception):
@@ -132,7 +134,7 @@ def seed(session: Session, user_uuid: str) -> SeedResult:
             continue
         # Entradas antes que salidas: las salidas se comprueban contra ese stock.
         for order in _orders_of(SEED_ENTRIES, sku):
-            payload = _payload(InboundOrderCreate, sku, asset, order)
+            payload = _payload(InboundOrderFields, sku, asset, order)
             _apply(sku, service.add_inbound_order, session, payload, user_uuid)
             result.entries_inserted += 1
         for order in _orders_of(SEED_EXITS, sku):

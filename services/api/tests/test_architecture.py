@@ -33,7 +33,7 @@ FORBIDDEN_NAMES = {"ROUND_HALF_UP", "ROUND_HALF_EVEN", "quantize", "round", "par
 # confirma el usuario creado (nunca imprime la contraseña); `seed-inventory`
 # (Hito 5) confirma cuántos activos y órdenes insertó y el stock por SKU (nunca
 # la URL de la base ni el email del usuario).
-PRINT_ALLOWED = {"seed.py", "auth/create_admin.py", "modules/inventory/seed.py"}
+PRINT_ALLOWED = {"seed.py", "auth/create_admin.py", "modules/inventory/seed.py", "modules/inventory/migrate.py"}
 # "@" es la regla de email del núcleo de incidentes y no debe reimplementarse
 # en la API. Única excepción: la validación del email de login de AUTH-01, que
 # no tiene relación con el CSV de incidentes.

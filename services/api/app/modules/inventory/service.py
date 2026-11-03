@@ -14,27 +14,45 @@ el stock y solo inserta si alcanza, todo en la misma transacción: dos salidas
 simultáneas del mismo activo se ejecutan una detrás de otra y la segunda ve el
 stock que dejó la primera. En SQLite (tests) `FOR UPDATE` no existe y no se
 emite; la regla se prueba allí de forma secuencial.
+
+Ticket de captura de telemetría (D1 «A ligera»): las altas devuelven además lo
+que el frontend necesita para emitir los eventos obligatorios sin calcular
+nada. En la salida, el stock antes y después (bajo `FOR UPDATE`) y el mínimo
+configurado. En la entrada, el coste y la moneda de la oficina (P3), la clave
+seudónima del proveedor (P9) y la variación del coste frente a la media de las
+`N` entradas anteriores con coste del mismo activo y proveedor normalizado (P10).
 """
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import ColumnElement, Select, func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from app.core.config import Settings
 from app.core.errors import AssetNotFoundError, InsufficientStockError, OfficeMismatchError, SkuAlreadyExistsError
+from app.modules.telemetry.emitter import normalize_supplier, supplier_key
 
 from .models import Asset, AssetEntry, AssetExit
 from .schemas import (
     AssetCreate,
     AssetRead,
     AssetSummary,
+    CostVariance,
     InboundOrderCreate,
+    InboundOrderCreated,
+    InboundOrderFields,
     InboundOrderRead,
     OrderRead,
     OutboundOrderCreate,
+    OutboundOrderCreated,
     OutboundOrderRead,
 )
+from .vocabulary import OFFICE_CURRENCY, Office
+
+# P10: la variación se acota al máximo del esquema de `kit_cost_variance_detected`.
+VARIANCE_PCT_MAX = Decimal(1_000_000)
 
 
 def _assets_with_stock() -> Select[tuple[Asset, int]]:
@@ -122,16 +140,27 @@ def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
+def _two_decimals(value: Decimal) -> float:
+    """Dos decimales (redondeo bancario de `format`), como número JSON."""
+    return float(format(value, ".2f"))
+
+
+def _inbound_fields(entry: AssetEntry, asset: AssetSummary) -> dict[str, object]:
+    return {
+        "id": entry.id,
+        "asset": asset,
+        "quantity": entry.quantity,
+        "supplier": entry.supplier,
+        "office": entry.office,
+        "created_at": _utc(entry.created_at),
+        "user_uuid": entry.user_uuid,
+        "unit_cost": _two_decimals(Decimal(entry.unit_cost)) if entry.unit_cost is not None else None,
+        "currency": entry.currency,
+    }
+
+
 def _inbound_read(entry: AssetEntry, asset: AssetSummary) -> InboundOrderRead:
-    return InboundOrderRead(
-        id=entry.id,
-        asset=asset,
-        quantity=entry.quantity,
-        supplier=entry.supplier,
-        office=entry.office,
-        created_at=_utc(entry.created_at),
-        user_uuid=entry.user_uuid,
-    )
+    return InboundOrderRead.model_validate(_inbound_fields(entry, asset))
 
 
 def _outbound_read(exit_order: AssetExit, asset: AssetSummary) -> OutboundOrderRead:
@@ -158,17 +187,19 @@ def _available_stock(session: Session, asset_id: int) -> int:
     return session.exec(select(entries.scalar_subquery() - exits.scalar_subquery())).one()
 
 
-def add_inbound_order(session: Session, payload: InboundOrderCreate, user_uuid: str) -> AssetEntry:
+def add_inbound_order(session: Session, payload: InboundOrderFields, user_uuid: str) -> AssetEntry:
     """Añade una entrada a la transacción en curso, sin commit (la ruta y el seed hacen el suyo).
 
-    404 si el activo no existe; 400 si la oficina no es la del activo.
+    404 si el activo no existe; 400 si la oficina no es la del activo. La moneda
+    la pone la API (la de la oficina, P3) y el coste, si lo trae el payload
+    (`InboundOrderCreate`, la ruta): las entradas del seed van sin coste.
     """
     asset = session.get(Asset, payload.asset_id)
     if asset is None:
         raise AssetNotFoundError()
     if asset.office != payload.office:
         raise OfficeMismatchError()
-    entry = AssetEntry(**payload.model_dump(), user_uuid=user_uuid)
+    entry = AssetEntry(**payload.model_dump(), user_uuid=user_uuid, currency=OFFICE_CURRENCY[Office(payload.office)])
     session.add(entry)
     session.flush()
     return entry
@@ -195,26 +226,80 @@ def add_outbound_order(session: Session, payload: OutboundOrderCreate, user_uuid
     return exit_order
 
 
-def create_inbound_order(session: Session, payload: InboundOrderCreate, user_uuid: str) -> InboundOrderRead:
-    """`POST /inventory/orders/inbound`: añade la entrada y confirma."""
+def _reference_costs(session: Session, entry: AssetEntry, window: int) -> list[Decimal]:
+    """Costes de las `window` entradas anteriores con coste del mismo activo y proveedor normalizado.
+
+    La normalización (NFKC, mayúsculas) no se hace en SQL: se leen las entradas
+    con coste del activo, de la más reciente a la más antigua, y se filtran por
+    proveedor aquí. Son pocas filas por activo.
+    """
+    supplier = normalize_supplier(entry.supplier)
+    rows = session.exec(
+        select(AssetEntry.supplier, AssetEntry.unit_cost)
+        .where(AssetEntry.asset_id == entry.asset_id, AssetEntry.id != entry.id, AssetEntry.unit_cost.is_not(None))  # type: ignore[union-attr]
+        .order_by(AssetEntry.created_at.desc(), AssetEntry.id.desc())  # type: ignore[union-attr]
+    ).all()
+    costs = [Decimal(cost) for name, cost in rows if cost is not None and normalize_supplier(name) == supplier]
+    return costs[:window]
+
+
+def cost_variance(costs: list[Decimal], unit_cost: Decimal, settings: Settings) -> CostVariance | None:
+    """P10 (D3): variación frente a la media de `costs`; `None` si no hay `window` costes o no supera el umbral."""
+    window = settings.cost_variance_window
+    if len(costs) < window:
+        return None
+    reference = sum(costs[:window], Decimal(0)) / window
+    variance = min((unit_cost - reference) / reference * 100, VARIANCE_PCT_MAX)
+    if abs(variance) <= Decimal(str(settings.cost_variance_threshold_pct)):
+        return None
+    return CostVariance(
+        reference_unit_cost=_two_decimals(reference),
+        variance_pct=_two_decimals(variance),
+        direction="increase" if variance > 0 else "decrease",
+        threshold_pct=settings.cost_variance_threshold_pct,
+        reference_window=window,
+    )
+
+
+def create_inbound_order(
+    session: Session, payload: InboundOrderCreate, user_uuid: str, settings: Settings
+) -> InboundOrderCreated:
+    """`POST /inventory/orders/inbound`: añade la entrada con su coste, confirma y calcula los derivados de la telemetría."""
     entry = add_inbound_order(session, payload, user_uuid)
+    costs = _reference_costs(session, entry, settings.cost_variance_window)
     summary = _summary(session.get_one(Asset, payload.asset_id))
     session.commit()
     session.refresh(entry)
-    return _inbound_read(entry, summary)
+    return InboundOrderCreated.model_validate(
+        _inbound_fields(entry, summary)
+        | {
+            "supplier_key": supplier_key(settings.telemetry_supplier_key, entry.supplier),
+            "cost_variance": cost_variance(costs, payload.unit_cost, settings),
+        }
+    )
 
 
-def create_outbound_order(session: Session, payload: OutboundOrderCreate, user_uuid: str) -> OutboundOrderRead:
+def create_outbound_order(
+    session: Session, payload: OutboundOrderCreate, user_uuid: str, settings: Settings
+) -> OutboundOrderCreated:
     """`POST /inventory/orders/outbound`: añade la salida y confirma.
 
     Si `add_outbound_order` lanza un error, no hay commit y `get_db` cierra la
-    sesión: la transacción se deshace y el bloqueo de la fila se libera.
+    sesión: la transacción se deshace y el bloqueo de la fila se libera. El
+    stock después se lee en la misma transacción, con la fila aún bloqueada.
     """
     exit_order = add_outbound_order(session, payload, user_uuid)
+    stock_after = _available_stock(session, payload.asset_id)
     summary = _summary(session.get_one(Asset, payload.asset_id))
     session.commit()
     session.refresh(exit_order)
-    return _outbound_read(exit_order, summary)
+    return OutboundOrderCreated(
+        **_outbound_read(exit_order, summary).model_dump(),
+        stock_before=stock_after + payload.quantity,
+        stock_after=stock_after,
+        min_stock=settings.inventory_default_min_stock,
+        currency=OFFICE_CURRENCY[Office(exit_order.office)],
+    )
 
 
 def list_orders(session: Session) -> list[OrderRead]:

@@ -33,6 +33,21 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - **Contrato (D5):** el emisor de `inbound_order_created`, `outbound_order_created`, `stock_threshold_triggered` y `kit_cost_variance_detected` pasa a frontend en el `$comment` del JSON y en los metadatos del plan. Es un metadato, no una propiedad: `1.0.0` no cambia. La prosa del plan va en el paso 5.
   - **Tests:** `tests/telemetry.test.mjs` (`mock.timers`), `tests/telemetry-contract.test.mjs` (con un validador draft-07 mínimo en `tests/support/event-contract.mjs`, que valida contra el JSON real) y reglas estáticas nuevas. `types/telemetry.ts` queda exento de dos reglas que confundían su vocabulario (`DELETE`, `/inventory/...`) con peticiones.
   - **Validación:** `tsc`, `lint`, `build`, `node:test` 551/551, Jest 240/240 y `validate_event_schemas.py` OK.
+- **Paso 3, API:**
+  - **Respuestas de alta** (`InboundOrderCreated`, `OutboundOrderCreated`, solo en el 201; el listado no los lleva):
+    - salida: `stock_before`, `stock_after` (bajo `FOR UPDATE`), `min_stock` (= `INVENTORY_DEFAULT_MIN_STOCK`, 5) y `currency`;
+    - entrada: `supplier_key` y `cost_variance`.
+
+    **Desviación del enunciado del usuario:** dijo «`OutboundOrderRead`/`InboundOrderRead` añade», pero el listado no tiene esos valores para órdenes pasadas. Por eso van en subclases de las respuestas de alta. `InboundOrderRead` sí añade `unit_cost` y `currency`, también en el listado.
+  - **P3:** `AssetEntry.unit_cost NUMERIC(12,2)` y `currency VARCHAR(3)`, nullable, con `CHECK`; `unit_cost` obligatorio en `InboundOrderCreate` (> 0, 2 decimales); `currency` la pone la API desde la oficina (un `currency` en el body → 422).
+    - **Seed:** usa `InboundOrderFields` (sin coste): el CONTEXT no da costes y no se inventan.
+    - **Migración:** `python -m app.modules.inventory.migrate [--dry-run]`, idempotente y solo PostgreSQL. Probada en un Postgres efímero (`nexova-telemetry-pg`, `127.0.0.1:55433`) sobre el esquema de `2d5c1d8`: dry-run, aplicar y una segunda ejecución sin cambios; columnas, `CHECK` y RLS comprobados; la fila previa sigue igual, con coste `NULL`. **La demo no se ha tocado.**
+  - **P4:** claim `sid` (`uuid4`) en cada token; `read_token_claims` (sin TinyDB).
+  - **P9:** `supplier_key` = HMAC-SHA256 del proveedor normalizado (NFKC, casefold, espacios), con `TELEMETRY_SUPPLIER_KEY` (≥ 32, opcional).
+  - **P10:** media de las 3 entradas anteriores con coste del mismo activo y proveedor normalizado, con umbral del 10 %, configurable (`TELEMETRY_COST_VARIANCE_*`); 2 decimales con `format` (`round` y `quantize` están prohibidos por `test_architecture.py`).
+  - **P7:** `StockEditReporter` vía `app.state`, llamado desde los handlers de 405 y 422 de `core/errors.py`; emisor mínimo en `nexova.telemetry` (una línea JSON); throttle de 60 s por (usuario, plantilla, método). `requestId` propio (P5 pendiente). Excepción a `test_sessions_are_only_opened_inside_get_db` para su lectura del activo: el 405 llega antes de `get_db`.
+  - **Validación:** `unittest` 534 OK y `pytest` 737 passed, en el contenedor efímero; los eventos que construiría el frontend desde las respuestas validan contra `event-schemas.json`.
+  - **Aviso:** el stack de Docker en marcha apunta a la base de la demo, que no tiene las columnas de P3. Hasta migrarla (con confirmación del usuario), las rutas de entradas fallan ahí. Para la verificación se usa el Postgres efímero.
 
 ---
 

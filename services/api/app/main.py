@@ -34,6 +34,7 @@ from app.modules.inventory.database import build_engine, inventory_lifespan
 from app.modules.inventory.router import router as inventory_router
 from app.modules.telemetry.router import TELEMETRY_EVENTS_PATH, TELEMETRY_MAX_BODY_BYTES
 from app.modules.telemetry.router import router as telemetry_router
+from app.modules.telemetry.stock_edit import StockEditReporter
 from app.routes.auth import router as auth_router
 from app.routes.profiles import router as profiles_router
 from app.routes.suppliers import router as suppliers_router
@@ -75,6 +76,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.response_cache = ResponseCache()
     # AUTH-03: envío del enlace de restablecimiento (los tests lo sustituyen).
     app.state.email_sender = build_email_sender(settings)
+    # Telemetría (P7): `direct_stock_edit_rejected` desde los handlers de error.
+    app.state.stock_edit_reporter = StockEditReporter(settings, app.state.inventory_engine)
 
     install_error_handlers(app)
     # Rutas existentes con datos sensibles: todas exigen un JWT válido (AUTH-01).
