@@ -17,7 +17,7 @@ Rama `feature/telemetry-capture`. Decisiones en [`capture-analysis.md`](./captur
 | Piso técnico transversal (errores, rendimiento y navegación) | `frontend_error_captured`, `client_request_failed`, `page_load_recorded`, `page_viewed` y `page_not_found_viewed` | Hecho |
 | `event_type` y allowlists del plan | `types/telemetry.ts` (14 eventos); `tests/telemetry-contract.test.mjs` y la validación de cada evento de los tests contra el JSON real | Hecho |
 | Sin PII (email, nombre o contraseña) | Allowlists; tests que buscan canarios en los eventos | Hecho (§4) |
-| Network: lotes en el stub con respuesta 200 | §3 | **Lo verifica el usuario**, con la captura para la PR |
+| Network: lotes en el stub con respuesta 200 | §3 | Hecho: verificado por el usuario el 2026-11-03, con las capturas en la PR |
 
 **Actividad adicional:**
 
@@ -52,7 +52,18 @@ Los 52 del catálogo siguen en el contrato; este ticket instrumenta 15. «Obliga
 
 ## 3. Verificación en el navegador (pestaña Network)
 
-**Entorno:** la plataforma en Docker contra un **Postgres efímero**, nunca contra la base de la demo. Lo prepara el agente (§5); para volver a la demo, §5.3.
+**Verificado por el usuario el 2026-11-03**, en una ventana sin extensiones y contra un Postgres efímero (ya borrado), nunca contra la demo:
+
+- **Lote por tiempo:** `POST /backend/telemetry/events` → 200 `{"received":4}`, con el envelope completo.
+- **Beacon:** petición `ping` → 200.
+- **Obligatorios del frontend:**
+  - `inbound_order_created` en 5 entradas, con la misma `supplier_key` y sin el nombre del proveedor;
+  - `kit_cost_variance_detected` en la 5.ª (referencia 10 → 20, +100 %, `increase`);
+  - `outbound_order_created` y `stock_threshold_triggered` (18 → 4, mínimo 5).
+- **`direct_stock_edit_rejected`:** 405 con id válido (oficina y moneda del activo) y con un segmento no numérico (`product_id` nulo); un segundo intento en menos de 60 s quedó suprimido por el throttle.
+- **PII:** ninguna en ningún payload.
+
+**Para repetirlo:** usa un Postgres de pruebas, nunca la demo, y `TELEMETRY_SUPPLIER_KEY` en la API.
 
 1. Abre `http://localhost:3001`, inicia sesión y abre DevTools → Network, con el filtro `telemetry`.
 2. **Lote por tiempo:** navega por Inicio → Inventario → Entrada → Salida → Historial. A los 10 s del primer evento sale un `POST /backend/telemetry/events`:
@@ -97,9 +108,11 @@ Los 52 del catálogo siguen en el contrato; este ticket instrumenta 15. «Obliga
   - RLS sigue activo en las 3 tablas;
   - la entrada previa sigue igual (cantidad 3), con coste `NULL`.
 
-### 5.2 La base de la demo (solo con la confirmación del usuario, antes del merge)
+### 5.2 La base de la demo (migrada el 2026-11-03, con la confirmación del usuario)
 
-Desde `services/api`, con la `DATABASE_URL` de la demo en el entorno:
+**Resultado:** `--dry-run` con las 4 sentencias de P3, aplicadas en una transacción, y una segunda ejecución sin cambios. Antes y después, en una transacción `READ ONLY`, son iguales los conteos (6 activos, 5 entradas y 5 salidas), el stock por activo, una huella md5 de las entradas y otra de las salidas, RLS y las columnas y `CHECK` previos. Solo se añadieron `unit_cost`, `currency` y sus 2 `CHECK`. Las 5 entradas quedan con coste y moneda `NULL`.
+
+**Para otra base existente:** desde `services/api`, con su `DATABASE_URL` en el entorno:
 
 ```bash
 python -m app.modules.inventory.migrate --dry-run
@@ -124,14 +137,15 @@ Además, `GET /inventory/products` debe dar el mismo `current_stock` por activo.
 ALTER TABLE asset_entries DROP CONSTRAINT ck_asset_entries_currency, DROP CONSTRAINT ck_asset_entries_unit_cost_positive, DROP COLUMN currency, DROP COLUMN unit_cost;
 ```
 
-**Mientras la demo no esté migrada**, una API con este código contra ella falla al leer o escribir entradas (la columna no existe).
+**Una base sin migrar:** una API con este código contra ella falla al leer o escribir entradas (la columna no existe).
 
-### 5.3 Volver al stack normal
+### 5.3 Vuelta al stack normal
 
-Sin el override del efímero: `docker compose up -d`. La API vuelve a la `DATABASE_URL` del `.env` (la demo), así que necesita antes la migración de §5.2.
+Hecha el 2026-11-03: `docker compose up -d`, sin el override del efímero. La API usa la `DATABASE_URL` del `.env` (la demo). `GET /inventory/products`, `/inventory/products/{id}` y `/inventory/orders` responden 200 por `/backend`, con el stock de siempre (12/1/0/7/15/0) y sin ninguna escritura. El token de esa comprobación se firmó dentro del contenedor de la API y no salió de él.
 
 ## 6. Lo que queda fuera o sin verificar
 
+- **`TELEMETRY_SUPPLIER_KEY` en el stack normal:** el `.env` de la raíz no la tiene. Hasta añadirla (y recrear `api`), las entradas devuelven `supplier_key` nulo y el backoffice no emite `inbound_order_created` ni `kit_cost_variance_detected`. Una clave distinta de la usada en la verificación da otras `supplier_key`, pero en el efímero no se guardó ninguna.
 - **Prerrequisitos pendientes:**
   - **P1:** `product_category` y `programme_id` van en `null` y no hay catálogo de programas;
   - **P2:** `min_stock` es la configuración (5), no un mínimo por activo;

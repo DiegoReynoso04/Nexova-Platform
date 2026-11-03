@@ -6,7 +6,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-03 — Captura de telemetría en el frontend + endpoint stub, F1: implementación
 
-**Estado: pasos 1–5 hechos y commiteados; entorno de verificación preparado. Pendiente de que el usuario verifique en Network (con la captura para la PR), confirme la migración de la demo, y del push y la PR** (`feat: telemetry event capture`). Rama `feature/telemetry-capture`. Sin push.
+**Estado: hecho y verificado por el usuario en Network; demo migrada; PR `feat: telemetry event capture` abierta contra `main`, pendiente de que el usuario suba las capturas y de la revisión.** Rama `feature/telemetry-capture`.
 
 - **Decisiones del usuario (2026-11-03):**
   - D1 «A ligera»: la API calcula y el frontend emite. Las respuestas de Entrada y Salida devuelven lo que solo sabe la API, y el frontend llama a `track()` con eso;
@@ -85,6 +85,13 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - **Stack:** arrancado con un override de Compose fuera del repo (scratchpad de la sesión), que da a `api` la `DATABASE_URL` del efímero y una `TELEMETRY_SUPPLIER_KEY` generada. El `.env` del usuario solo recibió la línea `NEXT_PUBLIC_TELEMETRY_ENDPOINT`.
   - **Humo:** `/backend/health` 200; `PUT /backend/inventory/products/1` → 405 con su `direct_stock_edit_rejected` en `nexova.telemetry`; en el navegador integrado, `/login` sin sesión → un `POST /backend/telemetry/events` (`fetch`) con `page_viewed` → 200 `{"received":1}`.
   - **Recorrido del usuario:** `docs/telemetry/capture-review.md` §3. Para volver a la demo, `docker compose up -d` sin el override, **después** de migrarla (§5.2, con su confirmación).
+- **Paso 7, verificación, demo y PR (2026-11-03):**
+  - **Network:** verificado por el usuario (lotes, beacon, los 4 obligatorios del frontend, `direct_stock_edit_rejected` y su throttle, sin PII); detalle en `capture-review.md` §3.
+  - **Demo:** P3 aplicada con su confirmación. Antes y después, en `READ ONLY`, iguales: conteos (6/5/5), stock, huellas md5 de entradas y salidas, RLS y lo previo; solo 2 columnas y 2 `CHECK` nuevos.
+  - **Stack normal:** contra la demo, sin override; `GET /inventory/products`, `/{id}` y `/orders` → 200 por `/backend`, con stock 12/1/0/7/15/0, sin ninguna escritura (la foto final es idéntica).
+  - **Limpieza:** Postgres efímero borrado (contenedor, volumen y red), con su override y su contraseña. La imagen `postgres:17.6-alpine3.22` se conserva: ya estaba.
+  - **`.env.example`:** añadidas `TELEMETRY_SUPPLIER_KEY`, `INVENTORY_DEFAULT_MIN_STOCK` y `TELEMETRY_COST_VARIANCE_*`, que faltaban.
+  - **Pendiente del usuario:** poner `TELEMETRY_SUPPLIER_KEY` en el `.env` de la raíz; sin ella, el stack normal no emite `inbound_order_created` ni `kit_cost_variance_detected`.
 
 ---
 

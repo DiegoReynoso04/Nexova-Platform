@@ -330,7 +330,7 @@ Decisiones del usuario en `docs/telemetry/capture-analysis.md` y en el plan, §1
   - colector stub `POST /telemetry/events` (público, `200 {received}`, ≤ 50 eventos y ≤ 64 KiB con `BodySizeLimitMiddleware.path_limits`);
   - `app/modules/telemetry/catalog.py`, copia del JSON comprobada por la suite (la imagen no incluye `docs/`);
   - claim `sid` (P4);
-  - `asset_entries.unit_cost`/`currency` (P3) con `python -m app.modules.inventory.migrate`, idempotente y solo PostgreSQL;
+  - `asset_entries.unit_cost`/`currency` (P3) con `python -m app.modules.inventory.migrate`, idempotente y solo PostgreSQL (aplicada a la demo el 2026-11-03);
   - HMAC del proveedor (P9) y variación de coste (P10);
   - configuración nueva, toda opcional: `TELEMETRY_ENDPOINT` (sin uso), `TELEMETRY_SUPPLIER_KEY`, `INVENTORY_DEFAULT_MIN_STOCK` y `TELEMETRY_COST_VARIANCE_*`.
   - **Restricciones de `test_architecture.py`** que condicionan el código: sin `re`, sin `\d` en literales, sin `round`/`quantize` (2 decimales con `format`) y solo `core/*` loguea.
