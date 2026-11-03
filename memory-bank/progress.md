@@ -4,9 +4,32 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-03 — Captura de telemetría en el frontend + endpoint stub, F1: implementación
+
+**Estado: en curso, un commit por paso.** Rama `feature/telemetry-capture`. Sin push.
+
+- **Decisiones del usuario (2026-11-03):**
+  - D1 «A ligera»: la API calcula y el frontend emite. Las respuestas de Entrada y Salida devuelven lo que solo sabe la API, y el frontend llama a `track()` con eso;
+  - `direct_stock_edit_rejected` es la única excepción: lo emite la API (P7), con un emisor mínimo;
+  - `min_stock` = `INVENTORY_DEFAULT_MIN_STOCK` (5), sin columna; P1 y P2 quedan para más adelante;
+  - P3 con migración solo de `unit_cost`/`currency`, en un Postgres efímero; la base de la demo, solo con su confirmación, antes del merge;
+  - el stub acepta cualquier `event_type` del catálogo;
+  - D2 los 10 eventos de frontend; D3 fuera; D4–D9 y C4–C9 como se propusieron.
+- **Paso 1, stub y configuración:**
+  - `POST /telemetry/events` (`app/modules/telemetry/`), público, que responde `200 {"received": N}`;
+  - `TelemetryEvent` con las 8 claves del envelope y los patrones del JSON (`[0-9]` en lugar de `\d`, que prohíbe `test_architecture.py`);
+  - lotes de 1 a 50 eventos y 64 KiB por ruta (`BodySizeLimitMiddleware.path_limits`);
+  - log `api.telemetry` con el número de eventos y sus tipos;
+  - `catalog.py` como copia del JSON, comprobada por la suite;
+  - `TELEMETRY_ENDPOINT` opcional y validada, sin uso;
+  - `NEXT_PUBLIC_TELEMETRY_ENDPOINT=/backend/telemetry/events` en `.env.example` y en `docker-compose.yml` (`:?`). El agente añadió esa línea al `.env` de la raíz del usuario.
+  - **Validación:** `unittest` 503 OK y `pytest` 706 passed, en el contenedor efímero; Docker: `config --quiet`, `up -d --build`, `api` healthy, `/backend/health` y el stub por `/backend` → 200, sin secretos en `ui`.
+
+---
+
 ## 2026-11-02 — Captura de telemetría en el frontend + endpoint stub, F0: análisis y decisiones
 
-**Estado: F0 hecha; pendiente de que el usuario decida D1–D9.** Rama `feature/telemetry-capture`, desde `main` en `8a23d17`. Sin push. Ningún código.
+**Estado: F0 hecha; el usuario decidió D1–D9 el 2026-11-03 (ver la entrada de F1, arriba).** Rama `feature/telemetry-capture`, desde `main` en `8a23d17`. Sin push. Ningún código.
 
 - **Documento de trabajo:** `docs/telemetry/capture-analysis.md`. El enunciado del ticket no se versiona.
 - **Conflictos confirmados entre el enunciado y el plan aprobado (C1–C9):**

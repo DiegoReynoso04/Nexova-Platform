@@ -105,10 +105,13 @@ class ApiDoesNotDuplicateCoreTests(unittest.TestCase):
 
     def test_only_core_errors_and_timing_modules_log(self) -> None:
         # timing.py: una línea por petición sin query string (ticket de caching, F0).
+        # telemetry.py: el lote del colector y las líneas de eventos (ticket de captura).
         for path in python_files(APP_DIR):
             source = path.read_text(encoding="utf-8")
             if "logging" in source:
-                self.assertIn(path.relative_to(APP_DIR).as_posix(), {"core/errors.py", "core/timing.py"})
+                self.assertIn(
+                    path.relative_to(APP_DIR).as_posix(), {"core/errors.py", "core/timing.py", "core/telemetry.py"}
+                )
 
 
 class CoreDoesNotDependOnApiTests(unittest.TestCase):

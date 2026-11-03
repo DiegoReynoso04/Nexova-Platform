@@ -38,6 +38,8 @@ DATABASE_URL_SCHEMES = ("postgresql", "postgresql+psycopg2")
 # Ticket de caching (D8): valores aceptados por REQUEST_TIMING_LOG.
 TRUE_VALUES = ("true", "1", "yes", "on")
 FALSE_VALUES = ("false", "0", "no", "off")
+# Telemetría (ticket de captura): esquemas de TELEMETRY_ENDPOINT si es una URL absoluta.
+TELEMETRY_ENDPOINT_SCHEMES = ("http://", "https://")
 
 
 class ConfigError(ValueError):
@@ -70,6 +72,11 @@ class Settings:
     # Middleware de timing (ticket de caching, D8): una línea por petición en
     # `api.timing`, sin `/health`. Activo por defecto; REQUEST_TIMING_LOG=false lo apaga.
     request_timing_log: bool = True
+    # Telemetría (ticket de captura): destino de los eventos, declarado desde el
+    # stub para fijar el patrón. Hoy no se usa: la ruta del colector es siempre
+    # `/telemetry/events` (contrato del plan), y el frontend lee la suya de
+    # NEXT_PUBLIC_TELEMETRY_ENDPOINT. Opcional: vacío = sin destino propio.
+    telemetry_endpoint: str = ""
 
     def __post_init__(self) -> None:
         if "*" in self.cors_allowed_origins:
@@ -95,6 +102,10 @@ class Settings:
             )
         if self.password_reset_url and not self.password_reset_url.startswith(("http://", "https://")):
             raise ConfigError("PASSWORD_RESET_URL must be an absolute http(s) URL")
+        if self.telemetry_endpoint and not (
+            self.telemetry_endpoint.startswith(TELEMETRY_ENDPOINT_SCHEMES) or self.telemetry_endpoint.startswith("/")
+        ):
+            raise ConfigError("TELEMETRY_ENDPOINT must be an absolute http(s) URL or a path starting with /")
 
     @property
     def email_configured(self) -> bool:
@@ -170,4 +181,5 @@ class Settings:
             password_reset_token_minutes=password_reset_token_minutes,
             database_url=database_url,
             request_timing_log=timing_log not in FALSE_VALUES,
+            telemetry_endpoint=environ.get("TELEMETRY_ENDPOINT", "").strip(),
         )

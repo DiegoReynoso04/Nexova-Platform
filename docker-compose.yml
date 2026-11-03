@@ -65,6 +65,7 @@ services:
       API_INTERNAL_URL: ${API_INTERNAL_URL:?falta API_INTERNAL_URL en el .env de la raíz (ver .env.example)}
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?falta NEXT_PUBLIC_API_URL en el .env de la raíz (ver .env.example)}
       NEXT_PUBLIC_INVENTORY_API_URL: ${NEXT_PUBLIC_INVENTORY_API_URL:?falta NEXT_PUBLIC_INVENTORY_API_URL en el .env de la raíz (ver .env.example)}
+      NEXT_PUBLIC_TELEMETRY_ENDPOINT: ${NEXT_PUBLIC_TELEMETRY_ENDPOINT:?falta NEXT_PUBLIC_TELEMETRY_ENDPOINT en el .env de la raíz (ver .env.example)}
       # Sondeo de cambios de Watchpack para `next dev --webpack` (uis/start.sh):
       # un bind mount desde Windows no avisa al contenedor. Comprobado en F4:
       # con este sondeo el backoffice recarga en unos 2 s, sin él no recarga.
