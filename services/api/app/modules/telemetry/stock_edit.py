@@ -13,7 +13,8 @@ ninguna forma de intentar editar el stock. Dos casos, y solo esos:
 Lo llaman los handlers de `app/core/errors.py` a través de
 `app.state.stock_edit_reporter`. Nunca lanza ni cambia la respuesta: cualquier
 fallo (también el de la base al buscar el activo) deja el campo en `null` o
-descarta el evento. Nunca se copia el body, el `detail` ni el token.
+descarta el evento. Nunca se copia el body, el `detail` ni el token. El evento
+se guarda en `telemetry_events` con `service='api'` y, antes, sale al log (D8).
 `product_category` y `programme_id` van en `null` hasta P1.
 """
 
@@ -28,6 +29,7 @@ from app.auth.security import read_token_claims
 from app.core.config import Settings
 from app.modules.inventory.models import Asset
 from app.modules.inventory.vocabulary import QUANTITY_MAX, Office
+from app.modules.telemetry.collector import store_api_event
 from app.modules.telemetry.emitter import Throttle, emit, office_currency, office_label
 
 EVENT_TYPE = "direct_stock_edit_rejected"
@@ -151,4 +153,5 @@ class StockEditReporter:
             },
             user_id=user_id,
             session_id=claims.sid if claims is not None else None,
+            sink=lambda event: store_api_event(self.engine, event),
         )

@@ -65,3 +65,24 @@ EVENT_TYPES = (
     "incident_analysis_rejected",
     "incident_results_exported",
 )
+
+# Los 14 de emisor frontend (plan §4): los únicos que acepta el colector. Un
+# evento de la API enviado por un cliente se rechaza (plan §2.4).
+FRONTEND_EVENT_TYPES = frozenset(
+    {
+        "inbound_order_created",
+        "outbound_order_created",
+        "stock_threshold_triggered",
+        "kit_cost_variance_detected",
+        "user_logged_out",
+        "page_viewed",
+        "page_not_found_viewed",
+        "form_started",
+        "form_submitted",
+        "form_abandoned",
+        "form_validation_failed",
+        "frontend_error_captured",
+        "client_request_failed",
+        "page_load_recorded",
+    }
+)

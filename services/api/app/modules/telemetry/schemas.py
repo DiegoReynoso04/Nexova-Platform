@@ -67,16 +67,26 @@ class TelemetryEvent(BaseModel):
 
 
 class TelemetryBatch(BaseModel):
-    """`POST /telemetry/events`: un lote de 1 a 50 eventos."""
+    """`POST /telemetry/events`: cuerpo laxo. Cada item se valida después, uno a uno.
+
+    Nunca `events: list[TelemetryEvent]`: un evento inválido rechazaría el lote
+    entero. Basta con que `events` sea un arreglo (D11).
+    """
 
     model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [{"events": [_EXAMPLE_EVENT]}]})
 
-    events: list[TelemetryEvent] = Field(min_length=1, max_length=MAX_EVENTS_PER_BATCH)
+    events: list[JsonValue]
 
 
-class TelemetryBatchReceived(BaseModel):
-    """Respuesta del stub: cuántos eventos traía el lote."""
+class TelemetryBatchResult(BaseModel):
+    """Respuesta del colector. Siempre `received = stored + rejected`.
+
+    `stored` cuenta los eventos que están en la tabla, también los que ya
+    estaban: un reintento del mismo lote da la misma respuesta (D9).
+    """
 
     model_config = ConfigDict(frozen=True)
 
     received: int
+    stored: int
+    rejected: int
