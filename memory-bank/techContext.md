@@ -317,9 +317,19 @@ Medición inicial y decisiones D1–D11 (tomadas el 2026-10-31) en [`docs/cachin
 
 Diseño sin código: [`docs/telemetry/telemetry-plan.md`](../docs/telemetry/telemetry-plan.md) y [`docs/telemetry/event-schemas.json`](../docs/telemetry/event-schemas.json). El BRIEFING está en `docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`. Las decisiones D1–D14 son del usuario; el detalle está en el plan y no se duplica aquí.
 
-- **Estado del código:** desde el ticket de captura (2026-11-03, rama `feature/telemetry-capture`) hay captura y un colector stub; ver la subsección siguiente. Siguen pendientes P1 (clasificación), P2 (mínimo por activo), P5 (`X-Request-ID`) y el emisor completo de P6.
+- **Estado del código:** desde el ticket de captura (2026-11-03, rama `feature/telemetry-capture`) hay captura, y desde el ticket de almacenamiento (2026-11-04) un colector real; ver la subsección siguiente. Siguen pendientes P1 (clasificación), P2 (mínimo por activo), P5 (`X-Request-ID`) y el emisor completo de P6.
 - **Esquemas:** JSON Schema draft-07. La comprobación permanente es `python scripts/validate_event_schemas.py` (librería estándar, subconjunto cerrado de palabras clave y coherencia con el plan). `ajv-cli@5.0.0` se ejecutó una vez con `npx`, sin tocar ningún `package.json`.
 - **Hallazgo técnico (F0):** `PUT`/`PATCH`/`DELETE` sobre `/inventory/products{,/{id}}` dan 405 **antes** de autenticar, porque Starlette no ejecuta las dependencias del router. Además, `Allow` solo lista `GET` en la colección.
+
+### Almacenamiento de telemetría (ticket de almacenamiento, 2026-11-04, rama `feature/telemetry-storage`)
+
+Decisiones en `docs/telemetry/storage-analysis.md`; revisión en `docs/telemetry/storage-review.md`; contrato en `services/api/SPECS.md` Parte H. Solo lo permanente:
+
+- **`POST /telemetry/events`:** público, valida cada item por separado (`collector.py`) y responde `200 {received, stored, rejected}`. `TelemetryEvent` no se toca: las reglas del plan son un paso posterior.
+- **Tabla `telemetry_events`:** PostgreSQL, en la misma base que el inventario, con su motor y su `get_db`. **No está en `init_db`:** solo con `python -m app.modules.telemetry.migrate`, porque el stack apunta a la demo. Sin la tabla, el colector da 500.
+- **Inmutable con `REVOKE`, no con RLS:** el rol de la API es dueño y, en Supabase, tiene `BYPASSRLS`. Un Postgres efímero necesita un rol sin superusuario para que la prueba valga.
+- **`allowlists.py`:** copia de 15 eventos del JSON, comprobada por la suite. Con Pydantic, porque `test_architecture.py` prohíbe `re`; solo 15, porque los 52 chocan con el vocabulario del gestor.
+- **El throttle (`EventRateLimiter`)** vive en memoria: exige `--workers 1`, como la caché.
 
 ### Captura de telemetría (ticket de captura, 2026-11-03, rama `feature/telemetry-capture`)
 
@@ -327,7 +337,7 @@ Decisiones del usuario en `docs/telemetry/capture-analysis.md` y en el plan, §1
 
 - **D1 «A ligera»:** la API calcula y el frontend emite 4 obligatorios con `track()`, desde las respuestas 201 de alta (`InboundOrderCreated`/`OutboundOrderCreated`). `direct_stock_edit_rejected` lo emite la API (P7, `StockEditReporter` vía `app.state`, una línea JSON en `nexova.telemetry`).
 - **API:**
-  - colector stub `POST /telemetry/events` (público, `200 {received}`, ≤ 50 eventos y ≤ 64 KiB con `BodySizeLimitMiddleware.path_limits`);
+  - colector `POST /telemetry/events` (público, ≤ 64 KiB con `BodySizeLimitMiddleware.path_limits`; stub hasta el ticket de almacenamiento);
   - `app/modules/telemetry/catalog.py`, copia del JSON comprobada por la suite (la imagen no incluye `docs/`);
   - claim `sid` (P4);
   - `asset_entries.unit_cost`/`currency` (P3) con `python -m app.modules.inventory.migrate`, idempotente y solo PostgreSQL (aplicada a la demo el 2026-11-03);
