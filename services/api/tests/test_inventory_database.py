@@ -33,6 +33,7 @@ from app.modules.inventory.database import (
     init_db,
 )
 from app.modules.inventory.models import INVENTORY_TABLES, Asset, AssetEntry, AssetExit
+from app.modules.telemetry.models import TELEMETRY_EVENTS_TABLE
 
 from .support import APP_DIR, TEST_DATABASE_URL, capture_logs, with_test_auth
 
@@ -188,7 +189,8 @@ class EngineTests(unittest.TestCase):
 
 class SchemaTests(unittest.TestCase):
     def test_only_the_three_inventory_tables_and_no_users_table(self) -> None:
-        self.assertEqual(set(SQLModel.metadata.tables), INVENTORY_TABLE_NAMES)
+        # `telemetry_events` comparte la base y la metadata, pero `init_db` no la crea (D3).
+        self.assertEqual(set(SQLModel.metadata.tables), INVENTORY_TABLE_NAMES | {TELEMETRY_EVENTS_TABLE})
         self.assertEqual({table.name for table in INVENTORY_TABLES}, INVENTORY_TABLE_NAMES)
         for table in INVENTORY_TABLES:
             self.assertNotIn("user_id", table.columns)
