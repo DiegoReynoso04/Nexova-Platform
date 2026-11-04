@@ -12,7 +12,11 @@ from types import ModuleType
 from typing import Any
 from uuid import uuid4
 
-from .support import REPO_ROOT
+from fastapi.testclient import TestClient
+
+from app.modules.telemetry.models import TelemetryEventRecord
+
+from .support import REPO_ROOT, make_client
 
 SCHEMA_PATH = REPO_ROOT / "docs" / "telemetry" / "event-schemas.json"
 PLAN_PATH = REPO_ROOT / "docs" / "telemetry" / "telemetry-plan.md"
@@ -65,3 +69,10 @@ def envelope(event_type: str = "page_viewed", **overrides: Any) -> dict[str, Any
     }
     event.update(overrides)
     return event
+
+
+def storage_client(*, authenticated: bool = False) -> TestClient:
+    """Un cliente con `telemetry_events` creada: `init_db` no la crea (D3) y aquí no corre la migración."""
+    client = make_client(authenticated=authenticated)
+    TelemetryEventRecord.__table__.create(client.app.state.inventory_engine)  # type: ignore[attr-defined]
+    return client

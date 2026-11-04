@@ -349,12 +349,14 @@ class NoGlobalSessionTests(unittest.TestCase):
                     owners.append(f"{path.relative_to(APP_DIR).as_posix()}:{function.name}")
         # get_db (una sesión por petición), el seed (una sesión por ejecución del
         # comando) y la oficina del activo de `direct_stock_edit_rejected` (P7):
-        # el 405 llega antes de las dependencias, así que no hay `get_db`.
+        # el 405 llega antes de las dependencias, así que no hay `get_db`. Por lo
+        # mismo, el guardado de ese evento (D8) abre la suya.
         self.assertEqual(
             owners,
             [
                 "modules/inventory/database.py:get_db",
                 "modules/inventory/seed.py:_seed_database",
+                "modules/telemetry/collector.py:store_api_event",
                 "modules/telemetry/stock_edit.py:_office_of",
             ],
         )
