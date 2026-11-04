@@ -55,7 +55,7 @@ Columna *Auth*: 🔓 pública · 🔒 JWT válido · 👤 propio usuario o admin
 | `POST` | `/inventory/orders/inbound` | 🔒 | Registra una entrada (201) |
 | `POST` | `/inventory/orders/outbound` | 🔒 | Registra una asignación o un consumo (201); 400 `insufficient_stock` si supera el stock |
 | `GET` | `/inventory/orders` | 🔒 | Entradas y salidas con el activo embebido, de la más reciente a la más antigua |
-| `POST` | `/telemetry/events` | 🔓 | Telemetría, fase stub: valida el envelope de 1 a 50 eventos y responde `200 {"received": N}`; no persiste (`SPECS.md` Parte H) |
+| `POST` | `/telemetry/events` | 🔓 | Colector de telemetría: valida cada evento por separado, guarda los válidos en `telemetry_events` con un solo insert y responde `200 {"received", "stored", "rejected"}` (`SPECS.md` Parte H) |
 
 Sin token válido → **401**; token válido sobre un recurso ajeno o una acción de admin → **403** (`SPECS.md` §21). Ninguna respuesta incluye `password` ni `hashed_password`.
 
@@ -332,6 +332,15 @@ python -m app.modules.inventory.migrate
 ```
 
 Es idempotente (una segunda ejecución dice «Nada que migrar»), aditiva y solo para PostgreSQL. **Sobre la base de la demo, solo con la confirmación del usuario.** Las comprobaciones de solo lectura, en [`docs/telemetry/capture-review.md`](../../docs/telemetry/capture-review.md).
+
+**Tabla de telemetría (ticket de almacenamiento).** `telemetry_events` no se crea al arrancar: hay que migrar antes de que el colector reciba eventos. Sin la tabla, `POST /telemetry/events` responde 500 y el frontend descarta el lote tras los reintentos. Con la `DATABASE_URL` de esa base en el entorno:
+
+```bash
+python -m app.modules.telemetry.migrate --dry-run
+python -m app.modules.telemetry.migrate
+```
+
+Crea la tabla, sus 3 índices y RLS, y revoca `UPDATE`, `DELETE` y `TRUNCATE`, en una transacción. Es idempotente y solo para PostgreSQL. Se niega con un rol superusuario, porque el `REVOKE` no le afectaría. **Sobre la base de la demo, solo con la confirmación del usuario.** Detalle en `SPECS.md` §47 y comprobaciones en [`docs/telemetry/storage-review.md`](../../docs/telemetry/storage-review.md).
 | `GET` | `/inventory/orders` | 200, entradas y salidas con `type`, el activo embebido y `user_uuid`, de la más reciente a la más antigua | — |
 
 ## Tests

@@ -545,7 +545,7 @@ SELECT timestamp, event_type FROM telemetry_events WHERE event_id = '11111111-11
 
 Si el lote se envía más de 5 min después de `12:00:00`, ese `timestamp` será la hora de recepción: comprueba además la regla de ±5 min.
 
-**Cuerpos límite (D11):**
+**Cuerpos límite (D11):** los comandos, en [`storage-review.md`](./storage-review.md).
 
 | Body | Respuesta |
 |---|---|

@@ -145,13 +145,13 @@ Hecha el 2026-11-03: `docker compose up -d`, sin el override del efímero. La AP
 
 ## 6. Lo que queda fuera o sin verificar
 
-- **`TELEMETRY_SUPPLIER_KEY` en el stack normal:** el `.env` de la raíz no la tiene. Hasta añadirla (y recrear `api`), las entradas devuelven `supplier_key` nulo y el backoffice no emite `inbound_order_created` ni `kit_cost_variance_detected`. Una clave distinta de la usada en la verificación da otras `supplier_key`, pero en el efímero no se guardó ninguna.
+- **`TELEMETRY_SUPPLIER_KEY` en el stack normal:** ya está en el `.env` de la raíz (comprobado el 2026-11-04, solo su presencia). Sin ella, las entradas devuelven `supplier_key` nulo y el backoffice no emite `inbound_order_created` ni `kit_cost_variance_detected`. Una clave distinta de la usada en la verificación da otras `supplier_key`, pero en el efímero no se guardó ninguna.
 - **Prerrequisitos pendientes:**
   - **P1:** `product_category` y `programme_id` van en `null` y no hay catálogo de programas;
   - **P2:** `min_stock` es la configuración (5), no un mínimo por activo;
   - **P5:** `requestId` es un UUID propio de cada evento, sin correlación con `api.timing`;
   - **P6 completo:** allowlist y agregados de la API.
-- **El stub, que hará el colector definitivo:**
+- **El stub** (resuelto después por el colector definitivo: [`storage-review.md`](./storage-review.md)):
   - acepta cualquier evento del catálogo (también los de la API);
   - un evento inválido rechaza el lote entero;
   - no hay throttle;

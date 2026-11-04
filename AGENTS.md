@@ -94,7 +94,14 @@ Ningún agente commitea código sin completar estos cinco pasos, en orden:
    - **Configuración:** `NEXT_PUBLIC_TELEMETRY_ENDPOINT=/backend/telemetry/events` en el `.env` de la raíz (interpolada en `ui` con `:?`). En la API, opcionales: `TELEMETRY_ENDPOINT` (sin uso), `TELEMETRY_SUPPLIER_KEY` (≥ 32; sin ella no hay `supplier_key` ni eventos de entrada), `INVENTORY_DEFAULT_MIN_STOCK` y `TELEMETRY_COST_VARIANCE_*`.
    - **Validación:** las filas de `services/api/`, `uis/backoffice/` y `docs/telemetry/` de la tabla. Un cambio en el plan o en los esquemas se comprueba además con `tests/telemetry-contract.test.mjs` (backoffice) y `tests/test_telemetry_events.py` (API), que comparan el código con el JSON.
    - **Base de datos:** la columna de P3 en una base existente, solo con `python -m app.modules.inventory.migrate` (`--dry-run` primero). Se prueba en un Postgres efímero; **la demo, solo con la confirmación del usuario**.
-   - **En el navegador:** el recorrido de Network de `docs/telemetry/capture-review.md` (lotes en `POST /backend/telemetry/events` → 200 `{"received": N}`, beacon al ocultar la pestaña, reintentos con la API parada, ningún dato personal).
+   - **En el navegador:** el recorrido de Network de `docs/telemetry/capture-review.md` (lotes en `POST /backend/telemetry/events` → 200, beacon al ocultar la pestaña, reintentos con la API parada, ningún dato personal).
+
+   **Telemetría: almacenamiento (ticket de almacenamiento; `services/api` → `app/modules/telemetry/`, tabla `telemetry_events`):**
+   - **Documentación:** decisiones en `docs/telemetry/storage-analysis.md`; guía de revisión y recorrido en `docs/telemetry/storage-review.md`; contrato en `services/api/SPECS.md` Parte H (§45 y §47).
+   - **`TelemetryEvent` no se modifica:** las reglas del colector viven en `collector.py`. Cualquier cambio en `schemas.py` va por debajo de la clase; lo comprueba el `diff` de `storage-review.md`.
+   - **Base de datos:** la tabla solo con `python -m app.modules.telemetry.migrate` (`--dry-run` primero), nunca al arrancar: el stack apunta a la demo. Se prueba en un Postgres efímero **con un rol sin superusuario**; **la demo, solo con la confirmación del usuario**. En la demo, las filas de prueba no se pueden borrar: el lote mixto de `curl`, nunca ahí.
+   - **Validación:** las filas de `services/api/` y `docs/telemetry/` de la tabla. Un cambio en el plan o en los esquemas se comprueba además con `tests/test_telemetry_storage.py` (compara `allowlists.py` y `FRONTEND_EVENT_TYPES` con el JSON).
+   - **Un cambio en el colector** se verifica también con la receta de `docs/telemetry/storage-review.md` (recorrido real, lote mixto y consultas SQL).
 
    **Directorio de proveedores de Nexova (`services/api` → `/suppliers`, `uis/backoffice` → `/suppliers`):** contexto en `docs/ligthweight-storage-api.md`; contrato en `services/api/SPECS.md` Parte B. La validación de `services/api` de la tabla cubre también los tests de proveedores; además, `docker compose exec api python -m app.seed` debe ejecutarse sin errores y ser idempotente. Un cambio en `/suppliers` se verifica también en el navegador (filtros, alta con 422, tarifa, estado).
 

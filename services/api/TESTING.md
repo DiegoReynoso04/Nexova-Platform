@@ -330,3 +330,15 @@ En Git Bash, lo mismo con `MSYS_NO_PATHCONV=1` delante y `"$(pwd -W):/repo:ro"` 
   - `test_architecture` deja loguear a `core/telemetry.py` e imprimir a `inventory/migrate.py`;
   - la lectura del activo de P7 abre su propia sesión.
 - **La migración de P3** no se prueba en la suite (es solo PostgreSQL): se probó dos veces en un Postgres efímero (`docs/telemetry/capture-review.md`).
+
+**Tras el ticket de almacenamiento de telemetría** (rama `feature/telemetry-storage`, con el venv del host): `unittest` **598 OK** y `pytest` **801 passed**.
+
+- **Tests nuevos:**
+  - `test_telemetry_table.py`: columnas, índices, `CHECK` y DDL compilado; la tabla no se crea en `init_db`; la migración (solo lo pendiente, negativas y mensajes sin datos de conexión);
+  - `test_telemetry_storage.py`: mapeo a las 8 columnas, allowlist, eventos que romperían el insert, lote mixto, una sentencia por lote, deduplicación, identidad, ±5 min, throttle, 503, eventos de la API y la copia de la allowlist frente al JSON.
+- **Tests reescritos:** `test_telemetry_events.py` era del stub; ahora fija el contrato HTTP del colector.
+- **Tests ajustados:**
+  - `test_architecture` deja imprimir a `telemetry/migrate.py`;
+  - `test_inventory_database` admite `telemetry_events` en la metadata y la sesión propia de `store_api_event`.
+- **Una sentencia por lote:** contar `before_cursor_execute` no basta, porque un `executemany` también dispara uno en SQLite. El test exige `executemany=False` y un grupo `VALUES` por fila.
+- **Lo que no se prueba en la suite** (necesita PostgreSQL): el efecto del `REVOKE`, `JSONB` y el rechazo de `\u0000`. Se comprobaron en un Postgres efímero, con un rol sin superusuario: el usuario por defecto de la imagen salta cualquier `REVOKE`.

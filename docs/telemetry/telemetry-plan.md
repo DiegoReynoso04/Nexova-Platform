@@ -87,6 +87,16 @@ Análisis y opciones: [`capture-analysis.md`](./capture-analysis.md). Guía de r
 - **Colector, fase stub:** `200 {"received": N}`, acepta cualquier evento del catálogo y no persiste (§2.4).
 - **Versión:** cambiar el emisor y los prerrequisitos son metadatos (`$comment`), no propiedades: según §5.4, **`1.0.0` no cambia**.
 
+### 1.6 Cambios del ticket de almacenamiento (decididos por el usuario el 2026-11-04)
+
+Análisis y opciones: [`storage-analysis.md`](./storage-analysis.md). Guía de revisión: [`storage-review.md`](./storage-review.md).
+
+- **Colector definitivo:** §2.4 pasa de `202 {accepted, rejected}` a `200 {received, stored, rejected}`, que es lo que pide el enunciado. Cualquier arreglo `events` es parseable, también vacío o de más de 50 items.
+- **Allowlist:** el plan decía dos cosas. Se unifica en la regla de P6: la clave de más se quita y el valor inválido rechaza el evento.
+- **Almacén:** tabla `telemetry_events`, inmutable para la API, creada con una migración explícita. Su esquema es decisión nuestra, porque el enunciado no lo incluye.
+- **Riesgos aceptados:** eventos de negocio falsificables y cupo anónimo compartido (§8.4).
+- **Versión:** son cambios de texto y de transporte, no de esquema: **`1.0.0` no cambia**.
+
 ---
 
 ## 2. Prerrequisitos (D14)
@@ -155,15 +165,15 @@ Nada se puede emitir hoy: no hay emisor. Los prerrequisitos se dividen en dos bl
 
 **Colector `POST /telemetry/events`** (API):
 
-- **Fase stub (ticket de captura, implementada):** `200 {"received": N}`, sin token, con el envelope validado (`TelemetryEvent`, las 8 claves), cualquier `event_type` del catálogo, un 422 al lote entero si un evento es inválido, y sin persistir nada (SPECS Parte H). Lo que sigue es el **colector definitivo**, del ticket de almacenamiento; el frontend no cambia, porque solo mira si la respuesta es 2xx.
-- **Petición:** body `{"events": [...]}`, de 1 a 50 eventos, ≤ 64 KiB (por debajo del límite general).
-- **Cada evento:** el envelope completo (§5). **`userId` y `sessionId` no se confían del cliente**: el cliente los rellena con los claims `sub` y `sid` del JWT, y el colector los sustituye por los del token cuando la petición trae uno válido. Un beacon no lleva token: sus ids son los declarados por el cliente.
+- **Colector definitivo (ticket de almacenamiento, implementado):** sustituye al stub de la captura; el frontend no cambia, porque solo mira si la respuesta es 2xx. Decisiones en [`storage-analysis.md`](./storage-analysis.md); contrato en SPECS Parte H.
+- **Petición:** body `{"events": [...]}`, ≤ 64 KiB (por debajo del límite general). Se admite cualquier arreglo: 422 solo si el body no es JSON, no tiene `events`, `events` no es una lista o hay claves extra junto a él. Se procesan los 50 primeros items; el resto cuenta como rechazado.
+- **Cada evento:** el envelope completo (§5), validado uno a uno. **`userId` y `sessionId` no se confían del cliente**: el cliente los rellena con los claims `sub` y `sid` del JWT, y el colector los sustituye por los del token cuando la petición trae uno válido. Un beacon no lleva token: sus ids son los declarados por el cliente.
 - **Qué acepta:**
-  - solo los `event_type` de emisor *frontend* (§4; 14 desde el ticket de captura). Un evento de la API enviado por el cliente se rechaza: el frontend no puede fabricar intentos de edición del stock;
-  - cada evento se valida contra su allowlist (como P6). Los inválidos se descartan uno a uno.
-- **`timestamp`:** el del cliente si está a ±5 min de la recepción; si no, la hora de recepción.
-- **Respuesta:** `202 {"accepted": n, "rejected": m}`. Responde 202 también **sin token** (página de login, error global), sin 401, para que el cliente no cierre la sesión por la telemetría.
-- **Throttle:** 120 eventos/min por token, o en total para los anónimos; el exceso se descarta en silencio.
+  - solo los `event_type` de emisor *frontend* (§4; 14 desde el ticket de captura). Un evento de la API enviado por el cliente se rechaza: el frontend no puede fabricar intentos de edición del stock (los 4 obligatorios que sí emite se pueden falsificar, §8.4);
+  - cada evento se valida contra su allowlist, como en P6: una clave de más se quita y el evento se guarda; un valor fuera de su tipo o enum, o una clave que falta, rechaza el evento. Los inválidos se descartan uno a uno y no cancelan el lote.
+- **`timestamp`:** el del cliente si está a ±5 min de la recepción; si no, la hora de recepción. Una fecha imposible con el patrón correcto rechaza el evento.
+- **Respuesta:** `200 {"received": n, "stored": m, "rejected": r}`, siempre con `received = stored + rejected`. Un duplicado cuenta como `stored`: un reintento recibe la misma respuesta. También responde 200 **sin token** (página de login, error global), sin 401, para que el cliente no cierre la sesión por la telemetría. Si la base falla, `503 storage_unavailable` y el frontend reintenta.
+- **Throttle:** 120 eventos/min por token, o en total para los anónimos; el exceso cuenta como `rejected`.
 
 **Emisor `lib/telemetry.ts`** (backoffice):
 
@@ -295,7 +305,7 @@ Todo evento, lo emita quien lo emita, es un objeto JSON con **exactamente** esta
 |---|---|---|---|---|
 | `eventId` | string, UUID v4 | sí | nunca | `uuid4()` del emisor (API: P6; frontend: `lib/telemetry.ts`). Sirve para deduplicar reenvíos |
 | `timestamp` | string ISO 8601 UTC, `AAAA-MM-DDTHH:MM:SS.mmmZ` | sí | nunca | Instante del hecho: en la API, al emitir (tras el commit si es una escritura); en el frontend, el del navegador, corregido por el colector si se desvía más de ±5 min (§2.4). Los agregados llevan el **cierre** de su ventana |
-| `sessionId` | string UUID v4 \| `null` | sí | eventos anónimos (`login_failed`, registro, recuperación de contraseña…), del sistema (agregados, arranque) y con un token sin `sid` (anterior a P4) | Claim `sid` del JWT (D7, P4). En `user_logged_in`, el `sid` del token recién emitido. En el frontend lo pone el colector, nunca el cliente |
+| `sessionId` | string UUID v4 \| `null` | sí | eventos anónimos (`login_failed`, registro, recuperación de contraseña…), del sistema (agregados, arranque) y con un token sin `sid` (anterior a P4) | Claim `sid` del JWT (D7, P4). En `user_logged_in`, el `sid` del token recién emitido. En el frontend lo declara el cliente desde el JWT y el colector lo sustituye por el del token si hay uno válido (§2.4) |
 | `userId` | string UUID v4 \| `null` | sí | igual que `sessionId`; además, en los eventos con identidad opcional cuando no hay un token válido | `sub` del JWT = `User.id` de TinyDB = el `user_uuid` de las órdenes. En la recuperación de contraseña, la cuenta afectada si se conoce |
 | `event_type` | string `^[a-z]+(_[a-z]+)+$` | sí | nunca | `entidad_accion` (§5.3); cada esquema fija su valor con `const` |
 | `schemaVersion` | string semver | sí | nunca | `"1.0.0"` en todos los eventos de este plan; las reglas de cambio, en §5.4 |
@@ -367,7 +377,7 @@ Cada ficha dice cuál de estos modos aplica. El esquema lo comprueba: por ejempl
 - la identidad (§5.1);
 - el porqué de la entrega;
 - la PII y su sanitización;
-- la **allowlist** de `properties`: solo esas claves, con su tipo y si son obligatorias. Una clave que no esté en la tabla no se emite (P6 la descarta; el colector, P8, la rechaza);
+- la **allowlist** de `properties`: solo esas claves, con su tipo y si son obligatorias. Una clave que no esté en la tabla no se emite (P6 y el colector, P8, la descartan);
 - un ejemplo completo que valida contra su esquema (§9).
 
 **Tipos de la allowlist:**
@@ -2356,13 +2366,11 @@ Todo en memoria del proceso de la API (P6) o de la pestaña del navegador (P8).
 ### 7.3 Del emisor al almacén
 
 - **Este plan fija** la forma y el canal lógico de cada evento.
-- **El transporte físico y el almacén** son del siguiente ticket de la serie («Captura · Almacenamiento»).
-- **Contrato mínimo para ese ticket:**
-  - leer las líneas de `nexova.telemetry` sin perder el orden de llegada;
-  - **validar cada evento contra `event-schemas.json`** antes de guardarlo y descartar (contando) los inválidos;
-  - deduplicar por `eventId`;
-  - enviar los eventos stream a la ruta de alertas en el momento;
-  - consolidar los batch en el lote nocturno.
+- **Hecho en el ticket de almacenamiento:** los 14 eventos del frontend y `direct_stock_edit_rejected` llegan a `telemetry_events` (PostgreSQL; esquema en SPECS Parte H). Se valida cada evento antes de guardarlo, se descartan contando los inválidos y se deduplica por `eventId` (`ON CONFLICT DO NOTHING`). `direct_stock_edit_rejected` se guarda desde el proceso de la API, sin leer el log; su línea en `nexova.telemetry` se mantiene como rastro.
+- **Pendiente para un ticket posterior:**
+  - enviar los eventos stream a una ruta de alertas: hoy no existe ninguna, así que `stock_threshold_triggered` y `kit_cost_variance_detected` se guardan, pero nadie recibe un aviso;
+  - consolidar los batch en el lote nocturno y crear los agregados.
+- **Orden de llegada:** la tabla no lo conserva; se ordena por `timestamp`.
 
 ---
 
@@ -2407,6 +2415,9 @@ Todo en memoria del proceso de la API (P6) o de la pestaña del navegador (P8).
 ### 8.3 Retención (D9)
 
 - **Eventos en bruto** (con `userId`, `sessionId`, `target_user_id` o `requestId`): **90 días**. Después se borran o se agregan.
+  - **Fecha límite: 2027-02-02** (90 días desde 2026-11-04, cuando se creó el almacén; se ajusta si la tabla de la demo se crea más tarde).
+  - **Condición: agregar antes de borrar.** Los agregados aún no existen: borrar sin ellos pierde el histórico del dashboard de L&D y del informe semanal.
+  - **Es una operación de administración, fuera de la API y sin automatizar todavía.** `telemetry_events` es inmutable para el rol de la API (`REVOKE UPDATE, DELETE, TRUNCATE`): el trabajo de limpieza se concede `DELETE`, borra por `timestamp` y lo revoca en la misma transacción. Nunca se anonimiza con `UPDATE`.
 - **Agregados sin identificadores personales** (conteos por día, oficina, programa, categoría o ruta): **sin límite**. Son los que alimentan el dashboard de L&D y el informe semanal.
 - **`userId` es un dato personal seudonimizado:** se conserva en claro para poder cruzarlo con el `user_uuid` de las órdenes, con acceso restringido al equipo técnico y a los responsables que lo necesiten.
 - **`supplier_key`** no permite recuperar el nombre sin la clave. El nombre se consulta en la base desde `inbound_order_id`, con su control de acceso.
@@ -2422,6 +2433,8 @@ Todo en memoria del proceso de la API (P6) o de la pestaña del navegador (P8).
 | Un solo proceso | El agregador, el throttle y el deduplicado de `session_expired` viven en memoria: con varios workers o réplicas cada uno tendría los suyos (como la caché, SPECS §43) | Uvicorn arranca con `--workers 1`. Subirlos obliga a revisar P6 |
 | Reinicio del proceso | Se pierden las ventanas abiertas (hasta 60 s de agregados) y los contadores de throttle | Aceptado: los agregados son aproximados por diseño |
 | Pérdida de eventos del frontend | Sin almacenamiento local: lo pendiente se pierde si fallan los 3 reintentos o si el beacon no sale al cerrar. Desde el ticket de captura incluye 4 obligatorios (§1.5) | Aceptado por el usuario (D1 «A ligera»): reintentos con backoff y beacon; el almacén deduplica por `eventId`. Si la pérdida medida importa, la alternativa es que la API emita también esos 4 |
+| Eventos de negocio falsificables | `POST /telemetry/events` es público (un beacon no lleva token) y, desde D1 «A ligera», recibe 4 obligatorios: cualquiera puede inyectar un `outbound_order_created` falso, que queda en una tabla inmutable y alimenta los informes. Sin token, `userId` y `sessionId` son los declarados | Riesgo aceptado por el usuario (C15 de `storage-analysis.md`). Freno: allowlist y throttle. Exigir token perdería los eventos que salen por beacon. Si importa, la alternativa es que la API emita esos 4 |
+| Cupo anónimo compartido | Todos los beacons cuentan en el mismo cupo de 120 eventos/min: en un pico, el exceso se pierde sin aviso, también eventos de negocio | Riesgo aceptado por el usuario. Revisar con la primera semana de datos (log `api.telemetry`) |
 | Desfase del reloj del navegador | `timestamp` erróneo | El colector lo sustituye si se desvía más de ±5 min (§2.4) |
 | El emisor rompe una petición | Una excepción en la telemetría devolvería un 500 | `emit` nunca lanza (P6) y los eventos de negocio se emiten tras el commit |
 | Rotación de `TELEMETRY_SUPPLIER_KEY` | Cambia todas las `supplier_key`: se corta la continuidad de las referencias | Rotarla solo con un corte documentado; la referencia de coste se calcula siempre en la API con el texto normalizado, no con la clave |
