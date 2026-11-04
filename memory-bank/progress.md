@@ -4,6 +4,22 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-04 — Almacenamiento de telemetría, F0: análisis y decisiones
+
+**Estado: análisis hecho; pendiente de las decisiones D1–D12 del usuario. F1 no ha empezado.** Rama `feature/telemetry-storage`, desde `main` en `8461f34`. Sin commit. Solo documentación, sin impacto técnico: no se ha tocado código, `uis/` ni Supabase.
+
+- **Qué:** [`docs/telemetry/storage-analysis.md`](../docs/telemetry/storage-analysis.md), con el estado verificado, tres opciones para las 8 columnas, los conflictos C1–C16, las decisiones D1–D12, el plan de F1 y la receta de la Fase 3.
+- **Por qué:** el ticket sustituye el stub por un colector que guarda en Supabase, y su enunciado no incluye la estructura de la tabla ni el mapeo que anuncia. El esquema es decisión nuestra y hay que justificarlo.
+- **Hallazgos que condicionan F1:**
+  - la tabla no puede ir en `init_db`: con el stack apuntando a la demo y `--reload`, se crearía en Supabase sin confirmación (C16);
+  - `TelemetryEvent` acepta fechas imposibles, `NaN` y `\u0000`, que tirarían el insert de todo el lote (C4);
+  - RLS no frena a la API, que conecta como dueña; `REVOKE` no se nota con un superusuario, así que el efímero necesita un rol sin superusuario (C10);
+  - `test_architecture.py` prohíbe `re` y el vocabulario del gestor: la allowlist va por Pydantic y solo con los 15 eventos necesarios (§1.4);
+  - los 4 obligatorios que emite el frontend se pueden falsificar por la ruta pública, y ahora quedarían guardados (C15).
+- **Sin verificar:** el rol real de Supabase y el comportamiento sobre un PostgreSQL real. En F0 se compiló y se probó en SQLite en memoria (§1.5 y §6 del análisis).
+
+---
+
 ## 2026-11-03 — Captura de telemetría en el frontend + endpoint stub, F1: implementación
 
 **Estado: hecho y verificado por el usuario en Network; demo migrada; PR `feat: telemetry event capture` abierta contra `main`, pendiente de que el usuario suba las capturas y de la revisión.** Rama `feature/telemetry-capture`.
