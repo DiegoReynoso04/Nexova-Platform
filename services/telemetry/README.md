@@ -6,4 +6,6 @@ Análisis de la tabla `telemetry_events` con Pandas: las métricas técnicas de 
 
 - **Dónde corre:** la imagen la copia junto a `app/`, en `/app/api/telemetry`, y Compose la monta encima para recargar sin reconstruir. Se importa como `telemetry`.
 - **Dependencias:** Pandas se declara en `services/api/pyproject.toml`. Esta carpeta no tiene `pyproject.toml` propio.
-- **Tests:** en `services/api/tests/`, con la validación de `services/api` (`AGENTS.md` §4). `tests/__init__.py` pone `services/` en `sys.path`.
+- **Tests:** en `services/api/tests/`, con la validación de `services/api` (`AGENTS.md` §4). `tests/__init__.py` pone `services/` en `sys.path`. Las reglas de `analysis.py` (sin bucles, la fórmula, `utc=True` antes del `groupby`) están en `tests/test_telemetry_analysis.py`: `tests/test_architecture.py` solo mira `app/`.
+- **Fuera de Docker:** uvicorn en el host necesita `services/` en `PYTHONPATH`.
+- **Revisión:** [`docs/telemetry/report-review.md`](../../docs/telemetry/report-review.md).

@@ -4,6 +4,23 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-05 — Reporte técnico de telemetría, F1: análisis, endpoint y caché
+
+**Estado: en curso; pasos 1 a 4 hechos y en la Parada 2, esperando la verificación del usuario en el efímero.** Rama `feature/telemetry-report`, sin push ni PR. Falta la demo (Parada 3) y el dashboard (Parada 4).
+
+- **Hecho:**
+  - `pandas` en `services/api` (con `numpy`, `python-dateutil` y `tzdata`, autorizadas); imagen de 337 a 476 MB en disco (+29 MB comprimida);
+  - `services/telemetry/analysis.py`: 5 métricas con la fórmula marcada en cada función;
+  - `app/modules/telemetry/report.py` y `GET /telemetry/report`, con `ResponseCache`;
+  - documentación: SPECS §41 y §48, README, TESTING, `AGENTS.md`, plan §1.7 y §7.3 y `docs/telemetry/report-review.md`, con el borrador de la PR.
+- **Ajustes del usuario:** `events_per_day` rellena los días vacíos con 0; un periodo sin filas también devuelve los días a 0 (justificado en `report-review.md` §3).
+- **Validación:** `unittest` 686 OK, `pytest` 889 passed, `validate_event_schemas.py` OK, 14 mutaciones detectadas.
+- **PostgreSQL real (contenedor desechable, ya borrado):** `timestamp` con zona y `tags` como `dict`; con la sesión en `Europe/Madrid`, mismo resultado; las 5 métricas coinciden con `report-check.sql`.
+- **Hallazgo:** un test arranca uvicorn en un subproceso, que no hereda `sys.path`: lleva `services/` en `PYTHONPATH`. uvicorn en el host necesita lo mismo.
+- **Pendiente:** §6 de `report-review.md` (Parada 2), la lista de eventos de la demo y el dashboard.
+
+---
+
 ## 2026-11-05 — Reporte técnico de telemetría, F0: análisis y decisiones
 
 **Estado: hecho; el usuario tomó las decisiones D1–D14 el mismo día, con ajustes (cabecera de `docs/telemetry/report-analysis.md`).** Rama `feature/telemetry-report`, desde `main` en `fed0e39`. Solo documentación: `docs/telemetry/report-analysis.md` y esta entrada. Sin impacto técnico: ni código, ni `uis/`, ni dependencias (`techContext.md` no cambia).

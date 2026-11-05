@@ -103,6 +103,13 @@ Ningún agente commitea código sin completar estos cinco pasos, en orden:
    - **Validación:** las filas de `services/api/` y `docs/telemetry/` de la tabla. Un cambio en el plan o en los esquemas se comprueba además con `tests/test_telemetry_storage.py` (compara `allowlists.py` y `FRONTEND_EVENT_TYPES` con el JSON).
    - **Un cambio en el colector** se verifica también con la receta de `docs/telemetry/storage-review.md` (recorrido real, lote mixto y consultas SQL).
 
+   **Telemetría: reporte técnico (ticket del reporte; `services/telemetry/analysis.py`, `services/api` → `GET /telemetry/report`):**
+   - **Documentación:** decisiones en `docs/telemetry/report-analysis.md`; guía de revisión y recorrido en el efímero en `docs/telemetry/report-review.md`; contrato en `services/api/SPECS.md` Parte H (§48).
+   - **Solo técnico:** ninguna métrica lee las dimensiones de negocio de `tags` ni carga identificadores.
+   - **`services/telemetry/`** es una librería de la API: la imagen la copia junto a `app/` y se importa como `telemetry`. Sus reglas (sin bucles, los 6 pasos, `utc=True` antes del `groupby`) están en `tests/test_telemetry_analysis.py`, no en `test_architecture.py`, que solo mira `app/`.
+   - **Dependencia:** `pandas`. Un cambio en `analysis.py` se valida con la fila de `services/api/`; al cambiar `requirements.txt`, `docker compose up -d --build` antes de cargar el código: con `--reload`, la API no arranca sin Pandas en la imagen.
+   - **Un cambio en una métrica** se verifica también cuadrándola con `docs/telemetry/report-check.sql` en un Postgres efímero, con `report-seed-ephemeral.sql`. **El seed, nunca en la demo:** la tabla es inmutable.
+
    **Directorio de proveedores de Nexova (`services/api` → `/suppliers`, `uis/backoffice` → `/suppliers`):** contexto en `docs/ligthweight-storage-api.md`; contrato en `services/api/SPECS.md` Parte B. La validación de `services/api` de la tabla cubre también los tests de proveedores; además, `docker compose exec api python -m app.seed` debe ejecutarse sin errores y ser idempotente. Un cambio en `/suppliers` se verifica también en el navegador (filtros, alta con 422, tarifa, estado).
 
 2. **Revisar el diff real antes de comitear:** `git status --short` y `git diff --stat`. Confirmar que no se incluyen archivos generados (`node_modules/`, `.next/`, `*.log`, `*.tsbuildinfo`) ni dependencias no autorizadas en ningún `package.json` tocado.
