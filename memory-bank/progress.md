@@ -6,7 +6,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-05 — Reporte técnico de telemetría, F1: análisis, endpoint y caché
 
-**Estado: en curso; Parada 2 verificada por el usuario, en la Parada 3 esperando su OK para la demo.** Rama `feature/telemetry-report`, sin push ni PR. Falta la demo (Parada 3) y el dashboard (Parada 4).
+**Estado: en curso; Paradas 2 y 3 verificadas por el usuario; dashboard hecho y en la Parada 4, esperando su verificación.** Rama `feature/telemetry-report`, sin push ni PR.
 
 - **Hecho:**
   - `pandas` en `services/api` (con `numpy`, `python-dateutil` y `tzdata`, autorizadas); imagen de 337 a 476 MB en disco (+29 MB comprimida);
@@ -19,7 +19,10 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 - **Hallazgo:** un test arranca uvicorn en un subproceso, que no hereda `sys.path`: lleva `services/` en `PYTHONPATH`. uvicorn en el host necesita lo mismo.
 - **Parada 2, verificada por el usuario en el efímero (2026-11-05):** `seeded = 50`; ventana por defecto y con fechas correctas, con el fin exclusivo; 401 y los tres 422; caché (mismo `period.to` y hash, 0,056 s → 0,013 s, y recalcula a los 61 s); las 5 métricas coinciden valor a valor con `report-check.sql`; sin identificadores; C15 confirmado (API parada → `/backend/health` da 500). Efímero borrado y stack de vuelta contra la demo. Detalle en `report-review.md` §6.10.
 - **Parada 3:** la lista de acciones, lo que no se verá y el JSON de la demo están en `report-review.md` §7. Con Offline, hay que recuperar la red antes de 5 s, no de 15: en el peor caso el lote solo aguanta unos 7 s.
-- **Pendiente:** el OK y la muestra de la demo; el dashboard.
+- **Parada 3, verificada por el usuario en la demo (2026-11-05):** 200 en 0,82 s, sin UUID, emails ni campos de negocio. La muestra está en `report-review.md` §10. El paso Offline no quedó registrado y no se repite: la clase `system` solo está verificada en el efímero. El `error_rate` 1.0 del 04/11 es el efecto del denominador (1 evento técnico ese día).
+- **Doble `page_not_found_viewed`:** StrictMode en `next dev`, sin guarda en `not-found-tracker.tsx`. Con el build de producción, 1 evento; con `next dev`, 2. El stack de la demo corre `next dev`, así que allí cada 404 cuenta doble. **Pendiente de una PR aparte**, con la guarda `useRef` de `usePageLoadTelemetry`.
+- **Dashboard:** `/telemetry` en `uis/backoffice`, con tablas y una barra de CSS, sin dependencias, comprobado con el build de producción contra un stub local con el JSON de la demo. Su contrato de eventos no cambia: la página no consta en la telemetría (C14).
+- **Pendiente:** Parada 4 y, con el OK del usuario, push y PR.
 
 ---
 

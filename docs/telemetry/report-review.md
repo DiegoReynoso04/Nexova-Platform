@@ -17,7 +17,7 @@ Rama `feature/telemetry-report`. Decisiones en [`report-analysis.md`](./report-a
 | Métricas técnicas, no de negocio | §3 | Hecho; ningún campo de negocio ni identificador |
 | Una dimensión de agrupamiento por métrica | §2 | Hecho |
 | Extra 1: `auth_failure_rate` | `analysis.py` | Hecho, con `form_submitted` (D6) |
-| Extra 2: dashboard | `uis/backoffice` | Pendiente: va tras la Parada 3 |
+| Extra 2: dashboard | `uis/backoffice` → `/telemetry` | Hecho; pendiente de la Parada 4 |
 
 ## 2. Las métricas
 
@@ -404,10 +404,10 @@ Esperado: `200`. El JSON queda en `$out\demo.json`, fuera del repo.
 
 ### 7.5 Revisar que no lleva identificadores
 
-**1. Ni campos de negocio ni identificadores.** Esperado: ninguna línea.
+**1. Ni campos de negocio ni identificadores.** Busca las claves entre comillas: sin ellas, `stock_` coincide con los nombres `direct_stock_edit_rejected` y `stock_threshold_triggered` de `dominant_event_types`. Esperado: ninguna línea.
 
 ```powershell
-Select-String -Path "$out\demo.json" -Pattern 'user_id|session_id|event_id|userId|sessionId|office|product_id|product_category|programme_id|quantity|currency|unit_cost|supplier_key|stock_|valencia|miami|EUR|USD'
+Select-String -Path "$out\demo.json" -Pattern '"(user_id|session_id|event_id|userId|sessionId|office|product_id|product_category|programme_id|quantity|currency|unit_cost|supplier_key|stock_before|stock_after|min_stock)"|valencia|miami|EUR|USD'
 ```
 
 **2. Ningún UUID ni email.** Esperado: ninguna línea.
@@ -446,6 +446,30 @@ Remove-Variable cred, token, auth
 
 Borra `$out` cuando la muestra esté en la PR.
 
+### 7.6 Resultado (verificado por el usuario el 2026-11-05)
+
+`GET /telemetry/report` contra la demo: 200 en 0,82 s, con `period` del `2026-10-29T23:39:03.085Z` al `2026-11-05T23:39:03.085Z`. La muestra está en §10.
+
+- **Revisión:** ningún UUID ni email, y ningún campo de negocio con el patrón de §7.5. El patrón anterior daba un falso positivo con `stock_`.
+- **Clase `system`: no aparece en la muestra.** El paso Offline no quedó registrado y no se repite. `client_request_failed`, `frontend_error_captured`, `page_load_recorded:error` y `form_submitted:network_error` y `:server_error` están verificados en el efímero (§6.10).
+- **`error_rate` 1.0 el 04/11:** ese día el único evento técnico es el `direct_stock_edit_rejected`, así que es 1 de 1. Es el efecto del denominador de D4: con pocos eventos, un solo error pesa mucho. No indica una caída.
+- **La muestra no trae `/suppliers`.** Su `page_load_recorded` funciona (comprobado con el build de producción contra un stub), así que esa carga no llegó a la tabla: una visita de menos de 1 s, o un beacon perdido, no se puede distinguir desde aquí.
+- **`form_validation_failed` sale 1 vez**, y la receta tenía dos pasos que lo emiten. No se han leído las filas: no se sabe cuál falta.
+
+### 7.7 Doble `page_not_found_viewed`
+
+Un solo 404 dio dos eventos, a 1 ms y con `eventId` distintos. **Es el doble efecto de StrictMode en `next dev`; en producción no ocurre.** No es un dato perdido ni un fallo del reporte.
+
+| Modo | Eventos por un 404 |
+|---|---|
+| `next build` + `next start`, contra un stub local | **1** |
+| `next dev --webpack`, contra el mismo stub | **2**, a 2 ms |
+
+- **Causa:** `components/telemetry/not-found-tracker.tsx` emite en un `useEffect` sin guarda. Next activa Strict Mode por defecto con App Router (`reactStrictMode.md`), y en desarrollo React monta, desmonta y vuelve a montar cada efecto.
+- **Por qué solo este evento:** `usePageLoadTelemetry` se protege con un `useRef`, `frontend_error_captured` tiene throttle, y `page_viewed` cancela su temporizador al limpiar.
+- **Efecto real:** el stack de la demo corre `next dev`, así que **allí cada 404 cuenta doble**. Es lo que se ve en la muestra.
+- **Propuesta, en una PR aparte** (es del ticket de captura): la misma guarda con `useRef` que `usePageLoadTelemetry`, y un test. Este ticket no toca el tracker.
+
 ## 8. Lo que queda fuera o sin verificar
 
 - **Lo que no se puede ver en la demo:** §7.3; lo cubre el efímero.
@@ -453,9 +477,23 @@ Borra `$out` cuando la muestra esté en la PR.
 - **`/telemetry` y `/telemetry/report` fuera de los enums** (C14): la página no consta en su propia telemetría.
 - **P6:** cuando se emitan `api_latency_recorded`, `login_failed` y `user_logged_in`, cambian D4, D5 y D6.
 
-## 9. Borrador de la PR
+## 9. Dashboard (Parada 4)
 
-Título: `feat: telemetry report endpoint`. Falta la muestra de JSON real (Parada 3) y el dashboard (Parada 4).
+`/telemetry`: tablas y una barra de CSS por día, sin dependencias. Las capas y reglas están en `uis/backoffice/CLAUDE.md`.
+
+**Comprobado con el build de producción, contra un stub local con el JSON de la demo** (sin tocar la API ni la demo): las 5 métricas con el periodo visible, tasas formateadas, estado de error con «Reintentar» ante un 500, y 375 px sin scroll horizontal (`scrollWidth` 375).
+
+**Para verificar en el stack,** en `http://localhost:3001`. Cada visita lee la demo y no escribe nada: la página no emite telemetría (C14).
+
+1. Sin sesión, `/telemetry` lleva a `/login`.
+2. Con sesión, enlace «Telemetría» en la cabecera, marcado como activo.
+3. Periodo visible y las 5 secciones con los datos del reporte.
+4. Con la API parada (`docker compose stop api`) y entrando desde otra página sin recargar: error con «Reintentar». Después, `docker compose start api`, «Reintentar» y los datos.
+5. A 375 px, sin scroll horizontal: las tablas se desplazan dentro de su marco.
+
+## 10. Borrador de la PR
+
+Título: `feat: telemetry report endpoint`.
 
 > Añade `GET /telemetry/report`: métricas técnicas de `telemetry_events` calculadas con Pandas, con caché de 60 s.
 >
@@ -463,9 +501,9 @@ Título: `feat: telemetry report endpoint`. Falta la muestra de JSON real (Parad
 >
 > **Métricas y pregunta que responde cada una:** tabla de §2.
 >
-> **Muestra de JSON real:** _pendiente (Parada 3)._
+> **Muestra de JSON real:** al final de este borrador. La clase `system` no aparece en ella: `client_request_failed`, `frontend_error_captured`, `page_load_recorded:error` y `form_submitted:network_error` y `:server_error` se verificaron en un Postgres efímero. `page_not_found_viewed` cuenta 2 por un solo 404, por el doble efecto de StrictMode en `next dev`: en producción es 1, y su arreglo va en una PR aparte. El `error_rate` de 1.0 del 04/11 es el efecto del denominador: ese día el único evento técnico fue el `direct_stock_edit_rejected`, así que es 1 de 1, no una caída.
 >
-> **Extras:** `auth_failure_rate`, hecho con `form_submitted`, porque `user_login_failed` y `user_login_succeeded` no existen en el catálogo y `login_failed` y `user_logged_in` aún no se emiten. Dashboard: _pendiente (Parada 4)._
+> **Extras:** `auth_failure_rate`, hecho con `form_submitted`, porque `user_login_failed` y `user_login_succeeded` no existen en el catálogo y `login_failed` y `user_logged_in` aún no se emiten. Dashboard: hecho, en `/telemetry`, con tablas y una barra de CSS por día, sin dependencias nuevas.
 >
 > **Lo que el reporte no dice:**
 > - `error_rate` es la proporción de eventos técnicos, no de peticiones: las correctas no se emiten.
@@ -478,4 +516,61 @@ Título: `feat: telemetry report endpoint`. Falta la muestra de JSON real (Parad
 >
 > **Efecto en la imagen:** de 337 a 476 MB en disco (+29 MB comprimida), por Pandas y numpy. Hay que ejecutar `docker compose up -d --build` al cambiar a esta rama.
 >
-> **Verificación:** las 5 métricas cuadradas valor a valor con SQL a mano en un Postgres efímero, con un seed ficticio de varios días (`report-review.md` §6.10). En la demo: _pendiente (Parada 3)._
+> **Verificación:** las 5 métricas cuadradas valor a valor con SQL a mano en un Postgres efímero, con un seed ficticio de varios días (`report-review.md` §6.10). En la demo, con eventos reales generados desde el backoffice: 200 en 0,82 s, sin identificadores ni campos de negocio.
+
+**Muestra para la PR** (`GET /telemetry/report`, demo, 2026-11-05):
+
+```json
+{
+  "period": {"from": "2026-10-29T23:39:03.085Z", "to": "2026-11-05T23:39:03.085Z"},
+  "metrics": {
+    "events_per_day": [
+      {"day": "2026-10-29", "service": "backoffice", "events": 0},
+      {"day": "2026-10-29", "service": "api", "events": 0},
+      {"day": "2026-10-30", "service": "backoffice", "events": 0},
+      {"day": "2026-10-30", "service": "api", "events": 0},
+      {"day": "2026-10-31", "service": "backoffice", "events": 0},
+      {"day": "2026-10-31", "service": "api", "events": 0},
+      {"day": "2026-11-01", "service": "backoffice", "events": 0},
+      {"day": "2026-11-01", "service": "api", "events": 0},
+      {"day": "2026-11-02", "service": "backoffice", "events": 0},
+      {"day": "2026-11-02", "service": "api", "events": 0},
+      {"day": "2026-11-03", "service": "backoffice", "events": 0},
+      {"day": "2026-11-03", "service": "api", "events": 0},
+      {"day": "2026-11-04", "service": "backoffice", "events": 0},
+      {"day": "2026-11-04", "service": "api", "events": 1},
+      {"day": "2026-11-05", "service": "backoffice", "events": 55},
+      {"day": "2026-11-05", "service": "api", "events": 0}
+    ],
+    "error_rate_by_type": [
+      {"day": "2026-11-04", "error_type": "direct_stock_edit_rejected", "error_class": "rejected", "errors": 1, "total_events": 1, "error_rate": 1.0},
+      {"day": "2026-11-05", "error_type": "form_submitted:api_rejected", "error_class": "rejected", "errors": 3, "total_events": 52, "error_rate": 0.057692307692307696},
+      {"day": "2026-11-05", "error_type": "form_submitted:validation_error", "error_class": "rejected", "errors": 2, "total_events": 52, "error_rate": 0.038461538461538464},
+      {"day": "2026-11-05", "error_type": "form_validation_failed", "error_class": "rejected", "errors": 1, "total_events": 52, "error_rate": 0.019230769230769232},
+      {"day": "2026-11-05", "error_type": "page_not_found_viewed", "error_class": "rejected", "errors": 2, "total_events": 52, "error_rate": 0.038461538461538464}
+    ],
+    "page_load_latency_by_route": [
+      {"day": "2026-11-05", "route_template": "/incident-manager", "outcome": "data", "loads": 1, "avg_ms": 259.0, "max_ms": 259.0},
+      {"day": "2026-11-05", "route_template": "/inventory/orders", "outcome": "data", "loads": 1, "avg_ms": 523.0, "max_ms": 523.0},
+      {"day": "2026-11-05", "route_template": "/inventory/products", "outcome": "data", "loads": 4, "avg_ms": 478.75, "max_ms": 674.0}
+    ],
+    "dominant_event_types": [
+      {"event_type": "page_viewed", "service": "backoffice", "events": 21, "share": 0.375},
+      {"event_type": "form_submitted", "service": "backoffice", "events": 10, "share": 0.17857142857142858},
+      {"event_type": "form_started", "service": "backoffice", "events": 8, "share": 0.14285714285714285},
+      {"event_type": "page_load_recorded", "service": "backoffice", "events": 6, "share": 0.10714285714285714},
+      {"event_type": "form_abandoned", "service": "backoffice", "events": 3, "share": 0.05357142857142857},
+      {"event_type": "page_not_found_viewed", "service": "backoffice", "events": 2, "share": 0.03571428571428571},
+      {"event_type": "direct_stock_edit_rejected", "service": "api", "events": 1, "share": 0.017857142857142856},
+      {"event_type": "form_validation_failed", "service": "backoffice", "events": 1, "share": 0.017857142857142856},
+      {"event_type": "inbound_order_created", "service": "backoffice", "events": 1, "share": 0.017857142857142856},
+      {"event_type": "outbound_order_created", "service": "backoffice", "events": 1, "share": 0.017857142857142856},
+      {"event_type": "stock_threshold_triggered", "service": "backoffice", "events": 1, "share": 0.017857142857142856},
+      {"event_type": "user_logged_out", "service": "backoffice", "events": 1, "share": 0.017857142857142856}
+    ],
+    "auth_failure_rate": [
+      {"day": "2026-11-05", "failed": 3, "succeeded": 3, "attempts": 6, "failure_rate": 0.5}
+    ]
+  }
+}
+```

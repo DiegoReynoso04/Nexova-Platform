@@ -109,6 +109,7 @@ Ningún agente commitea código sin completar estos cinco pasos, en orden:
    - **`services/telemetry/`** es una librería de la API: la imagen la copia junto a `app/` y se importa como `telemetry`. Sus reglas (sin bucles, los 6 pasos, `utc=True` antes del `groupby`) están en `tests/test_telemetry_analysis.py`, no en `test_architecture.py`, que solo mira `app/`.
    - **Dependencia:** `pandas`. Un cambio en `analysis.py` se valida con la fila de `services/api/`; al cambiar `requirements.txt`, `docker compose up -d --build` antes de cargar el código: con `--reload`, la API no arranca sin Pandas en la imagen.
    - **Un cambio en una métrica** se verifica también cuadrándola con `docs/telemetry/report-check.sql` en un Postgres efímero, con `report-seed-ephemeral.sql`. **El seed, nunca en la demo:** la tabla es inmutable.
+   - **Dashboard (`uis/backoffice` → `/telemetry`):** la fila de `uis/backoffice`, `npx next typegen` antes de `tsc`, y el navegador (`report-review.md` §9). Reglas en `uis/backoffice/CLAUDE.md`.
 
    **Directorio de proveedores de Nexova (`services/api` → `/suppliers`, `uis/backoffice` → `/suppliers`):** contexto en `docs/ligthweight-storage-api.md`; contrato en `services/api/SPECS.md` Parte B. La validación de `services/api` de la tabla cubre también los tests de proveedores; además, `docker compose exec api python -m app.seed` debe ejecutarse sin errores y ser idempotente. Un cambio en `/suppliers` se verifica también en el navegador (filtros, alta con 422, tarifa, estado).
 
