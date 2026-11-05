@@ -4,6 +4,23 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-05 — Reporte técnico de telemetría, F0: análisis y decisiones
+
+**Estado: hecho; el usuario tomó las decisiones D1–D14 el mismo día, con ajustes (cabecera de `docs/telemetry/report-analysis.md`).** Rama `feature/telemetry-report`, desde `main` en `fed0e39`. Solo documentación: `docs/telemetry/report-analysis.md` y esta entrada. Sin impacto técnico: ni código, ni `uis/`, ni dependencias (`techContext.md` no cambia).
+
+- **Consulta de solo lectura en la demo (autorizada):** 21 filas, 8 de los 15 tipos. `page_viewed` 8, `form_submitted` 4, `form_started` 3, `page_load_recorded` 2, y 1 de `direct_stock_edit_rejected`, `inbound_order_created`, `outbound_order_created` y `stock_threshold_triggered`. Los `tags` no se leyeron.
+- **Sin instalar nada:** `uv lock` y `uv export` en una copia temporal fuera del repo. Pandas no se ha ejecutado: lo dicho sobre él viene de leer su código.
+- **Hallazgos que no estaban en el ticket:**
+  - además de numpy, entran `python-dateutil` y `tzdata`, y numpy con dos versiones en el lock;
+  - con Docker, parar la API no genera `client_request_failed`: Next responde 500 (lectura de código, sin ejecutar);
+  - cambiar el código con el stack en marcha tira la API hasta reconstruir la imagen (`--reload` y bind mount);
+  - `suppressed_count`: una fila con throttle puede ser muchos fallos;
+  - `/telemetry` y `/telemetry/report` no están en los enums del contrato.
+- **Recomendado:** `analysis.py` real en `services/telemetry/`, copiado junto a `app`; `ResponseCache` con la clave recibida; login por `form_submitted`; eventos de negocio solo en el volumen; dashboard al final. Detalle en el documento, §8.
+- **Siguiente:** F1, según el §6 del documento, con sus 4 paradas.
+
+---
+
 ## 2026-11-04 — Almacenamiento de telemetría, F1: colector real y tabla `telemetry_events`
 
 **Estado: hecho y verificado por el usuario en el efímero y en la demo; demo migrada el 2026-11-05; PR `feat: telemetry event storage` abierta contra `main`, pendiente de que el usuario suba la captura de Supabase y de la revisión.** Rama `feature/telemetry-storage`. El colector se sustituyó sin tocar `uis/`, `TelemetryEvent`, `event-schemas.json` ni `schemaVersion`, y sin dependencias nuevas.
