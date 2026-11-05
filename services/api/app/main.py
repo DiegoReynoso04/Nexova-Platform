@@ -32,6 +32,7 @@ from app.modules.incidents.router import router as incidents_router
 from app.modules.incidents.store import LastResultStore
 from app.modules.inventory.database import build_engine, inventory_lifespan
 from app.modules.inventory.router import router as inventory_router
+from app.modules.telemetry.collector import EventRateLimiter
 from app.modules.telemetry.router import TELEMETRY_EVENTS_PATH, TELEMETRY_MAX_BODY_BYTES
 from app.modules.telemetry.router import router as telemetry_router
 from app.modules.telemetry.stock_edit import StockEditReporter
@@ -78,6 +79,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.email_sender = build_email_sender(settings)
     # Telemetría (P7): `direct_stock_edit_rejected` desde los handlers de error.
     app.state.stock_edit_reporter = StockEditReporter(settings, app.state.inventory_engine)
+    # Throttle del colector (plan §7.2): en memoria, uno por app; exige --workers 1.
+    app.state.telemetry_rate_limiter = EventRateLimiter()
 
     install_error_handlers(app)
     # Rutas existentes con datos sensibles: todas exigen un JWT válido (AUTH-01).
@@ -94,8 +97,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router, prefix="/auth")
     app.include_router(users_router, prefix="/users")
     app.include_router(profiles_router, prefix="/profiles")
-    # Telemetría (ticket de captura), fase stub: pública a propósito (sendBeacon
-    # no lleva Authorization) y sin persistencia. Ver app/modules/telemetry/router.py.
+    # Colector de telemetría: público a propósito (sendBeacon no lleva
+    # Authorization). Guarda en `telemetry_events`. Ver app/modules/telemetry/router.py.
     app.include_router(telemetry_router)
     configure_telemetry_logger()
 

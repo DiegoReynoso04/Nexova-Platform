@@ -33,6 +33,7 @@ from app.modules.inventory.database import (
     init_db,
 )
 from app.modules.inventory.models import INVENTORY_TABLES, Asset, AssetEntry, AssetExit
+from app.modules.telemetry.models import TELEMETRY_EVENTS_TABLE
 
 from .support import APP_DIR, TEST_DATABASE_URL, capture_logs, with_test_auth
 
@@ -188,7 +189,8 @@ class EngineTests(unittest.TestCase):
 
 class SchemaTests(unittest.TestCase):
     def test_only_the_three_inventory_tables_and_no_users_table(self) -> None:
-        self.assertEqual(set(SQLModel.metadata.tables), INVENTORY_TABLE_NAMES)
+        # `telemetry_events` comparte la base y la metadata, pero `init_db` no la crea (D3).
+        self.assertEqual(set(SQLModel.metadata.tables), INVENTORY_TABLE_NAMES | {TELEMETRY_EVENTS_TABLE})
         self.assertEqual({table.name for table in INVENTORY_TABLES}, INVENTORY_TABLE_NAMES)
         for table in INVENTORY_TABLES:
             self.assertNotIn("user_id", table.columns)
@@ -347,12 +349,14 @@ class NoGlobalSessionTests(unittest.TestCase):
                     owners.append(f"{path.relative_to(APP_DIR).as_posix()}:{function.name}")
         # get_db (una sesión por petición), el seed (una sesión por ejecución del
         # comando) y la oficina del activo de `direct_stock_edit_rejected` (P7):
-        # el 405 llega antes de las dependencias, así que no hay `get_db`.
+        # el 405 llega antes de las dependencias, así que no hay `get_db`. Por lo
+        # mismo, el guardado de ese evento (D8) abre la suya.
         self.assertEqual(
             owners,
             [
                 "modules/inventory/database.py:get_db",
                 "modules/inventory/seed.py:_seed_database",
+                "modules/telemetry/collector.py:store_api_event",
                 "modules/telemetry/stock_edit.py:_office_of",
             ],
         )

@@ -842,24 +842,37 @@ Medición inicial y decisiones D1–D11 (tomadas por el usuario el 2026-10-31): 
 
 ---
 
-# Parte H — Telemetría: colector stub y `direct_stock_edit_rejected` (ticket de captura)
+# Parte H — Telemetría: colector, `direct_stock_edit_rejected` y almacenamiento
 
 Plan y esquemas (el contrato): [`docs/telemetry/telemetry-plan.md`](../../docs/telemetry/telemetry-plan.md) y [`docs/telemetry/event-schemas.json`](../../docs/telemetry/event-schemas.json). Análisis y decisiones del ticket (D1 «A ligera», D2–D9, C4–C9): [`docs/telemetry/capture-analysis.md`](../../docs/telemetry/capture-analysis.md). Guía de revisión: [`docs/telemetry/capture-review.md`](../../docs/telemetry/capture-review.md).
 
-## 45. `POST /telemetry/events` (stub)
+## 45. `POST /telemetry/events`
 
-- **Qué hace:** valida el formato, registra el lote y responde. **No persiste nada:** la persistencia es del ticket de almacenamiento, que sustituirá el stub sin que el frontend cambie (no lee el cuerpo de la respuesta).
-- **Pública a propósito:** `navigator.sendBeacon` no puede llevar `Authorization`, y un 401 haría que el backoffice cerrase la sesión. Un token, si llega, se ignora.
-- **Body:** `{"events": [TelemetryEvent, …]}`, de 1 a 50 eventos y ≤ 64 KiB (`BodySizeLimitMiddleware` con `path_limits`; por encima, 413 `file_too_large`).
-- **`TelemetryEvent`** (`app/modules/telemetry/schemas.py`): las 8 claves del envelope del plan (§5), ni una más (`extra="forbid"`), con los patrones del JSON:
-  - `eventId`, `sessionId`, `userId`, `requestId`: UUID v4 en minúsculas (los tres últimos admiten `null`);
-  - `timestamp`: ISO 8601 UTC con milisegundos y `Z`;
-  - `event_type`: el patrón de la taxonomía y uno de los 52 del catálogo (`app/modules/telemetry/catalog.py`, una copia del JSON que la suite compara con él, porque la imagen no incluye `docs/`). En la fase stub se acepta cualquier evento del catálogo; la restricción a los de emisor frontend es del colector definitivo (plan §2.4);
-  - `schemaVersion`: `1.0.0`;
-  - `properties`: un objeto JSON. La allowlist por evento es un paso posterior al envelope.
-- **Respuesta:** `200 {"received": N}`. Un lote con un evento inválido → 422 entero (el descarte uno a uno es del colector definitivo).
-- **Log:** una línea en `api.telemetry` por lote, con el número de eventos y sus `event_type` (vocabulario ya validado). Nunca `properties`, ids ni el cuerpo.
-- **`userId` y `sessionId`:** los pone el cliente desde los claims `sub` y `sid` del JWT y **no se verifican** (un beacon no lleva token). El colector definitivo los sustituirá por los del token cuando la petición traiga uno válido.
+Decisiones del ticket de almacenamiento (D1–D12, C1–C16): [`docs/telemetry/storage-analysis.md`](../../docs/telemetry/storage-analysis.md). Guía de revisión: [`docs/telemetry/storage-review.md`](../../docs/telemetry/storage-review.md).
+
+- **Qué hace:** valida cada item por separado y guarda los válidos en `telemetry_events` con un solo insert (§47). El frontend solo mira si la respuesta es 2xx.
+- **Pública a propósito:** `navigator.sendBeacon` no puede llevar `Authorization`, y un 401 haría que el backoffice cerrase la sesión. Un token, si llega y es válido, da la identidad.
+- **Body laxo:** `{"events": [...]}`, ≤ 64 KiB (`BodySizeLimitMiddleware` con `path_limits`; por encima, 413 `file_too_large`). `events` es un arreglo de valores JSON cualesquiera, nunca `list[TelemetryEvent]`.
+
+  | Entrada | Respuesta |
+  |---|---|
+  | Body no JSON, sin `events`, `events` no es una lista, o claves extra junto a `events` | 422 `validation_error` |
+  | `events: []` | `200 {"received": 0, "stored": 0, "rejected": 0}` |
+  | Más de 50 items | 200: se procesan los 50 primeros y el resto cuenta en `rejected` (`received` = total) |
+  | Item que no es objeto | 200: cuenta en `rejected` |
+  | La base no responde | 503 `storage_unavailable`: el frontend reintenta y la deduplicación lo absorbe |
+
+- **Respuesta:** `200 {"received": N, "stored": M, "rejected": R}`, siempre con `N = M + R`. `stored` cuenta los eventos que están en la tabla, también los que ya estaban: repetir un lote da la misma respuesta. **No es un 200 con todo en `rejected` si la base falla:** eso perdería el lote sin reintento.
+- **Pasos por evento** (`app/modules/telemetry/collector.py`, por este orden):
+  1. `TelemetryEvent.model_validate` (`schemas.py`, sin cambios): las 8 claves del envelope, `extra="forbid"`, los patrones del JSON y uno de los 52 del catálogo;
+  2. solo emisor frontend (`FRONTEND_EVENT_TYPES`, 14);
+  3. `requestId` no nulo y fecha real (`datetime.fromisoformat`): el patrón deja pasar `2026-13-45T99:99:99.000Z`;
+  4. `userId` y `sessionId`: los del token si la petición trae uno válido y son UUID v4; si no, los declarados. Los 5 eventos autenticados exigen los dos no nulos;
+  5. allowlist (`allowlists.py`, copia de 15 eventos del JSON comprobada por la suite, porque la imagen no incluye `docs/`): **una clave de más se quita y el evento se guarda; un valor inválido, una clave que falta o una oficina y moneda incoherentes rechazan el evento**. Cubre `NaN`, `Infinity` y `\u0000`, que harían fallar el insert de todo el lote;
+  6. `timestamp`: el del cliente a ±5 min de la recepción; si no, el de recepción (nunca un rechazo);
+  7. throttle: 120 eventos/min por token (`sub`) o en total para los anónimos, en memoria (`--workers 1`). Solo gastan cupo los válidos; el exceso cuenta en `rejected`.
+- **Log:** una línea en `api.telemetry` por lote, con los contadores (también duplicados y claves quitadas) y los `event_type` guardados. Nunca `properties`, ids, nombres de clave ni el cuerpo.
+- **Sin migrar:** en PostgreSQL, el insert falla con `ProgrammingError` → 500, y el frontend descarta el lote tras los reintentos.
 
 ## 46. `direct_stock_edit_rejected` (P7): el único evento que emite la API
 
@@ -870,6 +883,27 @@ La interfaz no tiene ninguna forma de intentar editar el stock: solo la API lo v
   - un `POST` de alta del inventario con `current_stock` en el body → 422 `extra_forbidden` (solo con token: sin él, 401 antes).
 - **Dónde:** `app/modules/telemetry/stock_edit.py` (`StockEditReporter`, en `app.state`). Lo llaman los handlers de 405 y 422 de `app/core/errors.py`, que no importan ni el inventario ni la telemetría. **Nunca cambia la respuesta ni lanza.**
 - **Datos:** identidad con `read_token_claims` (sin TinyDB); oficina del activo con una sesión propia (el 405 llega antes de `get_db`); `quantity` solo si el `input` de `current_stock` es un entero. Nunca el body, el `detail` ni el token.
-- **Salida:** una línea JSON por evento en el logger `nexova.telemetry` (`app/core/telemetry.py`), con el envelope del plan. `requestId` propio mientras no exista `X-Request-ID` (P5).
+- **Salida:** una línea JSON por evento en el logger `nexova.telemetry` (`app/core/telemetry.py`), con el envelope del plan, y una fila en `telemetry_events` con `service='api'`, por la misma validación y la misma función de guardado que el colector. Si falla, la respuesta no cambia y el evento queda solo en el log (`telemetry event not stored: <Clase>` en `api.telemetry`). `requestId` propio mientras no exista `X-Request-ID` (P5).
 - **Throttle:** uno cada 60 s por (usuario o anónimo, plantilla, método), con `suppressed_count`; en memoria (`--workers 1`).
 
+## 47. Tabla `telemetry_events`
+
+El enunciado fija `event_type`, `timestamp`, `service`, `tags` y sus 3 índices. **El resto del esquema es decisión nuestra** (D1): el enunciado anuncia la estructura y no la incluye. Modelo: `app/modules/telemetry/models.py`.
+
+| Columna | Tipo | NULL | Sale de |
+|---|---|---|---|
+| `event_id` | `UUID` PK | no | `eventId` |
+| `event_type` | `VARCHAR(64)` | no | `event_type` |
+| `timestamp` | `TIMESTAMPTZ` | no | `timestamp`, tras la regla de ±5 min |
+| `service` | `VARCHAR(16)`, `CHECK` en `backoffice`, `api` | no | Lo pone el servidor: `backoffice` lo que entra por el colector, `api` lo que emite la API |
+| `user_id` | `UUID` | sí | `userId`, o `sub` del token |
+| `session_id` | `UUID` | sí | `sessionId`, o `sid` del token |
+| `schema_version` | `VARCHAR(16)` | no | `schemaVersion` |
+| `tags` | `JSONB` | no | `properties`, filtrado por la allowlist. Los `null` se conservan |
+
+- **Sin guardar:** `requestId`, que hoy es un UUID aleatorio por evento (P5 pendiente).
+- **Índices:** `event_type`, `timestamp` y GIN en `tags` (`jsonb_ops`). La PK es un cuarto índice, inevitable para deduplicar.
+- **Insert:** una sola sentencia por lote (`INSERT … VALUES (…), (…) ON CONFLICT (event_id) DO NOTHING`).
+- **Inmutable:** la API no tiene `UPDATE` ni `DELETE`. En la base, `REVOKE UPDATE, DELETE, TRUNCATE` a `PUBLIC`, al rol de la API y a `anon`, `authenticated` y `service_role`. RLS sin políticas cierra además la Data API, pero **no frena a la API**: conecta como dueña y, en Supabase, con `BYPASSRLS`. El rol de la demo no es superusuario ni miembro de `pg_write_all_data` (comprobado el 2026-11-04), así que el `REVOKE` sí le afecta.
+- **Creación:** `python -m app.modules.telemetry.migrate [--dry-run]`, nunca al arrancar ni en `init_db` (D3): el stack apunta a la demo y crearía la tabla sin confirmación. Idempotente, en una transacción y solo PostgreSQL. Se niega con un superusuario y deshace todo si, tras el `REVOKE`, un rol conserva permisos de escritura.
+- **Retención:** 90 días, como operación de administración (plan §8.3).

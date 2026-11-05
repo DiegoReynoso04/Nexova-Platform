@@ -5,8 +5,9 @@ La API solo emite lo que la interfaz no puede provocar: `direct_stock_edit_rejec
 devuelve la API; los derivados que necesita (`supplier_key`, `currency`, la
 oficina en minúsculas) se calculan aquí para que no se repitan.
 
-`emit` construye el envelope del plan (§5) y lo escribe con
-`app.core.telemetry.log_event`. Nunca lanza.
+`emit` construye el envelope del plan (§5), lo escribe con
+`app.core.telemetry.log_event` y lo entrega a `sink` (el guardado en la tabla,
+D8). Nunca lanza.
 """
 
 import hashlib
@@ -83,20 +84,22 @@ def emit(
     user_id: str | None,
     session_id: str | None,
     request_id: str | None = None,
+    sink: Callable[[Mapping[str, object]], None] | None = None,
 ) -> None:
     """Escribe un evento con el envelope del plan. `requestId` propio si no hay `X-Request-ID` (P5 pendiente)."""
     try:
-        log_event(
-            {
-                "eventId": str(uuid4()),
-                "timestamp": utc_timestamp(),
-                "sessionId": session_id,
-                "userId": user_id,
-                "event_type": event_type,
-                "schemaVersion": SCHEMA_VERSION,
-                "requestId": request_id or str(uuid4()),
-                "properties": dict(properties),
-            }
-        )
+        event = {
+            "eventId": str(uuid4()),
+            "timestamp": utc_timestamp(),
+            "sessionId": session_id,
+            "userId": user_id,
+            "event_type": event_type,
+            "schemaVersion": SCHEMA_VERSION,
+            "requestId": request_id or str(uuid4()),
+            "properties": dict(properties),
+        }
+        log_event(event)
+        if sink is not None:
+            sink(event)
     except Exception:  # noqa: BLE001 — la telemetría nunca rompe la petición
         return
