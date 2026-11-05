@@ -12,7 +12,7 @@ Rama `feature/telemetry-storage`. Decisiones en [`storage-analysis.md`](./storag
 | Rechazo individual | `collector.py` (`_frontend_row`) | Hecho |
 | `TelemetryEvent` sin cambios | `schemas.py:1-66` | Hecho: ver el `diff` de §3 |
 | Frontend sin cambios | — | Hecho: `git diff main --stat -- uis/` vacío |
-| `event_type`, `timestamp` y `tags` poblados en eventos técnicos y de negocio | `test_telemetry_storage.py` | Hecho en la suite; falta la verificación en el navegador (§4) |
+| `event_type`, `timestamp` y `tags` poblados en eventos técnicos y de negocio | `test_telemetry_storage.py` | Hecho: verificado por el usuario en el efímero y en la demo (§4 y §5) |
 | `tags` conserva las allowlists y las dimensiones del BRIEFING | `allowlists.py`, comparada con el JSON | Hecho; `product_category` y `programme_id` se guardan como JSON `null` |
 
 **El esquema es decisión nuestra:** el enunciado anuncia la estructura y el mapeo, pero no los incluye. Solo fija `event_type`, `timestamp`, `service` y `tags`.
@@ -55,6 +55,15 @@ git diff main --stat -- uis/
 ## 4. Recorrido (Fase 3)
 
 **El lote mixto, solo en un Postgres efímero:** en la demo dejaría filas falsas que la API no puede borrar. Sin Docker Desktop en marcha no hay efímero.
+
+**Verificado por el usuario el 2026-11-04** en un Postgres efímero, ya borrado:
+
+- **Recorrido real:** 35 filas, con `inbound_order_created`, `outbound_order_created`, `stock_threshold_triggered` y los técnicos con `service = 'backoffice'`, y `direct_stock_edit_rejected` con `service = 'api'`. Las 6 dimensiones en `tags`, con `product_category` y `programme_id` presentes en `null`. Sin datos personales.
+- **Lote mixto:** `{"received":10,"stored":3,"rejected":7}`, dos veces. La segunda no creó filas nuevas (38 antes y después). `del_lote = 3` y `con_email = 0`.
+- **Cuerpos límite:** todos como en §4.3.
+- **Índices:** los 3 pedidos y la PK.
+
+**Para repetirlo:** con un Postgres efímero, un rol sin superusuario y un override de Compose fuera del repo. En PowerShell 5.1, el JSON va en un archivo y se envía con `curl.exe --data-binary "@archivo"`: esa versión quita las comillas dobles al pasar argumentos.
 
 ### 4.1 Recorrido real
 
@@ -110,7 +119,21 @@ La última debe dar 0. `tags ? 'product_category'` debe ser verdadero aunque el 
 
 ## 5. Base de la demo
 
-Solo con la confirmación del usuario y **antes** de que el stack normal cargue este código: sin la tabla, los lotes dan 500 y se pierden. Desde `services/api`, con la `DATABASE_URL` de la demo:
+### 5.1 Resultado (migrada el 2026-11-05, con la confirmación del usuario)
+
+- **Migración:** el dry-run mostró las 6 sentencias previstas; se aplicaron en una transacción y una segunda ejecución dijo «Nada que migrar».
+- **Comprobado en una transacción `READ ONLY`, antes y después:** iguales los conteos (6 activos, 5 entradas y 5 salidas), el stock por activo (12/1/0/7/15/0), las huellas md5 de las tres tablas y la del esquema del inventario.
+- **Tabla nueva:** 8 columnas, 4 índices, RLS activo. `postgres`, `anon`, `authenticated` y `service_role`, solo con `SELECT` e `INSERT`.
+- **Stack:** `docker compose up -d` sin override, después de migrar: la API nunca apuntó a la demo sin la tabla.
+- **Recorrido real del usuario:** 21 filas, sin ninguna del lote mixto.
+  - negocio: `inbound_order_created` (Valencia, EUR, con `unit_cost` y `supplier_key`), `outbound_order_created` y `stock_threshold_triggered` (Miami, USD, de 7 a 4 con mínimo 5);
+  - técnicos: `page_viewed`, `page_load_recorded`, `form_started` y `form_submitted`, con un login fallido (`api_rejected`) seguido de uno correcto;
+  - API: `direct_stock_edit_rejected`.
+- **El stock de la demo cambió con ese recorrido** (la Entrada y la Salida son reales) y no se ha restaurado.
+
+### 5.2 Para otra base
+
+Solo con la confirmación del usuario y **antes** de que el stack cargue este código: sin la tabla, los lotes dan 500 y se pierden. Desde `services/api`, con la `DATABASE_URL` de esa base:
 
 ```bash
 python -m app.modules.telemetry.migrate --dry-run
@@ -137,4 +160,4 @@ SELECT r, p, has_table_privilege(r, 'telemetry_events', p) FROM unnest(ARRAY['po
 - **Latencia del insert por el pooler de Supabase:** sin medir.
 - **El throttle y el cupo anónimo:** estimaciones sin datos reales.
 - **P1, P2, P5 y P6 completo.** `request_id` no se guarda.
-- **Un lote con eventos anteriores al login**, enviado después, queda atribuido al usuario que acaba de entrar.
+- **Un lote con eventos anteriores al login**, enviado después, queda atribuido al usuario que acaba de entrar (C3, efecto aceptado). Ejemplo real de la demo: el `form_submitted` del login fallido (`api_rejected`) lleva el `user_id` del usuario, porque el lote salió cuando ya tenía el token del segundo intento.

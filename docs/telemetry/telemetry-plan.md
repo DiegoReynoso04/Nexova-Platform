@@ -1452,7 +1452,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 |---|---|---|---|
 | `form` | `enum` | sí | Formulario. Valores: `login`, `register`, `forgot_password`, `reset_password`, `change_password`, `profile`, `supplier_create`, `incident_create`, `incident_analysis_upload`, `inbound_order`, `outbound_order`. |
 | `outcome` | `enum` | sí | Resultado según el `kind` del error del servicio. Valores: `success`, `validation_error`, `api_rejected`, `session_expired`, `network_error`, `server_error`. |
-| `duration_ms` | `integer` | sí | Tiempo desde `form_started`. |
+| `duration_ms` | `integer` | sí | Tiempo desde `form_started`, con un tope de 86.400.000 ms (24 h). |
 | `attempt_number` | `integer` | sí | Envíos desde `form_started` (1 = a la primera). |
 
 ```json
@@ -1490,7 +1490,7 @@ Allowlist vacía: `properties` es `{}` y cualquier clave se rechaza.
 | `last_field` | `string \| null` | sí | Nombre del último campo tocado; `null` si no se sabe. Patrón `^[a-z_]+$`. |
 | `had_validation_error` | `boolean` | sí | Si llegó a ver un error de validación. |
 | `had_api_error` | `boolean` | sí | Si llegó a ver un error de la API. |
-| `duration_ms` | `integer` | sí | Tiempo desde `form_started`. |
+| `duration_ms` | `integer` | sí | Tiempo desde `form_started`, con un tope de 86.400.000 ms (24 h). |
 
 ```json
 {
@@ -2415,7 +2415,7 @@ Todo en memoria del proceso de la API (P6) o de la pestaña del navegador (P8).
 ### 8.3 Retención (D9)
 
 - **Eventos en bruto** (con `userId`, `sessionId`, `target_user_id` o `requestId`): **90 días**. Después se borran o se agregan.
-  - **Fecha límite: 2027-02-02** (90 días desde 2026-11-04, cuando se creó el almacén; se ajusta si la tabla de la demo se crea más tarde).
+  - **Fecha límite: 2027-02-03** (90 días desde 2026-11-05, cuando se creó la tabla en la demo).
   - **Condición: agregar antes de borrar.** Los agregados aún no existen: borrar sin ellos pierde el histórico del dashboard de L&D y del informe semanal.
   - **Es una operación de administración, fuera de la API y sin automatizar todavía.** `telemetry_events` es inmutable para el rol de la API (`REVOKE UPDATE, DELETE, TRUNCATE`): el trabajo de limpieza se concede `DELETE`, borra por `timestamp` y lo revoca en la misma transacción. Nunca se anonimiza con `UPDATE`.
 - **Agregados sin identificadores personales** (conteos por día, oficina, programa, categoría o ruta): **sin límite**. Son los que alimentan el dashboard de L&D y el informe semanal.

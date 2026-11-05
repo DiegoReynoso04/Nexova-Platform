@@ -326,7 +326,7 @@ Diseño sin código: [`docs/telemetry/telemetry-plan.md`](../docs/telemetry/tele
 Decisiones en `docs/telemetry/storage-analysis.md`; revisión en `docs/telemetry/storage-review.md`; contrato en `services/api/SPECS.md` Parte H. Solo lo permanente:
 
 - **`POST /telemetry/events`:** público, valida cada item por separado (`collector.py`) y responde `200 {received, stored, rejected}`. `TelemetryEvent` no se toca: las reglas del plan son un paso posterior.
-- **Tabla `telemetry_events`:** PostgreSQL, en la misma base que el inventario, con su motor y su `get_db`. **No está en `init_db`:** solo con `python -m app.modules.telemetry.migrate`, porque el stack apunta a la demo. Sin la tabla, el colector da 500.
+- **Tabla `telemetry_events`:** PostgreSQL, en la misma base que el inventario, con su motor y su `get_db`. **No está en `init_db`:** solo con `python -m app.modules.telemetry.migrate`, porque el stack apunta a la demo. Sin la tabla, el colector da 500. La demo ya la tiene (2026-11-05).
 - **Inmutable con `REVOKE`, no con RLS:** el rol de la API es dueño y, en Supabase, tiene `BYPASSRLS`. Un Postgres efímero necesita un rol sin superusuario para que la prueba valga.
 - **`allowlists.py`:** copia de 15 eventos del JSON, comprobada por la suite. Con Pydantic, porque `test_architecture.py` prohíbe `re`; solo 15, porque los 52 chocan con el vocabulario del gestor.
 - **El throttle (`EventRateLimiter`)** vive en memoria: exige `--workers 1`, como la caché.

@@ -6,7 +6,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-04 — Almacenamiento de telemetría, F1: colector real y tabla `telemetry_events`
 
-**Estado: implementado y validado; pendiente de la verificación del usuario en el efímero (recorrido real y lote mixto). La demo sigue sin migrar y no hay push ni PR.** Rama `feature/telemetry-storage`. El colector se sustituyó sin tocar `uis/`, `TelemetryEvent`, `event-schemas.json` ni `schemaVersion`, y sin dependencias nuevas.
+**Estado: hecho y verificado por el usuario en el efímero y en la demo; demo migrada el 2026-11-05; PR `feat: telemetry event storage` abierta contra `main`, pendiente de que el usuario suba la captura de Supabase y de la revisión.** Rama `feature/telemetry-storage`. El colector se sustituyó sin tocar `uis/`, `TelemetryEvent`, `event-schemas.json` ni `schemaVersion`, y sin dependencias nuevas.
 
 - **Decisiones del usuario:** D1–D3 y D5–D10, D12 como se recomendaron; D4 = B; D11 en su variante literal (`events: []` → 200 con ceros; más de 50 → los 50 primeros y el resto en `rejected`). Detalle en `docs/telemetry/storage-analysis.md`.
 - **Rol de la demo (consultas de solo lectura autorizadas):** `postgres`, `rolsuper = false`, `rolbypassrls = true`, no es miembro de `pg_write_all_data` (sí de `pg_read_all_data`). `anon`, `authenticated` y `service_role` heredan todos los privilegios de una tabla nueva.
@@ -17,9 +17,11 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - documentación: plan §1.6, §2.4, §7.3, §8.3 y §8.4, SPECS Parte H (§45 y §47), README, TESTING, `AGENTS.md`, `docs/telemetry/storage-review.md` y la corrección de `capture-review.md`.
 - **Validación:** `unittest` 598 OK, `pytest` 801 passed, `validate_event_schemas.py` OK, el `diff` de C2 sin cambios, `git diff main --stat -- uis/` vacío y sin cambios en dependencias.
 - **En PostgreSQL real (efímero, rol sin superusuario):** migración (dry-run, aplicar, segunda sin cambios), `permission denied` en `UPDATE`, `DELETE` y `TRUNCATE`, un rol como el de la demo, las dos negativas, y el colector entero (lote mixto 10/3/7 dos veces, vacío, 51 items, `PUT` → fila `api`, `null` conservados).
-- **Entorno de verificación:** efímero recreado limpio (`nexova-telemetry-pg`, `127.0.0.1:55433`, solo la base `nexova_test`, 0 eventos, los 6 activos del CONTEXT sin órdenes). Stack con un override de Compose fuera del repo. `TELEMETRY_SUPPLIER_KEY` presente en `Settings`, sin leer el valor.
+- **Verificación del usuario en el efímero:** recorrido real (35 filas), lote mixto 10/3/7 dos veces sin filas nuevas, cuerpos límite de D11 e índices. Después, efímero borrado (contenedor, volumen, red, override y contraseñas).
+- **Demo:** 6 sentencias aplicadas; conteos, stock, huellas del inventario y su esquema iguales antes y después. Stack normal sin override después de migrar. Recorrido real del usuario: 21 filas (negocio, técnicos y API), sin lote mixto. **El stock de la demo cambió con ese recorrido** y no se ha restaurado.
+- **Cierre:** fecha límite de retención 2027-02-03 (plan §8.3) y tope de `duration_ms` en el plan.
 - **Regla nueva del usuario:** nada fuera del repo (procesos, `%LOCALAPPDATA%`, configuración de Docker) sin preguntar. El 2026-11-04 Docker Desktop no arrancaba por sockets huérfanos y el agente renombró carpetas `run` y `docker-secrets-engine` a `*.broken-2026-11-04*`.
-- **Pendiente:** verificación del usuario; migrar la demo y el recorrido real ahí, cada uno con su confirmación; push y PR con su OK.
+- **Pendiente:** la captura de Supabase en la PR y la revisión. La retención sigue sin automatizar: hay que agregar antes de 2027-02-03.
 
 ---
 
