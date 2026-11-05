@@ -25,6 +25,7 @@ function SessionLinks({ placeholder = false }: { placeholder?: boolean }) {
       <NavLink href={INVENTORY_PRODUCTS_PATH} activePrefix={INVENTORY_PATH}>
         Inventario
       </NavLink>
+      <NavLink href="/telemetry">Telemetría</NavLink>
       <NavLink href={PROFILE_PATH}>Mi perfil</NavLink>
     </>
   );

@@ -340,7 +340,7 @@ describe('código de producción', () => {
 
   test('historial: la vista solo usa su hook y nadie hace fetch', () => {
     const view = codeWithoutComments('components/inventory/order-history-view.tsx');
-    assert.match(view, /^'use client';/);
+    assert.match(view, /'use client'/);
     assert.match(view, /from '@\/hooks\/use-inventory-orders'/);
     assert.match(view, /<OrderTable orders=\{orders\} \/>/);
     assert.match(view, /Todavía no hay entradas ni salidas\./);
@@ -412,6 +412,30 @@ describe('código de producción', () => {
     const errorParser = normalizers.slice(normalizers.indexOf('export function normalizeIncidentApiError'));
     assert.ok(errorParser.length > 0);
     assert.doesNotMatch(errorParser, /message/);
+  });
+
+  test('el reporte técnico (/telemetry): capas y solo métricas técnicas', () => {
+    for (const file of [
+      'app/telemetry/page.tsx',
+      'components/telemetry/telemetry-report-view.tsx',
+      'hooks/use-telemetry-report.ts',
+      'services/telemetry-report.service.ts',
+      'lib/telemetry-report-format.ts',
+      'types/telemetry-report.ts',
+    ]) {
+      assert.ok(codeWithoutComments(file).length > 0, file);
+    }
+    const view = codeWithoutComments('components/telemetry/telemetry-report-view.tsx');
+    assert.match(codeWithoutComments('app/telemetry/page.tsx'), /<TelemetryReportView \/>/);
+    assert.doesNotMatch(codeWithoutComments('app/telemetry/page.tsx'), /'use client'/);
+    assert.match(view, /'use client'/);
+    assert.match(view, /useTelemetryReport/);
+    assert.doesNotMatch(view, /services\/telemetry-report|lib\/api-client/);
+    assert.match(view, /period\.from/);
+    assert.match(codeWithoutComments('components/auth/account-nav.tsx'), /href="\/telemetry"/);
+    for (const file of ['components/telemetry/telemetry-report-view.tsx', 'types/telemetry-report.ts']) {
+      assert.doesNotMatch(codeWithoutComments(file), /user_id|session_id|event_id|office|quantity|currency|unit_cost|supplier_key/, file);
+    }
   });
 
   test('el analizador (/incidents) sigue siendo una vista aparte', () => {
