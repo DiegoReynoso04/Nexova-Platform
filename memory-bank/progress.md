@@ -6,7 +6,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-05 — Reporte técnico de telemetría, F1: análisis, endpoint y caché
 
-**Estado: en curso; pasos 1 a 4 hechos y en la Parada 2, esperando la verificación del usuario en el efímero.** Rama `feature/telemetry-report`, sin push ni PR. Falta la demo (Parada 3) y el dashboard (Parada 4).
+**Estado: en curso; Parada 2 verificada por el usuario, en la Parada 3 esperando su OK para la demo.** Rama `feature/telemetry-report`, sin push ni PR. Falta la demo (Parada 3) y el dashboard (Parada 4).
 
 - **Hecho:**
   - `pandas` en `services/api` (con `numpy`, `python-dateutil` y `tzdata`, autorizadas); imagen de 337 a 476 MB en disco (+29 MB comprimida);
@@ -17,7 +17,9 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 - **Validación:** `unittest` 686 OK, `pytest` 889 passed, `validate_event_schemas.py` OK, 14 mutaciones detectadas.
 - **PostgreSQL real (contenedor desechable, ya borrado):** `timestamp` con zona y `tags` como `dict`; con la sesión en `Europe/Madrid`, mismo resultado; las 5 métricas coinciden con `report-check.sql`.
 - **Hallazgo:** un test arranca uvicorn en un subproceso, que no hereda `sys.path`: lleva `services/` en `PYTHONPATH`. uvicorn en el host necesita lo mismo.
-- **Pendiente:** §6 de `report-review.md` (Parada 2), la lista de eventos de la demo y el dashboard.
+- **Parada 2, verificada por el usuario en el efímero (2026-11-05):** `seeded = 50`; ventana por defecto y con fechas correctas, con el fin exclusivo; 401 y los tres 422; caché (mismo `period.to` y hash, 0,056 s → 0,013 s, y recalcula a los 61 s); las 5 métricas coinciden valor a valor con `report-check.sql`; sin identificadores; C15 confirmado (API parada → `/backend/health` da 500). Efímero borrado y stack de vuelta contra la demo. Detalle en `report-review.md` §6.10.
+- **Parada 3:** la lista de acciones, lo que no se verá y el JSON de la demo están en `report-review.md` §7. Con Offline, hay que recuperar la red antes de 5 s, no de 15: en el peor caso el lote solo aguanta unos 7 s.
+- **Pendiente:** el OK y la muestra de la demo; el dashboard.
 
 ---
 

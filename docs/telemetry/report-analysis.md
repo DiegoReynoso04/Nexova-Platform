@@ -371,7 +371,7 @@ Ver D10. **Efecto en el dashboard:** ninguno. `lib/api-client.ts` ya añade el B
 |---|---|---|
 | `page_not_found_viewed` | Con sesión, ir a una ruta inexistente | Sí: es verdadero e inocuo |
 | `form_submitted` con `api_rejected` | Login con contraseña mala | Sí; ya hay uno |
-| `client_request_failed` | DevTools → Network → Offline (C15) | Sí, con cuidado de tiempos |
+| `client_request_failed` | DevTools → Network → Offline (C15): recuperar la red antes de 5 s (`report-review.md` §7.2) | Sí, con cuidado de tiempos |
 | `form_validation_failed` | Enviar un formulario vacío | Sí |
 | `frontend_error_captured` | Solo con un fallo de render: ruta temporal, como en la auditoría | **No**: solo en el efímero |
 | `page_load_recorded` con `error` | Por sí solo no: API parada con `/inventory/products` | Solo en el efímero |
@@ -421,9 +421,9 @@ Ver D14.
 - **Consecuencia:** el navegador **recibe respuesta**: un 500. `api-client` no lanza `ApiNetworkError`, y los servicios lo tratan como `server_error` (p. ej. `suppliers.service.ts:166`). Sale `form_submitted` con `server_error`, pero **`client_request_failed`, no**.
 - **Por qué el repo parecía decir otra cosa:** la prueba «API parada → No se pudo conectar» (`docs/error-handling-audit.md:448`) es del 2026-10-10, con `next start` y conexión directa, anterior a `/backend` (#infra-40).
 
-**Esto es lectura de código, sin ejecutar:** parar la API es una acción que confirmas tú. Se comprueba en F1.
+**Verificado por el usuario el 2026-11-05:** con la API parada, `/backend/health` da `HTTP/1.1 500 Internal Server Error` (`report-review.md` §6.10).
 
-**Otro efecto:** si el evento se genera con la red caída, su lote también fallará. La cola envía a los 10 s, con reintentos a 1, 2 y 4 s, y después lo descarta (`capture-review.md:80-82`). **Hay que recuperar la red en unos 15 s** o se pierde.
+**Otro efecto:** si el evento se genera con la red caída, su lote también fallará. La cola envía a los 10 s, con reintentos a 1, 2 y 4 s, y después lo descarta (`capture-review.md:80-82`). **Hay que recuperar la red pronto** o se pierde: en el peor caso, si ya había un envío en marcha, solo quedan unos 7 s (`report-review.md` §7.2).
 
 **Y un efecto en el dato:** con Docker, una caída de la API se ve como `server_error`, no como `client_request_failed`. En el reporte seguirá apareciendo como `system`, pero en otra fila.
 
@@ -729,7 +729,7 @@ Cada paso termina con su validación de `AGENTS.md` §4. **Parada** significa qu
 
 - **Pandas sin ejecutar** (§1.6): `read_sql` con SQLAlchemy 2.1.5, el `DataFrame` de `tags` y el vacío con `reindex`. Es la primera prueba del paso 1.
 - **psycopg2 con `TIMESTAMPTZ` y `JSONB`:** documentado, sin ejecutar. La sonda sin conexión hizo fallar al intérprete y se descartó; se comprueba en el efímero.
-- **C15:** lectura de código; no se paró la API.
+- **C15:** lectura de código en F0; confirmado después por el usuario (`report-review.md` §6.10).
 - **Tamaño instalado de la imagen:** solo se conoce el de los wheels.
 - **`.pyd` de numpy y Pandas en el venv de Windows** (C2).
 - **Latencia del reporte contra Supabase:** una conexión y 5 consultas por el pooler, sin medir. La caché la limita a una vez por minuto y clave.

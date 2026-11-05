@@ -302,15 +302,158 @@ Remove-Variable su, app, token, auth, cred
 
 Si `docker compose up -d` no recrea `api`, añade `--force-recreate api`.
 
-## 7. Lo que queda fuera o sin verificar
+### 6.10 Resultado (verificado por el usuario el 2026-11-05)
 
-- **`frontend_error_captured` y `page_load_recorded` con `error` en la demo:** solo en el efímero (D13).
+Con esta receta, en un Postgres efímero, ya borrado:
+
+| Paso | Resultado |
+|---|---|
+| §6.3 | `seeded = 50` |
+| §6.5 ventana por defecto | 200, del `2026-10-29T23:19:03.760Z` al `2026-11-05T23:19:03.760Z`; D-3 (02/11) a 0 en los dos `service` y D-9 fuera |
+| §6.5 con fechas | Del 01/11 al 04/11: salen 01, 02 y 03, sin el 04 (fin exclusivo) |
+| §6.5 errores | 401 sin token; 422 con `start ≥ end`, con más de 90 días y con una fecha no válida |
+| §6.6 caché | c1 200 en 0,056 s; c2 200 en 0,013 s, con el mismo `period.to` y el mismo hash; a los 61 s, `period.to` distinto |
+| §6.7 cuadre | Las 5 métricas coinciden valor a valor con `report-check.sql`: `total_events` 24, 22 y 5; `/suppliers` 200/300 y 5000; 49 filas; 0,75 y 0,333… |
+| §6.7 privacidad | Ninguna coincidencia de `valencia`, `EUR`, `user_id`, `session_id`, `event_id` ni `quantity` |
+| §6.8 C15 | Con la API parada, `/backend/health` da `HTTP/1.1 500 Internal Server Error`: **C15 confirmado** |
+| §6.9 | Stack de vuelta contra la demo y `healthy`; efímero, volumen, red, override y variables borrados |
+
+## 7. Muestra en la demo (Parada 3)
+
+**Nada de esto se hace sin la confirmación del usuario.** Todo lo que se genera aquí queda para siempre en `telemetry_events`, por eso solo se usan acciones reales del backoffice: sin seed, sin `curl` al colector y sin Entradas ni Salidas, que cambiarían el stock.
+
+### 7.1 Antes de empezar
+
+- Stack contra la demo y `healthy`. Comprueba la base; esperado, `True`:
+
+  ```powershell
+  docker compose exec api python -c "import os; from urllib.parse import urlsplit; print((urlsplit(os.environ['DATABASE_URL']).hostname or '').endswith(('supabase.com', 'supabase.co')))"
+  ```
+
+- `http://localhost:3001` en una sola pestaña, con DevTools **acoplado** a ella, en Network, filtrando por `telemetry`.
+- **No cambies de pestaña ni minimices durante el paso 4:** al ocultarse, la cola sale por beacon, que no se reintenta, y sin red se pierde.
+- Cada lote sale a los 10 s como mucho. En Network, su respuesta debe ser `200` con `rejected: 0`.
+
+### 7.2 Acciones, en este orden
+
+| # | Dónde | Acción | Evento | Alimenta |
+|---|---|---|---|---|
+| 1 | Cabecera | «Cerrar sesión», si tienes sesión | `user_logged_out` | Volumen |
+| 2 | `/login` | «Iniciar sesión» con los campos vacíos | `form_started`, `form_validation_failed` (`login`) | `form_validation_failed` |
+| 3 | `/login` | Tu email y una contraseña mala | `form_submitted` `api_rejected` | `form_submitted:api_rejected`, `auth_failure_rate` |
+| 4 | `/login` | **Offline:** ver abajo | `form_submitted` `network_error`, `client_request_failed` (`network`, `POST`, `/auth/login`) | `form_submitted:network_error`, `client_request_failed` |
+| 5 | `/register` | Enlace «Crear cuenta»; tu email real y `abc` como contraseña; «Crear cuenta» | `form_submitted` `validation_error` (`register`) | `form_submitted:validation_error` |
+| 6 | `/register` | Enlace «Iniciar sesión», sin registrarte | `form_abandoned` (`register`) | Volumen y denominador |
+| 7 | `/login` | Login correcto | `form_submitted` `success` | `auth_failure_rate` |
+| 8 | Cabecera | Proveedores, Incidencias, Inventario (Activos) e Historial; espera a ver los datos, más de 1 s en cada una | `page_viewed` y `page_load_recorded` de las 4 rutas | `page_load_latency_by_route` |
+| 9 | Barra de direcciones | `http://localhost:3001/esta-ruta-no-existe` | `page_not_found_viewed` | `page_not_found_viewed` |
+| 10 | Inventario → Entrada de activos | «Registrar entrada» con el formulario vacío. **No lo rellenes** | `form_started`, `form_validation_failed` (`inbound_order`), sin petición | `form_validation_failed` |
+| 11 | Cabecera | Vuelve a Activos | `form_abandoned` (`inbound_order`) | Volumen y denominador |
+| 12 | — | Espera 15 s con la pestaña visible, hasta ver el último `200` | — | — |
+
+**Por qué el paso 5 no crea nada:** tu email ya existe (409) y `abc` no pasa la validación de la API (422): cualquiera de los dos lo rechaza.
+
+**Paso 4, Offline, con cuidado de los tiempos:**
+
+1. Escribe tu email y una contraseña mala. No pulses nada.
+2. Espera a que el último lote salga con `200` y deja pasar 12 s: la cola tiene que estar vacía.
+3. DevTools → Network → **Offline**.
+4. Pulsa «Iniciar sesión». Sale el aviso de que no se pudo conectar.
+5. Vuelve a **No throttling antes de 5 s**.
+6. Espera al `200`, y mira en su Payload que están los dos eventos.
+
+**Son 5 s, no 15.** Tras el primer envío, los reintentos son a 1, 2 y 4 s, y el lote se descarta (`lib/telemetry.ts:41`). Con la cola vacía, el envío sale a los 10 s y aguanta hasta unos 17 s. Si ya había un envío en marcha, solo unos 7 s. Con 5 s vale en los dos casos.
+
+**Si no aparecen:** repite el paso 4 pasado 1 minuto. `client_request_failed` tiene un throttle de 60 s por pestaña; lo perdido no se recupera y solo cuenta una fila más, así que no pasa nada.
+
+**Con la contraseña mala a propósito,** si Offline no se aplicara, la petición saldría y sería otro `api_rejected`. Por eso este paso va en el login y no en un formulario que escriba.
+
+### 7.3 Qué no se podrá ver en la demo
+
+| Dato | Por qué |
+|---|---|
+| `frontend_error_captured` | Necesita un fallo de render real; solo se provoca con una ruta temporal, que no se monta contra la demo. Lo cubre el efímero |
+| `page_load_recorded` con `error` | La página tendría que montarse con la API caída. Con la API parada, el colector también lo está y la API tarda más en volver que los reintentos: el evento se pierde. Offline no sirve: sin red, Next no carga la ruta. Lo cubre el efímero |
+| `form_submitted:server_error` | Mismo motivo: exige la API parada y el lote se perdería. Lo cubre el efímero |
+| `form_submitted:session_expired` | Exige que caduque el token con un formulario a medias. Lo cubre el efímero |
+| `client_request_failed` por `timeout` o `config` | Sin forma limpia de provocarlos en el navegador. Con `network` basta para la fila |
+| `kit_cost_variance_detected` y órdenes nuevas | Son negocio y cambiarían el stock. Solo cuentan en el volumen |
+| `form_started` y similares en proveedores e incidencias | `supplier_create` e `incident_create` están en el enum, pero sus formularios no usan `useFormTelemetry` |
+| Más de un día con datos | La demo solo tiene actividad reciente: `events_per_day` saldrá casi todo a 0. Es correcto, y enseña el relleno |
+
+`direct_stock_edit_rejected` no hace falta repetirlo: ya hay una fila dentro de la ventana.
+
+### 7.4 Token y JSON
+
+Solo lectura. Con tu usuario, sin que la contraseña quede en el historial. Si has llamado al reporte hace menos de 60 s, espera: saldría de la caché.
+
+```powershell
+$cred = Get-Credential -Message 'Usuario del backoffice'
+$login = @{ username = $cred.UserName; password = $cred.GetNetworkCredential().Password }
+$token = (Invoke-RestMethod -Method Post -Uri http://localhost:8000/auth/login -Body $login).access_token
+$login = $null
+$auth = "Authorization: Bearer $token"
+$out = Join-Path $env:TEMP 'nexova-report'
+New-Item -ItemType Directory -Force $out | Out-Null
+curl.exe -s -o "$out\demo.json" -w "%{http_code} %{time_total}s`n" -H $auth "http://localhost:8000/telemetry/report"
+$demo = Get-Content "$out\demo.json" -Raw | ConvertFrom-Json
+$demo.period
+```
+
+Esperado: `200`. El JSON queda en `$out\demo.json`, fuera del repo.
+
+### 7.5 Revisar que no lleva identificadores
+
+**1. Ni campos de negocio ni identificadores.** Esperado: ninguna línea.
+
+```powershell
+Select-String -Path "$out\demo.json" -Pattern 'user_id|session_id|event_id|userId|sessionId|office|product_id|product_category|programme_id|quantity|currency|unit_cost|supplier_key|stock_|valencia|miami|EUR|USD'
+```
+
+**2. Ningún UUID ni email.** Esperado: ninguna línea.
+
+```powershell
+Select-String -Path "$out\demo.json" -Pattern '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-|@'
+```
+
+**3. Solo las claves del contrato.**
+
+```powershell
+$demo.metrics.PSObject.Properties | ForEach-Object { '{0}: {1}' -f $_.Name, (($_.Value | ForEach-Object { $_.PSObject.Properties.Name } | Sort-Object -Unique) -join ', ') }
+```
+
+Esperado (sin filas, la lista sale vacía):
+
+```text
+events_per_day: day, events, service
+error_rate_by_type: day, error_class, error_rate, error_type, errors, total_events
+page_load_latency_by_route: avg_ms, day, loads, max_ms, outcome, route_template
+dominant_event_types: event_type, events, service, share
+auth_failure_rate: attempts, day, failed, failure_rate, succeeded
+```
+
+**4. Míralo entero** antes de pegarlo en la PR:
+
+```powershell
+notepad "$out\demo.json"
+```
+
+**Al terminar:**
+
+```powershell
+Remove-Variable cred, token, auth
+```
+
+Borra `$out` cuando la muestra esté en la PR.
+
+## 8. Lo que queda fuera o sin verificar
+
+- **Lo que no se puede ver en la demo:** §7.3; lo cubre el efímero.
 - **Latencia del reporte contra Supabase:** una conexión y 5 consultas por el pooler, sin medir.
-- **C15:** pendiente de §6.8.
 - **`/telemetry` y `/telemetry/report` fuera de los enums** (C14): la página no consta en su propia telemetría.
 - **P6:** cuando se emitan `api_latency_recorded`, `login_failed` y `user_logged_in`, cambian D4, D5 y D6.
 
-## 8. Borrador de la PR
+## 9. Borrador de la PR
 
 Título: `feat: telemetry report endpoint`. Falta la muestra de JSON real (Parada 3) y el dashboard (Parada 4).
 
@@ -335,4 +478,4 @@ Título: `feat: telemetry report endpoint`. Falta la muestra de JSON real (Parad
 >
 > **Efecto en la imagen:** de 337 a 476 MB en disco (+29 MB comprimida), por Pandas y numpy. Hay que ejecutar `docker compose up -d --build` al cambiar a esta rama.
 >
-> **Verificación:** _pendiente (Paradas 2 y 3)._
+> **Verificación:** las 5 métricas cuadradas valor a valor con SQL a mano en un Postgres efímero, con un seed ficticio de varios días (`report-review.md` §6.10). En la demo: _pendiente (Parada 3)._
