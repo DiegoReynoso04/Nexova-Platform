@@ -97,6 +97,14 @@ Análisis y opciones: [`storage-analysis.md`](./storage-analysis.md). Guía de r
 - **Riesgos aceptados:** eventos de negocio falsificables y cupo anónimo compartido (§8.4).
 - **Versión:** son cambios de texto y de transporte, no de esquema: **`1.0.0` no cambia**.
 
+### 1.7 Reporte técnico (decidido por el usuario el 2026-11-05)
+
+Análisis y opciones: [`report-analysis.md`](./report-analysis.md). Guía de revisión: [`report-review.md`](./report-review.md).
+
+- **`GET /telemetry/report`:** métricas técnicas calculadas con Pandas desde `telemetry_events`. Contrato en SPECS Parte H, §48.
+- **Sustitutos mientras no exista P6:** `page_load_recorded` en lugar de `api_latency_recorded`, `form_submitted` en lugar de `login_failed` y `user_logged_in`, y los eventos técnicos como denominador de la tasa de errores, porque las peticiones correctas no se emiten.
+- **Versión:** el reporte lee los eventos sin cambiarlos: **`1.0.0` no cambia**.
+
 ---
 
 ## 2. Prerrequisitos (D14)
@@ -2367,6 +2375,7 @@ Todo en memoria del proceso de la API (P6) o de la pestaña del navegador (P8).
 
 - **Este plan fija** la forma y el canal lógico de cada evento.
 - **Hecho en el ticket de almacenamiento:** los 14 eventos del frontend y `direct_stock_edit_rejected` llegan a `telemetry_events` (PostgreSQL; esquema en SPECS Parte H). Se valida cada evento antes de guardarlo, se descartan contando los inválidos y se deduplica por `eventId` (`ON CONFLICT DO NOTHING`). `direct_stock_edit_rejected` se guarda desde el proceso de la API, sin leer el log; su línea en `nexova.telemetry` se mantiene como rastro.
+- **Hecho en el ticket del reporte técnico:** `GET /telemetry/report` lee la tabla y sirve métricas técnicas (§1.7). No crea agregados: calcula sobre la ventana pedida.
 - **Pendiente para un ticket posterior:**
   - enviar los eventos stream a una ruta de alertas: hoy no existe ninguna, así que `stock_threshold_triggered` y `kit_cost_variance_detected` se guardan, pero nadie recibe un aviso;
   - consolidar los batch en el lote nocturno y crear los agregados.

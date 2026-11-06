@@ -342,3 +342,14 @@ En Git Bash, lo mismo con `MSYS_NO_PATHCONV=1` delante y `"$(pwd -W):/repo:ro"` 
   - `test_inventory_database` admite `telemetry_events` en la metadata y la sesión propia de `store_api_event`.
 - **Una sentencia por lote:** contar `before_cursor_execute` no basta, porque un `executemany` también dispara uno en SQLite. El test exige `executemany=False` y un grupo `VALUES` por fila.
 - **Lo que no se prueba en la suite** (necesita PostgreSQL): el efecto del `REVOKE`, `JSONB` y el rechazo de `\u0000`. Se comprobaron en un Postgres efímero, con un rol sin superusuario: el usuario por defecto de la imagen salta cualquier `REVOKE`.
+
+**Tras el ticket del reporte técnico de telemetría** (rama `feature/telemetry-report`, con el venv del host): `unittest` **686 OK** y `pytest` **889 passed**.
+
+- **Tests nuevos:**
+  - `test_telemetry_analysis.py`: cada métrica en `services/telemetry/analysis.py`, días a 0 y límites del rango, ventana en SQL, sin datos, tipos de Python y, por AST, la fórmula: sin bucles, los 6 pasos en orden y `to_datetime(utc=True)` antes de cualquier `groupby`;
+  - `test_telemetry_report.py`: forma, parámetros, autenticación y caché con reloj inyectado.
+- **Tests ajustados:**
+  - `test_serialization` pasa a 34 rutas;
+  - `test_inventory_startup` da `services/` por `PYTHONPATH` a su subproceso de uvicorn.
+- **`tests/__init__.py`** pone `services/` en `sys.path`: `services/telemetry` se importa como `telemetry`.
+- **Lo que no se prueba en la suite** (necesita PostgreSQL): `TIMESTAMPTZ` con zona y `JSONB` como `dict`. Receta en `docs/telemetry/report-review.md` §6.

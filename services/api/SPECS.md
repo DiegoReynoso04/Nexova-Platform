@@ -811,6 +811,7 @@ Medición inicial y decisiones D1–D11 (tomadas por el usuario el 2026-10-31): 
 | `GET /inventory/products/{id}` | `inventory` | `("product", id)` | 60 s | las mismas |
 | `GET /api/incidents` | `incidents` | `("list", IncidentFilters)`, los filtros **ya normalizados** por `validate_filters` | 30 s | `POST /api/incidents`, `PATCH /api/incidents/{id}/status` |
 | `GET /api/incidents/summary` | `incidents` | `"summary"` | 30 s | las mismas |
+| `GET /telemetry/report` | `telemetry_report` | `(start, end)` recibidos, en UTC; `(None, None)` en la ventana por defecto | 60 s | Ninguna: solo caduca (§48) |
 
 - **Implementación:** `app/core/cache.py` (`ResponseCache`), una instancia por app en `app.state.response_cache`. Diccionario en memoria, sin dependencias.
 - **Expulsión:** como máximo 64 entradas por espacio; al pasarse, sale la más antigua.
@@ -842,7 +843,7 @@ Medición inicial y decisiones D1–D11 (tomadas por el usuario el 2026-10-31): 
 
 ---
 
-# Parte H — Telemetría: colector, `direct_stock_edit_rejected` y almacenamiento
+# Parte H — Telemetría: colector, `direct_stock_edit_rejected`, almacenamiento y reporte
 
 Plan y esquemas (el contrato): [`docs/telemetry/telemetry-plan.md`](../../docs/telemetry/telemetry-plan.md) y [`docs/telemetry/event-schemas.json`](../../docs/telemetry/event-schemas.json). Análisis y decisiones del ticket (D1 «A ligera», D2–D9, C4–C9): [`docs/telemetry/capture-analysis.md`](../../docs/telemetry/capture-analysis.md). Guía de revisión: [`docs/telemetry/capture-review.md`](../../docs/telemetry/capture-review.md).
 
@@ -907,3 +908,43 @@ El enunciado fija `event_type`, `timestamp`, `service`, `tags` y sus 3 índices.
 - **Inmutable:** la API no tiene `UPDATE` ni `DELETE`. En la base, `REVOKE UPDATE, DELETE, TRUNCATE` a `PUBLIC`, al rol de la API y a `anon`, `authenticated` y `service_role`. RLS sin políticas cierra además la Data API, pero **no frena a la API**: conecta como dueña y, en Supabase, con `BYPASSRLS`. El rol de la demo no es superusuario ni miembro de `pg_write_all_data` (comprobado el 2026-11-04), así que el `REVOKE` sí le afecta.
 - **Creación:** `python -m app.modules.telemetry.migrate [--dry-run]`, nunca al arrancar ni en `init_db` (D3): el stack apunta a la demo y crearía la tabla sin confirmación. Idempotente, en una transacción y solo PostgreSQL. Se niega con un superusuario y deshace todo si, tras el `REVOKE`, un rol conserva permisos de escritura.
 - **Retención:** 90 días, como operación de administración (plan §8.3).
+
+## 48. `GET /telemetry/report`
+
+Decisiones del ticket del reporte técnico (D1–D14, C1–C17): [`docs/telemetry/report-analysis.md`](../../docs/telemetry/report-analysis.md). Guía de revisión: [`docs/telemetry/report-review.md`](../../docs/telemetry/report-review.md). Análisis: `services/telemetry/analysis.py`.
+
+- **Qué hace:** métricas **técnicas** de `telemetry_events`, calculadas con Pandas. No es un reporte de negocio: ninguna métrica lee `office`, `product_id`, `quantity`, `currency` ni el resto de dimensiones de negocio de `tags`, ni carga `user_id`, `session_id` o `event_id`. Los eventos de negocio solo cuentan como filas en `events_per_day` y `dominant_event_types`, sin cargar sus `tags`.
+- **Autenticación:** Bearer, cualquier rol, en la propia ruta: el router es público por el colector.
+- **Parámetros:** `start_date` y `end_date`, opcionales, ISO 8601.
+
+  | Entrada | Resultado |
+  |---|---|
+  | Ninguno | Los últimos 7 días |
+  | Solo `start_date` | Hasta ahora |
+  | Solo `end_date` | Los 7 días anteriores a esa fecha |
+  | Sin zona (`2026-11-01`, `2026-11-01T10:00:00`) | Se toma como UTC |
+  | Otra zona | Se convierte a UTC; en una URL, `+` se escribe `%2B`, o se usa `Z` |
+  | `start_date` ≥ `end_date` | 422 `validation_error` |
+  | Más de 90 días (la retención) | 422 `validation_error` |
+  | Fecha no válida | 422 `validation_error` |
+
+- **Periodo:** se resuelve una sola vez y se pasa a todas las métricas. Inicio inclusivo, fin exclusivo, en UTC y truncado a milisegundos.
+- **Respuesta:** `200 {"period": {"from", "to"}, "metrics": {...}}`, con `from` y `to` en el formato de `timestamp` del envelope (`2026-11-05T12:00:00.000Z`). `to` es exclusivo.
+
+  | Métrica | Registro | Sin datos |
+  |---|---|---|
+  | `events_per_day` | `day`, `service`, `events` | **Todos los días × `backoffice`/`api`, a 0** |
+  | `error_rate_by_type` | `day`, `error_type`, `error_class`, `errors`, `total_events`, `error_rate` | `[]` |
+  | `page_load_latency_by_route` | `day`, `route_template`, `outcome`, `loads`, `avg_ms`, `max_ms` | `[]` |
+  | `dominant_event_types` | `event_type`, `service`, `events`, `share`, de mayor a menor | `[]` |
+  | `auth_failure_rate` | `day`, `failed`, `succeeded`, `attempts`, `failure_rate` | `[]` |
+
+- **`day`:** día UTC, `YYYY-MM-DD`.
+- **`error_type`:** el `event_type`, con `:outcome` en `form_submitted` y `page_load_recorded`.
+- **`error_class`:** `system` (falló la plataforma: `client_request_failed`, `frontend_error_captured`, `page_load_recorded:error`, `form_submitted:network_error` y `:server_error`) o `rejected` (el sistema funcionó y dijo que no: el resto de `form_submitted`, `form_validation_failed`, `page_not_found_viewed` y `direct_stock_edit_rejected`).
+- **`error_rate`:** `errors / total_events`, donde `total_events` son los eventos técnicos del día (los 15 menos los 4 de negocio del frontend). **No es una tasa por petición:** las correctas no se emiten. Una fila con throttle cuenta `1 + suppressed_count`.
+- **`page_load_latency_by_route`:** `duration_ms` de `page_load_recorded`, la espera en el navegador. **No es latencia de la API:** `api_latency_recorded` no se emite.
+- **`auth_failure_rate`:** `form_submitted` con `form = login`. Fallo = `api_rejected`; intento = `success` + `api_rejected`. `login_failed` y `user_logged_in` no se emiten. Solo ve lo que pasa por el navegador.
+- **Sin redondeo:** las tasas salen con todos sus decimales; formatea quien presenta (`test_architecture.py` prohíbe `round` en `app/`).
+- **Caché:** §41. Clave: lo que pidió el cliente, porque con `now` dentro la ventana por defecto nunca acertaría. En esa ventana, `period` puede tener hasta 60 s. El colector no la invalida. Un 422 no llega a la caché y un 503 no se guarda.
+- **Errores:** 401 sin token; 503 `storage_unavailable` si la base no responde.

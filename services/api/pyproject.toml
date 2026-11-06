@@ -22,6 +22,9 @@ dependencies = [
     # AUTH-01 (autorizadas por el ticket): hash bcrypt con libpass (fork
     # mantenido de passlib; se importa como `passlib`) y firma JWT con python-jose.
     "libpass[bcrypt]>=1.9.3,<1.10",
+    # Reporte técnico de telemetría (autorizada por el ticket, con sus transitivas numpy,
+    # python-dateutil y tzdata): análisis en services/telemetry/analysis.py.
+    "pandas>=3.1,<3.2",
     # Hito 5 (autorizada por el enunciado): driver de PostgreSQL (Supabase) para SQLModel.
     "psycopg2-binary>=2.9.13,<2.10",
     "python-jose[cryptography]>=3.5,<3.6",

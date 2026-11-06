@@ -321,6 +321,16 @@ Diseño sin código: [`docs/telemetry/telemetry-plan.md`](../docs/telemetry/tele
 - **Esquemas:** JSON Schema draft-07. La comprobación permanente es `python scripts/validate_event_schemas.py` (librería estándar, subconjunto cerrado de palabras clave y coherencia con el plan). `ajv-cli@5.0.0` se ejecutó una vez con `npx`, sin tocar ningún `package.json`.
 - **Hallazgo técnico (F0):** `PUT`/`PATCH`/`DELETE` sobre `/inventory/products{,/{id}}` dan 405 **antes** de autenticar, porque Starlette no ejecuta las dependencias del router. Además, `Allow` solo lista `GET` en la colección.
 
+### Reporte técnico de telemetría (2026-11-05, rama `feature/telemetry-report`)
+
+Decisiones en `docs/telemetry/report-analysis.md`; revisión en `docs/telemetry/report-review.md`; contrato en `services/api/SPECS.md` Parte H (§48). Solo lo permanente:
+
+- **`pandas` en `services/api`** (autorizada por el ticket; entran `numpy`, `python-dateutil` y `tzdata`). `uv.lock` tiene dos `numpy`, por `requires-python >= 3.11`; la imagen usa la de Python ≥ 3.12.
+- **`services/telemetry/`** no es un servicio desplegable: es una librería de la API. La imagen la copia a `/app/api/telemetry`, Compose la monta y se importa como `telemetry`. En el host, `tests/__init__.py` pone `services/` en `sys.path`.
+- **`GET /telemetry/report`:** Bearer en la ruta, `ResponseCache` (espacio `telemetry_report`, 60 s, sin invalidación), clave con lo recibido. Ninguna métrica lee las dimensiones de negocio de `tags`.
+- **`test_architecture.py` solo mira `app/`:** las reglas de `analysis.py` están en `tests/test_telemetry_analysis.py`.
+- **Dashboard `/telemetry` en `uis/backoffice`:** sin librería de gráficos ni dependencias. La página y `/telemetry/report` no están en los enums del contrato, así que no constan en la telemetría (versión `1.0.0`). Reglas en `uis/backoffice/CLAUDE.md`.
+
 ### Almacenamiento de telemetría (ticket de almacenamiento, 2026-11-04, rama `feature/telemetry-storage`)
 
 Decisiones en `docs/telemetry/storage-analysis.md`; revisión en `docs/telemetry/storage-review.md`; contrato en `services/api/SPECS.md` Parte H. Solo lo permanente:

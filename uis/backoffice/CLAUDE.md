@@ -4,7 +4,7 @@ Fuente de verdad de negocio: `contexts/CONTEXT.md` si existe en tu checkout (car
 
 ## Alcance actual
 
-El backoffice tiene cinco piezas de negocio, y **solo estas cinco**, protegidas por la autenticación de AUTH-02 (sección propia abajo):
+El backoffice tiene cinco piezas de negocio, y **solo estas cinco**, más un reporte técnico (`/telemetry`, sección propia abajo), protegidas por la autenticación de AUTH-02 (sección propia abajo):
 
 1. **Vista de entrada (`/`)** — ficha de empresa y roadmap. Se mantiene tal cual.
 2. **Análisis de incidentes de soporte (`/incidents`)** — capacidad de negocio **autorizada** por el tech lead como Fase 3 del procesador de incidentes de Nexova (rama `feature/incident-analyzer`). Ver sección propia abajo.
@@ -163,6 +163,17 @@ Plan y esquemas (el contrato): [`docs/telemetry/telemetry-plan.md`](../../docs/t
 - **Privacidad:** solo plantillas de ruta (nunca el path real ni la query string), nombres de campo (nunca valores), ni el nombre del activo, el proveedor, `assigned_to` ni el email. Los límites de error no pasan el error a su tracker.
 - **`client_request_failed`:** `api-client` avisa a un oyente único (`setTransportFailureListener`) y no importa la telemetría. Los fallos del propio envío de telemetría no se notifican.
 - **Tests:** `tests/telemetry*.test.mjs` (con `mock.timers` y un validador draft-07 mínimo en `tests/support/event-contract.mjs`, que valida contra el JSON real) y las reglas de telemetría de `tests/production-source.test.mjs`.
+
+## Reporte técnico (`/telemetry`)
+
+Extra del ticket del reporte técnico. Contrato: [`services/api/SPECS.md`](../../services/api/SPECS.md) §48. Guía de revisión: [`docs/telemetry/report-review.md`](../../docs/telemetry/report-review.md). **Solo métricas técnicas:** no es una pieza de negocio y no muestra dimensiones de negocio ni identificadores.
+
+- **Capas:** `app/telemetry/page.tsx` (Server Component) → `components/telemetry/telemetry-report-view.tsx` (`'use client'`) → `hooks/use-telemetry-report.ts` → `services/telemetry-report.service.ts` → `lib/api-client.ts`. `unknown` solo en `services/normalizers.ts`.
+- **Sin librería de gráficos:** tablas, y una barra de CSS por día en el volumen, decorativa (`aria-hidden`), porque el número ya está en la tabla.
+- **Formato:** la API no redondea; `lib/telemetry-report-format.ts` formatea tasas y milisegundos. Los valores de la API se muestran tal cual, en inglés.
+- **Ventana:** la de la API por defecto, 7 días. El periodo se muestra siempre, y el fin es exclusivo.
+- **Fuera de la telemetría a propósito:** `/telemetry` y `/telemetry/report` no están en los enums del contrato, así que la página no emite `page_viewed` ni `client_request_failed`. Añadirlos sería la versión `1.1.0` (D14 de `report-analysis.md`).
+- **Tests:** `tests/telemetry-report.test.mjs` (normalizador, servicio, reducer y sesión), `__tests__/utils/telemetry-report-format.test.ts` y las reglas de `tests/production-source.test.mjs`.
 
 ## Docker (#infra-40)
 

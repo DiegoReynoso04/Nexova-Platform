@@ -4,6 +4,49 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-05 — Reporte técnico de telemetría, F1: análisis, endpoint y caché
+
+**Estado: hecho y verificado por el usuario en el efímero, en la demo y en el stack; PR `feat: telemetry report endpoint` abierta contra `main`, pendiente de revisión.** Rama `feature/telemetry-report`.
+
+- **Hecho:**
+  - `pandas` en `services/api` (con `numpy`, `python-dateutil` y `tzdata`, autorizadas); imagen de 337 a 476 MB en disco (+29 MB comprimida);
+  - `services/telemetry/analysis.py`: 5 métricas con la fórmula marcada en cada función;
+  - `app/modules/telemetry/report.py` y `GET /telemetry/report`, con `ResponseCache`;
+  - documentación: SPECS §41 y §48, README, TESTING, `AGENTS.md`, plan §1.7 y §7.3 y `docs/telemetry/report-review.md`, con el borrador de la PR.
+- **Ajustes del usuario:** `events_per_day` rellena los días vacíos con 0; un periodo sin filas también devuelve los días a 0 (justificado en `report-review.md` §3).
+- **Validación:** `unittest` 686 OK, `pytest` 889 passed, `validate_event_schemas.py` OK, 14 mutaciones detectadas.
+- **PostgreSQL real (contenedor desechable, ya borrado):** `timestamp` con zona y `tags` como `dict`; con la sesión en `Europe/Madrid`, mismo resultado; las 5 métricas coinciden con `report-check.sql`.
+- **Hallazgo:** un test arranca uvicorn en un subproceso, que no hereda `sys.path`: lleva `services/` en `PYTHONPATH`. uvicorn en el host necesita lo mismo.
+- **Parada 2, verificada por el usuario en el efímero (2026-11-05):** `seeded = 50`; ventana por defecto y con fechas correctas, con el fin exclusivo; 401 y los tres 422; caché (mismo `period.to` y hash, 0,056 s → 0,013 s, y recalcula a los 61 s); las 5 métricas coinciden valor a valor con `report-check.sql`; sin identificadores; C15 confirmado (API parada → `/backend/health` da 500). Efímero borrado y stack de vuelta contra la demo. Detalle en `report-review.md` §6.10.
+- **Parada 3:** la lista de acciones, lo que no se verá y el JSON de la demo están en `report-review.md` §7. Con Offline, hay que recuperar la red antes de 5 s, no de 15: en el peor caso el lote solo aguanta unos 7 s.
+- **Parada 3, verificada por el usuario en la demo (2026-11-05):** 200 en 0,82 s, sin UUID, emails ni campos de negocio. La muestra está en `report-review.md` §10. El paso Offline no quedó registrado y no se repite: la clase `system` solo está verificada en el efímero. El `error_rate` 1.0 del 04/11 es el efecto del denominador (1 evento técnico ese día).
+- **Doble `page_not_found_viewed`:** StrictMode en `next dev`, sin guarda en `not-found-tracker.tsx`. Con el build de producción, 1 evento; con `next dev`, 2. El stack de la demo corre `next dev`, así que allí cada 404 cuenta doble. **Pendiente de una PR aparte**, con la guarda `useRef` de `usePageLoadTelemetry`.
+- **Dashboard:** `/telemetry` en `uis/backoffice`, con tablas y una barra de CSS, sin dependencias, comprobado con el build de producción contra un stub local con el JSON de la demo. Su contrato de eventos no cambia: la página no consta en la telemetría (C14).
+- **Parada 4, verificada por el usuario en el stack (2026-11-05):** `/telemetry` con datos reales, `/login` sin sesión, error con «Reintentar» con la API parada (500 del proxy, coherente con C15) y recuperación, y 375 px sin desplazar la página. Al recargar con la API parada salta antes el control de sesión global, como en el resto del backoffice.
+- **Pendiente, fuera de esta PR:**
+  - el doble `page_not_found_viewed` en `next dev`: guarda con `useRef` en `not-found-tracker.tsx`, en una PR aparte;
+  - P6: cuando se emitan `api_latency_recorded`, `login_failed` y `user_logged_in`, cambian D4, D5 y D6;
+  - la retención sigue sin automatizar (2027-02-03) y aún no hay agregados.
+
+---
+
+## 2026-11-05 — Reporte técnico de telemetría, F0: análisis y decisiones
+
+**Estado: hecho; el usuario tomó las decisiones D1–D14 el mismo día, con ajustes (cabecera de `docs/telemetry/report-analysis.md`).** Rama `feature/telemetry-report`, desde `main` en `fed0e39`. Solo documentación: `docs/telemetry/report-analysis.md` y esta entrada. Sin impacto técnico: ni código, ni `uis/`, ni dependencias (`techContext.md` no cambia).
+
+- **Consulta de solo lectura en la demo (autorizada):** 21 filas, 8 de los 15 tipos. `page_viewed` 8, `form_submitted` 4, `form_started` 3, `page_load_recorded` 2, y 1 de `direct_stock_edit_rejected`, `inbound_order_created`, `outbound_order_created` y `stock_threshold_triggered`. Los `tags` no se leyeron.
+- **Sin instalar nada:** `uv lock` y `uv export` en una copia temporal fuera del repo. Pandas no se ha ejecutado: lo dicho sobre él viene de leer su código.
+- **Hallazgos que no estaban en el ticket:**
+  - además de numpy, entran `python-dateutil` y `tzdata`, y numpy con dos versiones en el lock;
+  - con Docker, parar la API no genera `client_request_failed`: Next responde 500 (lectura de código, sin ejecutar);
+  - cambiar el código con el stack en marcha tira la API hasta reconstruir la imagen (`--reload` y bind mount);
+  - `suppressed_count`: una fila con throttle puede ser muchos fallos;
+  - `/telemetry` y `/telemetry/report` no están en los enums del contrato.
+- **Recomendado:** `analysis.py` real en `services/telemetry/`, copiado junto a `app`; `ResponseCache` con la clave recibida; login por `form_submitted`; eventos de negocio solo en el volumen; dashboard al final. Detalle en el documento, §8.
+- **Siguiente:** F1, según el §6 del documento, con sus 4 paradas.
+
+---
+
 ## 2026-11-04 — Almacenamiento de telemetría, F1: colector real y tabla `telemetry_events`
 
 **Estado: hecho y verificado por el usuario en el efímero y en la demo; demo migrada el 2026-11-05; PR `feat: telemetry event storage` abierta contra `main`, pendiente de que el usuario suba la captura de Supabase y de la revisión.** Rama `feature/telemetry-storage`. El colector se sustituyó sin tocar `uis/`, `TelemetryEvent`, `event-schemas.json` ni `schemaVersion`, y sin dependencias nuevas.
@@ -2450,7 +2493,7 @@ Empresa elegida: **Nexova**. Justificación en `contexts/COMPANY-CHOICE.md` (loc
 - **Gestor centralizado de incidencias:** hecho en F1–F6 en `feature/centralized-incident-manager` (commits `164a183`, `959a65b`, `ef040f5`, `d7ce215`, `7ce4101`, `ca0bf00` y el arreglo móvil `ee944ae`). Integrado en `main` con la PR #17 (merge `6dfa013`, 2026-10-08). Guía de revisión: `docs/centralized-incident-manager-review.md`. Pendientes: la revisión de P4-1…P4-13 (decisiones del usuario) por el tech lead o la CTO, la aceptación con el CSV real y la verificación visual en móvil y con lector de pantalla.
 - **Backend general de Nexova:** `docs/ARCHITECTURE_PROPOSAL.md` está pendiente de revisión por el CTO. Si se aprueba, sus dominios (candidatos, vacantes, pipeline, matching) tendrán que decidir cómo convivir con el `services/api/` ya existente del procesador de incidentes (mismo servicio o no, prefijo `/api/v1` o no). Nada de eso se ha iniciado.
 - **Procesador de incidentes:** Fases 1, 2 y 3 (`/incidents` en `uis/backoffice`) hechas e integradas en `main` (PR #6). Existe un fixture sintético de aceptación que reproduce las cifras del contexto (entrada 2026-09-27, PR #7). Pendientes: el test de aceptación con el CSV real (las cifras 100/96/4 no están verificadas con datos reales) y la Fase 4 (integración). Antes de la Fase 4 o de un uso multiusuario real, revisar la deuda de `LastResultStore` (ver "Decisiones y problemas conocidos").
-- `uis/backoffice` es un punto de entrada — tiene, según «Alcance actual» de `uis/backoffice/CLAUDE.md`, la vista de entrada (`/`), `/incidents`, `/suppliers`, `/incident-manager` (PR #17) e `/inventory/*` (PR #22), todas protegidas por la autenticación (AUTH-02, con las vistas de contraseña de AUTH-03); el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.
+- `uis/backoffice` es un punto de entrada — tiene, según «Alcance actual» de `uis/backoffice/CLAUDE.md`, la vista de entrada (`/`), `/incidents`, `/suppliers`, `/incident-manager` (PR #17), `/inventory/*` (PR #22) y el reporte técnico `/telemetry`, todas protegidas por la autenticación (AUTH-02, con las vistas de contraseña de AUTH-03); el resto de capacidades (portal de RRHH, ventas, dirección ejecutiva) requieren su propio contexto de hito antes de implementarse.
 - **Directorio de proveedores:** hecho e integrado en `main` con el PR #9 (entrada 2026-09-29). Migración futura de TinyDB a Postgres cuando exista el ORM (decisión del tech lead) — `User`/`Profile` de AUTH-01 **no** migran: se quedan en TinyDB y Postgres solo guardará `user_uuid`.
 - **AUTH-01:** hecho e integrado en `main` con el PR #10 (entrada 2026-09-30). Su siguiente fase (que el frontend envíe el token y `PUT` en CORS) la cubrió AUTH-02.
 - **AUTH-03:** implementado en `feature/password-reset` (entradas 2026-10-05 y 2026-10-06), validado de extremo a extremo con email real y con H-1 de la auditoría corregido. Commits `cb9d0d5` y `2a1926a`, integrados en `main` con la PR #16 (merge `677e735`, 2026-10-07). La guía para revisarlo está en `docs/auth-password-reset.md`. El merge no aprueba las propuestas P3-1…P3-6 ni decide sobre M-1, M-2 y M-3, que siguen pendientes.

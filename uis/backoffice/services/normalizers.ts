@@ -38,6 +38,15 @@ import type {
   Totals,
 } from '@/types/incidents';
 import {
+  ERROR_CLASSES,
+  type AuthFailureRateRow,
+  type DominantEventTypeRow,
+  type ErrorRateRow,
+  type EventsPerDayRow,
+  type PageLoadLatencyRow,
+  type TelemetryReport,
+} from '@/types/telemetry-report';
+import {
   INCIDENT_BRANCHES,
   INCIDENT_CATEGORIES,
   INCIDENT_ORIGINS,
@@ -685,4 +694,80 @@ function readUuidClaim(source: JsonObject, key: string): string | null {
 export function normalizeTokenIdentity(input: unknown): TokenIdentity {
   if (!isObject(input)) return { userId: null, sessionId: null };
   return { userId: readUuidClaim(input, 'sub'), sessionId: readUuidClaim(input, 'sid') };
+}
+
+// ---------------------------------------------------------------------------
+// Reporte técnico de telemetría (services/api/SPECS.md §48)
+// ---------------------------------------------------------------------------
+
+function readRows<T>(source: JsonObject, key: string, path: string, parseRow: (row: JsonObject, rowPath: string) => T): T[] {
+  const value = source[key];
+  const arrayPath = `${path}.${key}`;
+  if (!Array.isArray(value)) throw new UnexpectedResponseError(arrayPath, 'array', describeType(value));
+  return value.map((item, index) => {
+    const rowPath = `${arrayPath}[${index}]`;
+    return parseRow(expectObject(item, rowPath), rowPath);
+  });
+}
+
+function eventsPerDayRow(row: JsonObject, path: string): EventsPerDayRow {
+  return { day: readString(row, 'day', path), service: readString(row, 'service', path), events: readInteger(row, 'events', path) };
+}
+
+function errorRateRow(row: JsonObject, path: string): ErrorRateRow {
+  return {
+    day: readString(row, 'day', path),
+    error_type: readString(row, 'error_type', path),
+    error_class: readOneOf(row, 'error_class', path, ERROR_CLASSES),
+    errors: readInteger(row, 'errors', path),
+    total_events: readInteger(row, 'total_events', path),
+    error_rate: readFiniteNumber(row, 'error_rate', path),
+  };
+}
+
+function pageLoadLatencyRow(row: JsonObject, path: string): PageLoadLatencyRow {
+  return {
+    day: readString(row, 'day', path),
+    route_template: readString(row, 'route_template', path),
+    outcome: readString(row, 'outcome', path),
+    loads: readInteger(row, 'loads', path),
+    avg_ms: readFiniteNumber(row, 'avg_ms', path),
+    max_ms: readFiniteNumber(row, 'max_ms', path),
+  };
+}
+
+function dominantEventTypeRow(row: JsonObject, path: string): DominantEventTypeRow {
+  return {
+    event_type: readString(row, 'event_type', path),
+    service: readString(row, 'service', path),
+    events: readInteger(row, 'events', path),
+    share: readFiniteNumber(row, 'share', path),
+  };
+}
+
+function authFailureRateRow(row: JsonObject, path: string): AuthFailureRateRow {
+  return {
+    day: readString(row, 'day', path),
+    failed: readInteger(row, 'failed', path),
+    succeeded: readInteger(row, 'succeeded', path),
+    attempts: readInteger(row, 'attempts', path),
+    failure_rate: readFiniteNumber(row, 'failure_rate', path),
+  };
+}
+
+export function normalizeTelemetryReport(input: unknown): TelemetryReport {
+  const value = expectObject(input, 'response');
+  const period = readObject(value, 'period', 'response');
+  const metrics = readObject(value, 'metrics', 'response');
+  const path = 'response.metrics';
+  return {
+    period: { from: readString(period, 'from', 'response.period'), to: readString(period, 'to', 'response.period') },
+    metrics: {
+      events_per_day: readRows(metrics, 'events_per_day', path, eventsPerDayRow),
+      error_rate_by_type: readRows(metrics, 'error_rate_by_type', path, errorRateRow),
+      page_load_latency_by_route: readRows(metrics, 'page_load_latency_by_route', path, pageLoadLatencyRow),
+      dominant_event_types: readRows(metrics, 'dominant_event_types', path, dominantEventTypeRow),
+      auth_failure_rate: readRows(metrics, 'auth_failure_rate', path, authFailureRateRow),
+    },
+  };
 }

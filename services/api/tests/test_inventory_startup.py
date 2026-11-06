@@ -98,6 +98,9 @@ class UvicornStartupWithoutDatabaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             env = {
                 **os.environ,
+                # services/telemetry se importa como `telemetry`: en la imagen está junto
+                # a `app`; aquí, este subproceso no hereda el `sys.path` de tests/__init__.py.
+                "PYTHONPATH": os.pathsep.join(filter(None, [str(SERVICE_ROOT.parent), os.environ.get("PYTHONPATH")])),
                 "JWT_SECRET_KEY": secrets.token_urlsafe(48),
                 "ACCESS_TOKEN_EXPIRE_MINUTES": "15",
                 "DATABASE_URL": UNREACHABLE_URL,

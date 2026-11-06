@@ -56,6 +56,7 @@ Columna *Auth*: 🔓 pública · 🔒 JWT válido · 👤 propio usuario o admin
 | `POST` | `/inventory/orders/outbound` | 🔒 | Registra una asignación o un consumo (201); 400 `insufficient_stock` si supera el stock |
 | `GET` | `/inventory/orders` | 🔒 | Entradas y salidas con el activo embebido, de la más reciente a la más antigua |
 | `POST` | `/telemetry/events` | 🔓 | Colector de telemetría: valida cada evento por separado, guarda los válidos en `telemetry_events` con un solo insert y responde `200 {"received", "stored", "rejected"}` (`SPECS.md` Parte H) |
+| `GET` | `/telemetry/report` | 🔒 | Métricas técnicas de la telemetría (Pandas), con `start_date` y `end_date` opcionales; 7 días por defecto y caché de 60 s (`SPECS.md` §48) |
 
 Sin token válido → **401**; token válido sobre un recurso ajeno o una acción de admin → **403** (`SPECS.md` §21). Ninguna respuesta incluye `password` ni `hashed_password`.
 

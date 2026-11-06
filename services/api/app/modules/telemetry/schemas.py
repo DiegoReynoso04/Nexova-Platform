@@ -90,3 +90,82 @@ class TelemetryBatchResult(BaseModel):
     received: int
     stored: int
     rejected: int
+
+
+class ReportPeriodRead(BaseModel):
+    """Periodo analizado, en UTC. `from` es inclusivo y `to`, exclusivo."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    from_: str = Field(alias="from")
+    to: str
+
+
+class EventsPerDayRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    day: str
+    service: str
+    events: int
+
+
+class ErrorRateRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    day: str
+    error_type: str
+    error_class: str
+    errors: int
+    total_events: int
+    error_rate: float
+
+
+class PageLoadLatencyRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    day: str
+    route_template: str
+    outcome: str
+    loads: int
+    avg_ms: float
+    max_ms: float
+
+
+class DominantEventTypeRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    event_type: str
+    service: str
+    events: int
+    share: float
+
+
+class AuthFailureRateRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    day: str
+    failed: int
+    succeeded: int
+    attempts: int
+    failure_rate: float
+
+
+class ReportMetrics(BaseModel):
+    """Una lista por métrica. Sin datos, `[]`; `events_per_day` da los días a 0."""
+
+    model_config = ConfigDict(frozen=True)
+
+    events_per_day: list[EventsPerDayRow]
+    error_rate_by_type: list[ErrorRateRow]
+    page_load_latency_by_route: list[PageLoadLatencyRow]
+    dominant_event_types: list[DominantEventTypeRow]
+    auth_failure_rate: list[AuthFailureRateRow]
+
+
+class TelemetryReport(BaseModel):
+    """`GET /telemetry/report`: solo agregados técnicos, sin identificadores."""
+
+    model_config = ConfigDict(frozen=True)
+
+    period: ReportPeriodRead
+    metrics: ReportMetrics

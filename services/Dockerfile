@@ -10,7 +10,7 @@
 # ejecución desde el .env de la raíz (ver .env.example).
 
 # Misma versión que el venv de services/api (3.14.6), en Debian (glibc 2.41):
-# las 28 dependencias de uv.lock tienen wheels manylinux para cp314.
+# las dependencias de uv.lock tienen wheels manylinux para cp314.
 ARG PYTHON_IMAGE=python:3.14.6-slim
 
 # Paquetes del monorepo, limpios. El .dockerignore de services/ no se aplica al
@@ -48,6 +48,9 @@ COPY --from=monorepo-packages /packages /packages
 
 # 3. Código de la API (lo que más cambia, al final).
 COPY api/app ./app
+# Análisis de telemetría (Pandas): junto a `app`, para que se importe como
+# `telemetry` sin tocar PYTHONPATH (D1 de docs/telemetry/report-analysis.md).
+COPY telemetry ./telemetry
 
 EXPOSE 8000
 
