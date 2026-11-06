@@ -329,6 +329,7 @@ Decisiones en `docs/telemetry/report-analysis.md`; revisión en `docs/telemetry/
 - **`services/telemetry/`** no es un servicio desplegable: es una librería de la API. La imagen la copia a `/app/api/telemetry`, Compose la monta y se importa como `telemetry`. En el host, `tests/__init__.py` pone `services/` en `sys.path`.
 - **`GET /telemetry/report`:** Bearer en la ruta, `ResponseCache` (espacio `telemetry_report`, 60 s, sin invalidación), clave con lo recibido. Ninguna métrica lee las dimensiones de negocio de `tags`.
 - **`test_architecture.py` solo mira `app/`:** las reglas de `analysis.py` están en `tests/test_telemetry_analysis.py`.
+- **Dashboard `/telemetry` en `uis/backoffice`:** sin librería de gráficos ni dependencias. La página y `/telemetry/report` no están en los enums del contrato, así que no constan en la telemetría (versión `1.0.0`). Reglas en `uis/backoffice/CLAUDE.md`.
 
 ### Almacenamiento de telemetría (ticket de almacenamiento, 2026-11-04, rama `feature/telemetry-storage`)
 

@@ -17,7 +17,7 @@ Rama `feature/telemetry-report`. Decisiones en [`report-analysis.md`](./report-a
 | Métricas técnicas, no de negocio | §3 | Hecho; ningún campo de negocio ni identificador |
 | Una dimensión de agrupamiento por métrica | §2 | Hecho |
 | Extra 1: `auth_failure_rate` | `analysis.py` | Hecho, con `form_submitted` (D6) |
-| Extra 2: dashboard | `uis/backoffice` → `/telemetry` | Hecho; pendiente de la Parada 4 |
+| Extra 2: dashboard | `uis/backoffice` → `/telemetry` | Hecho; verificado por el usuario en el stack (§9) |
 
 ## 2. Las métricas
 
@@ -490,6 +490,14 @@ Un solo 404 dio dos eventos, a 1 ms y con `eventId` distintos. **Es el doble efe
 3. Periodo visible y las 5 secciones con los datos del reporte.
 4. Con la API parada (`docker compose stop api`) y entrando desde otra página sin recargar: error con «Reintentar». Después, `docker compose start api`, «Reintentar» y los datos.
 5. A 375 px, sin scroll horizontal: las tablas se desplazan dentro de su marco.
+
+**Verificado por el usuario el 2026-11-05, en el stack contra la demo:**
+
+- **Con sesión:** enlace «Telemetría» en la cabecera, periodo en hora local con la nota de días UTC, y las 5 secciones con datos reales, entre ellas los logins fallidos, 3 de 6 (50 %).
+- **Sin sesión:** lleva a `/login`.
+- **API parada, entrando desde la cabecera sin recargar:** «Error del servidor. No se pudo calcular el reporte», con «Reintentar»: es el 500 del proxy de Next, coherente con C15. Con la API arrancada, «Reintentar» recupera los datos.
+- **Al recargar con la API parada:** salta antes el control de sesión global («No se pudo comprobar la sesión»), como en el resto del backoffice.
+- **375 px:** la página no se desplaza; solo las tablas anchas, dentro de su contenedor.
 
 ## 10. Borrador de la PR
 
