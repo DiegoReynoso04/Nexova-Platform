@@ -4,9 +4,21 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-06 — `page_not_found_viewed`, una vez por montaje
+
+**Estado: hecho y comiteado en `fix/not-found-telemetry-once`, desde `main` en `fc190f5`; sin push ni PR hasta el OK del usuario.** Sin impacto técnico en `techContext.md`: ni dependencias ni arquitectura.
+
+- **Por qué:** con StrictMode en `next dev`, un 404 daba dos eventos, y el stack de la demo corre `next dev`. En producción ya era uno (`docs/telemetry/report-review.md` §7.7).
+- **Hecho:** `components/telemetry/not-found-tracker.tsx` lleva la misma guarda con `useRef` que `usePageLoadTelemetry`, y un test en `tests/production-source.test.mjs`, que falla sin ella.
+- **Validación:** `tsc`, `lint` y `build` limpios, `node:test` 605 OK y Jest 250 passed.
+- **En `next dev`, contra un stub local:** un 404 da un solo `POST` con un solo `page_not_found_viewed`. No se ha tocado la demo.
+- **Las filas dobles que ya están en la demo se quedan:** la tabla es inmutable.
+
+---
+
 ## 2026-11-05 — Reporte técnico de telemetría, F1: análisis, endpoint y caché
 
-**Estado: hecho y verificado por el usuario en el efímero, en la demo y en el stack; PR `feat: telemetry report endpoint` abierta contra `main`, pendiente de revisión.** Rama `feature/telemetry-report`.
+**Estado: hecho y verificado por el usuario en el efímero, en la demo y en el stack; integrado en `main` con la PR #31 (merge `fc190f5`).** Rama `feature/telemetry-report`.
 
 - **Hecho:**
   - `pandas` en `services/api` (con `numpy`, `python-dateutil` y `tzdata`, autorizadas); imagen de 337 a 476 MB en disco (+29 MB comprimida);
@@ -24,7 +36,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 - **Dashboard:** `/telemetry` en `uis/backoffice`, con tablas y una barra de CSS, sin dependencias, comprobado con el build de producción contra un stub local con el JSON de la demo. Su contrato de eventos no cambia: la página no consta en la telemetría (C14).
 - **Parada 4, verificada por el usuario en el stack (2026-11-05):** `/telemetry` con datos reales, `/login` sin sesión, error con «Reintentar» con la API parada (500 del proxy, coherente con C15) y recuperación, y 375 px sin desplazar la página. Al recargar con la API parada salta antes el control de sesión global, como en el resto del backoffice.
 - **Pendiente, fuera de esta PR:**
-  - el doble `page_not_found_viewed` en `next dev`: guarda con `useRef` en `not-found-tracker.tsx`, en una PR aparte;
+  - el doble `page_not_found_viewed` en `next dev`: corregido en `fix/not-found-telemetry-once` (entrada siguiente);
   - P6: cuando se emitan `api_latency_recorded`, `login_failed` y `user_logged_in`, cambian D4, D5 y D6;
   - la retención sigue sin automatizar (2027-02-03) y aún no hay agregados.
 

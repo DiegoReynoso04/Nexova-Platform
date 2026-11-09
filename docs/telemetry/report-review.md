@@ -468,7 +468,7 @@ Un solo 404 dio dos eventos, a 1 ms y con `eventId` distintos. **Es el doble efe
 - **Causa:** `components/telemetry/not-found-tracker.tsx` emite en un `useEffect` sin guarda. Next activa Strict Mode por defecto con App Router (`reactStrictMode.md`), y en desarrollo React monta, desmonta y vuelve a montar cada efecto.
 - **Por qué solo este evento:** `usePageLoadTelemetry` se protege con un `useRef`, `frontend_error_captured` tiene throttle, y `page_viewed` cancela su temporizador al limpiar.
 - **Efecto real:** el stack de la demo corre `next dev`, así que **allí cada 404 cuenta doble**. Es lo que se ve en la muestra.
-- **Propuesta, en una PR aparte** (es del ticket de captura): la misma guarda con `useRef` que `usePageLoadTelemetry`, y un test. Este ticket no toca el tracker.
+- **Corregido después, en una PR aparte** (rama `fix/not-found-telemetry-once`): la misma guarda con `useRef` que `usePageLoadTelemetry`, y un test. La muestra de §10 es anterior, y las filas dobles de la demo se quedan: la tabla es inmutable.
 
 ## 8. Lo que queda fuera o sin verificar
 

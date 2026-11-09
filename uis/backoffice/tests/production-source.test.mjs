@@ -634,6 +634,16 @@ describe('código de producción', () => {
     }
   });
 
+  test('page_not_found_viewed sale una vez por montaje, también con StrictMode', () => {
+    // React ejecuta los efectos dos veces en `next dev`: sin la guarda, un 404 da dos eventos.
+    const tracker = codeWithoutComments('components/telemetry/not-found-tracker.tsx');
+    const guard = tracker.indexOf('if (recorded.current) return;');
+    const mark = tracker.indexOf('recorded.current = true;');
+    const emit = tracker.indexOf("track('page_not_found_viewed'");
+    assert.match(tracker, /const recorded = useRef\(false\);/);
+    assert.ok(guard !== -1 && guard < mark && mark < emit, 'la guarda va antes del track');
+  });
+
   test('la telemetría no guarda nada en el navegador ni registra en consola', () => {
     for (const file of ['lib/telemetry.ts', 'lib/telemetry-api-client.ts', 'lib/session-identity.ts', 'types/telemetry.ts']) {
       const code = codeWithoutComments(file);
