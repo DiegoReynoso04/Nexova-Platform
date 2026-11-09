@@ -313,6 +313,14 @@ Medición inicial y decisiones D1–D11 (tomadas el 2026-10-31) en [`docs/cachin
   - `SupplierTable` va con `React.memo` y sus filas derivadas con `useMemo` (reglas en `uis/backoffice/CLAUDE.md`).
 - **Seed de volumen** `scripts/seed_volume.py`: solo bases de prueba. Rechaza `services/api/data` y un PostgreSQL no local; es determinista e idempotente.
 
+### Pipeline de desempeño de negocio (diseño, 2026-11-09, rama `docs/business-pipeline-design`)
+
+Solo diseño, **sin implementar**: [`data/pipelines/PIPELINE_DESIGN.md`](../data/pipelines/PIPELINE_DESIGN.md); decisiones D1–D14 en [`docs/reporting/pipeline-analysis.md`](../docs/reporting/pipeline-analysis.md). Lo permanente, para el ticket de implementación:
+
+- **Ubicación:** ETL y orquestación en `data/pipelines/business_performance/`; `services/reporting/` como librería de la API (lecturas y disparo, sin ETL, comprobado por un test de AST); nombres compartidos en `nexova_shared.reporting`. `data/` no está en el contexto de build de la API.
+- **Prefect** (dependencia nueva, pendiente de autorizar): servidor y worker en un perfil `pipelines` de Compose; la API crea flow runs por REST con `urllib`, sin depender de Prefect. Credencial de Supabase en un block `Secret`.
+- **Esquema `reporting`** (`weekly_office_program_performance` con la DDL del BRIEFING + `run_id` y `CHECK` aditivos; `pipeline_runs`): migración explícita, nunca al arrancar; en la demo, solo con confirmación. Con el Transaction pooler, solo `pg_advisory_xact_lock`.
+
 ### Plan de telemetría (diseño, ticket del 2026-11-01/02, rama `docs/telemetry-plan`)
 
 Diseño sin código: [`docs/telemetry/telemetry-plan.md`](../docs/telemetry/telemetry-plan.md) y [`docs/telemetry/event-schemas.json`](../docs/telemetry/event-schemas.json). El BRIEFING está en `docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`. Las decisiones D1–D14 son del usuario; el detalle está en el plan y no se duplica aquí.
