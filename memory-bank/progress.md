@@ -4,9 +4,26 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-09 — Pipeline de desempeño de negocio: análisis (F0) y diseño (F1)
+
+**Estado: hecho y comiteado en `docs/business-pipeline-design` (desde `main` en `006aa1e`); sin push ni PR hasta que el usuario lea `PIPELINE_DESIGN.md`.** Solo documentación: ni código, ni `uis/`, ni dependencias, ni Supabase. `techContext.md` recoge las decisiones de arquitectura del diseño (aún sin implementar).
+
+- **F1 (hecho):** [`data/pipelines/PIPELINE_DESIGN.md`](../data/pipelines/PIPELINE_DESIGN.md), autocontenido: Estado Actual y brecha, propósito, extracción, Mermaid, actualizaciones y duplicados, DDL del BRIEFING con `run_id` y `CHECK` aditivos, idempotencia (segunda corrida tras un fallo en la carga), `reporting.pipeline_runs`, Prefect (flow `weekly_office_program_performance`, 8 tasks con el checkpoint `mark_phase`, states, block `Secret`), los 3 endpoints, las 10 preguntas, P1 como prerrequisito de negocio y la tabla de trazabilidad.
+- **Decisiones:** el usuario aprobó D1–D14 el 2026-11-09, con tres matices (cabecera de `docs/reporting/pipeline-analysis.md`).
+- **Commits:** el BRIEFING versionado como `docs/proyectos-de-data-pipeline-diseno-implementacion-subflows-tests.md` (contenido intacto; su enlace a la versión inglesa está roto y se anota en el commit), el análisis con las decisiones, y el diseño con `feat: add business performance pipeline design document`.
+- **F0:** `docs/reporting/pipeline-analysis.md`: estado verificado, C1–C19, respuestas y D1–D14.
+
+- **Por qué:** el ticket de Data Pipelines pide `data/pipelines/PIPELINE_DESIGN.md` (reporte semanal por oficina y programa: coste de material, kits entregados, escasez y variación de coste); antes, los conflictos y las decisiones.
+- **Consulta de solo lectura en la demo (autorizada):** 66 filas en `telemetry_events`; de los 4 tipos del BRIEFING, 1 `inbound_order_created` (`valencia`), 1 `outbound_order_created` y 1 `stock_threshold_triggered` (`miami`), todos de la semana del 2026-11-02 y con `programme_id` nulo; 0 `kit_cost_variance_detected`. Solo se leyeron `office` y `programme_id` de `tags`.
+- **Hallazgos:** `programme_id` siempre nulo frente al `not null` del BRIEFING (C1); sin `TELEMETRY_SUPPLIER_KEY` no se emite ninguna entrada (el coste sale a 0 sin error); `data/` está fuera del contexto de build de la API; los blocks de Prefect implican un servidor; el pooler de transacciones invalida los advisory locks de sesión; el `TRUNCATE … RESTART IDENTITY` de la demo reutiliza ids de orden; recalcular una semana ya purgada la pondría a cero; el BRIEFING está sin versionar y enlaza a una versión inglesa que no existe; `data/README.md` no existe.
+- **Decidido:** centinela `_unassigned` solo en `reporting` (D1); telemetría como fuente con conciliación de solo lectura (D2); conteo de órdenes en kits, con `kits_delivered_units` como v2 (D4); ETL en `data/pipelines/business_performance/`, lectura en `services/reporting/` y contrato en `nexova_shared.reporting` (D7); servidor y worker de Prefect en un perfil de Compose (D8).
+- **Siguiente:** que el usuario lea `PIPELINE_DESIGN.md`; después, push y PR (con merge commit, para que el commit evaluado llegue tal cual a `main`). La implementación es otro ticket: Prefect necesita autorización como dependencia nueva, y la migración del esquema `reporting` en la demo, confirmación.
+
+---
+
 ## 2026-11-06 — `page_not_found_viewed`, una vez por montaje
 
-**Estado: hecho y comiteado en `fix/not-found-telemetry-once`, desde `main` en `fc190f5`; sin push ni PR hasta el OK del usuario.** Sin impacto técnico en `techContext.md`: ni dependencias ni arquitectura.
+**Estado: hecho y comiteado en `fix/not-found-telemetry-once`, desde `main` en `fc190f5`; integrado en `main` con la PR #32 (merge `006aa1e`).** Sin impacto técnico en `techContext.md`: ni dependencias ni arquitectura.
 
 - **Por qué:** con StrictMode en `next dev`, un 404 daba dos eventos, y el stack de la demo corre `next dev`. En producción ya era uno (`docs/telemetry/report-review.md` §7.7).
 - **Hecho:** `components/telemetry/not-found-tracker.tsx` lleva la misma guarda con `useRef` que `usePageLoadTelemetry`, y un test en `tests/production-source.test.mjs`, que falla sin ella.
