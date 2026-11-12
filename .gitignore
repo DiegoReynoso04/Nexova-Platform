@@ -21,6 +21,10 @@ __pycache__/
 data/raw/incidents/
 results.csv
 
+# Pipeline de desempeño de negocio: intermedios, caché de Prefect y snapshots
+data/raw/business_performance/
+data/eval/business_performance/
+
 # Bases TinyDB locales de services/api: proveedores (suppliers.json) y
 # usuarios/perfiles con hashes de contraseña (auth.json)
 services/api/data/

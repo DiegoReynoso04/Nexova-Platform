@@ -4,9 +4,183 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-12 — Pipeline de desempeño de negocio, Parte 2: parada 4 completa (disparo desde la API en la demo)
+
+**Estado: hecho y verificado en la demo; commiteado en `feature/business-pipeline`. Push y PR, solo con el OK del usuario.** Resultado completo en `docs/reporting/implementation-review.md` §6.7.
+
+- **Paso 4 (el usuario, con su admin):**
+  - El `POST /reporting/pipeline-runs` dio 202, y el flow run llegó a `COMPLETED`.
+  - `/latest`: `manual`, `completed`, `done`, el mismo `prefect_flow_run_id`, 3 eventos leídos, 2 filas escritas y sin `requested_by`.
+  - KPI del 2026-11-02 iguales a los de la corrida del script (Miami 0.0 USD, 1 kit y 1 escasez; Valencia 16.0 EUR): el recálculo no duplica.
+  - Perfil y volúmenes borrados, el del block con la credencial incluido. `PIPELINE_PREFECT_API_URL` se queda en el `.env` del usuario.
+- **Lecturas de cierre (yo, en solo lectura):**
+  - El Control de aplicaciones de Windows bloqueó `_collections_cy` de SQLAlchemy en el venv del pipeline, al usuario y a mí al reintentar, así que las hice con la imagen `nexova-pipeline:dev`. Montan el código y el `.env` en solo lectura, y la receta está en la guía §6.
+  - `pipeline-check.sql`: 0 diferencias.
+  - `demo-reporting-access.sql`: acceso cerrado igual que tras la migración, `pipeline_runs = 2` y `weekly_rows = 2`.
+- **La demo solo ganó el esquema `reporting`** (2 tablas, RLS sin políticas, sin privilegios para `PUBLIC` ni los roles de Supabase), con 2 filas de KPI recalculables y 2 corridas en el log. `telemetry_events` y el inventario quedaron intactos.
+- **Exposed schemas (lo comprobó el usuario en el panel de Supabase):** `graphql_public` y `public`; `reporting` no está expuesto.
+- **Mejora fuera de esta PR:** el proyecto tiene activada *Automatically expose new tables*. En `reporting`, la migración lo neutraliza con los `REVOKE`; desactivarla en el proyecto es una decisión aparte.
+- **Opcional:** borrar `data/raw/business_performance/` y `data/eval/business_performance/` (locales e ignorados).
+
+---
+
+## 2026-11-11 — Pipeline de desempeño de negocio, Parte 2: parada 4 en la demo (pasos 1–3)
+
+**Estado: pasos 1–3 hechos contra la demo con el «sí» del usuario; el paso 4 lo hizo el usuario (ver la entrada del 2026-11-12).** Host: el pooler de Supabase de la demo (PostgreSQL 17.11, rol sin superusuario).
+
+- **1. Foto «antes»** (`readonly` + `demo-snapshot.sql`):
+  - `reporting` no existía;
+  - 66 eventos en `telemetry_events`, todos anteriores a hoy;
+  - 6 filas en cada una de `assets`, `asset_entries` y `asset_exits`;
+  - semana del 2026-11-02: Valencia, 1 `inbound_order_created` (4 × 4 EUR); Miami, 1 `outbound_order_created` y 1 `stock_threshold_triggered`; ninguna variación. Coincide con lo esperado.
+- **2. Migración:**
+  - sin `--allow-demo`, se niega y no conecta (salida 1);
+  - `--dry-run --allow-demo` lista las 9 sentencias del plan, y no aparece ninguna más;
+  - se aplicó en una transacción y la segunda ejecución dio «Nada que migrar»;
+  - `demo-reporting-access.sql`: `anon`, `authenticated` y `service_role` sin ningún privilegio, 0 grants a `PUBLIC`, RLS en las dos tablas y 0 políticas;
+  - `authenticator_setting` sale sin filas, porque en este Supabase no se ve por SQL. Los esquemas expuestos se comprueban en el panel.
+- **3. Corrida:**
+  - `python data/pipelines/pipeline.py` desde el host: salida 0, semana del 2026-11-02, `source_rows_read = 3`, 0 rechazados, 0 duplicados, `rows_upserted = 2` y sin el aviso de analítica;
+  - `pipeline-check.sql`: 0 diferencias en los dos sentidos y 0 duplicadas;
+  - filas: Miami 0 USD, 1 kit, 1 escasez; Valencia 16 EUR, 0, 0; 0 variaciones;
+  - foto «después»: idéntica a la de antes salvo la existencia de `reporting` (66 eventos, la misma huella y las mismas huellas del inventario);
+  - `pipeline_runs = 1` y `weekly_rows = 2`.
+- **Quedan en la demo:** el esquema `reporting`, 2 filas de KPI que se pueden recalcular y 1 fila en `pipeline_runs`. En local, ignorados por git: `data/raw/business_performance/` (fotos y caché) y `data/eval/business_performance/` (snapshot).
+
+---
+
+## 2026-11-11 — Pipeline de desempeño de negocio, Parte 2: documentación final y plan de la demo (parada 4)
+
+**Estado: hecho, sin commit, en `feature/business-pipeline`. El plan de la parada 4 lo aprobó el usuario el 2026-11-11 (ver la entrada de arriba).** El usuario verificó y aprobó la parada 3 contra el efímero.
+
+- **Documentación:**
+  - `services/api/SPECS.md`, Parte I (§49–§53): requisitos, decisiones, los 3 endpoints, errores y configuración. Se añaden también las filas de los errores nuevos en §4, `PIPELINE_PREFECT_API_URL` en §7 y las Partes H e I en el índice.
+  - `AGENTS.md` §4: filas de `data/process/` y `data/pipelines/`, la fila de Docker con `data/Dockerfile` y el bloque del pipeline (documentación, entornos, base, migración, verificación, demo y analítica).
+  - `data/process/README.es.md` y `README.md`.
+  - Guía §4.3, a raíz de lo que vio el usuario: hay que esperar al estado `COMPLETED` antes de pedir `/latest`, porque si no devuelve la corrida anterior. La guía trae el bucle de espera y la nota también está en SPECS §51.2.
+- **`docs/reporting/compose-ephemeral.yml` se versiona:** no lleva secretos (`EPHEMERAL_DATABASE_URL` con `:?`), lo usan la guía y `AGENTS.md`, y hace la verificación reproducible sin overrides fuera del repo.
+- **Herramienta nueva para la demo:**
+  - `business_performance/readonly.py` ejecuta `.sql` en una transacción `SET TRANSACTION READ ONLY` que siempre termina en `ROLLBACK`. Toma la URL del entorno o del `.env` y solo imprime el host.
+  - Archivos de consulta: `docs/reporting/demo-snapshot.sql` (conteos y huellas md5 de `telemetry_events` e inventario, los eventos de negocio de la semana agrupados y sin ids, la existencia de `reporting`) y `demo-reporting-access.sql` (privilegios de `PUBLIC` y de los roles de Supabase, RLS, políticas, dueño y esquemas expuestos de la Data API).
+  - `secret.py` resuelve ahora la URL como el script, para crear el block de la demo desde el host sin la URL en la terminal.
+  - Tests: `tests/test_readonly_and_secret.py`.
+- **Ensayo del plan en un efímero que imita Supabase** (roles `anon`, `authenticated` y `service_role` con privilegios por defecto en las tablas nuevas):
+  - **Fotos:** antes y después, iguales en `telemetry_events` y en el inventario.
+  - **Migración:** el `--dry-run` muestra 9 sentencias; se aplica y la segunda ejecución da «Nada que migrar».
+  - **Acceso:** los tres roles sin privilegios, 0 grants a `PUBLIC`, RLS activo y 0 políticas.
+  - **Corrida y cuadre:** el pipeline sale con 0 y `pipeline-check.sql` da 0 diferencias.
+  - **Escritura:** un `INSERT` lanzado por `readonly` lo rechaza PostgreSQL (salida 2). El efímero quedó borrado.
+- **Incidencias del entorno, no del código:**
+  - el Control de aplicaciones de Windows bloqueó una vez una DLL de SQLAlchemy (`_util_cy`); al repetir, pasó;
+  - el stack normal estaba parado (código 255, de un reinicio de Docker Desktop) y se volvió a levantar contra el `.env`, `healthy` y sin `PIPELINE_PREFECT_API_URL`.
+- **Suites:** `packages/shared`, `data/process`, `data/pipelines` (64 OK, 5 omitidos), `services/api` (unittest OK; pytest 922), validador de esquemas y `docker compose config --quiet` con y sin perfil.
+- **Siguiente:** con el «sí» del usuario, la parada 4 según §6. Después, los commits por paso: el último con el mensaje exacto `feat: implement resilient business performance pipeline`, sin cuerpo y sin atribución. Luego `memory-bank-sync`, y push y PR solo con su OK.
+
+---
+
+## 2026-11-10 — Pipeline de desempeño de negocio, Parte 2: F1, parada 3 (disparo manual de punta a punta)
+
+**Estado: parada 3 hecha y verificada por el usuario contra el efímero (limpieza hecha; la API, de vuelta en Supabase); sin commit, en `feature/business-pipeline`.** El usuario verificó y aprobó la parada 2.
+
+- **Analítica de Prefect (corrección pedida por el usuario):**
+  - **Qué pasaba:** en su primera corrida apareció el aviso «Prefect collects anonymous usage data…». Prefect 3.9.2 tiene dos interruptores y solo estaba apagado el del servidor; el del cliente es `DO_NOT_TRACK`.
+  - **Cómo se arregló:** `business_performance/_bootstrap.py` fuerza `DO_NOT_TRACK=1` y `PREFECT_SERVER_ANALYTICS_ENABLED=false` antes de importar Prefect, en el script, el worker y los tests. La imagen y los dos servicios de Compose fijan las mismas dos.
+  - **Test:** `tests/test_analytics_off.py`, incluido un subproceso que intenta reactivarla. Anotado en la guía.
+- **Hecho:**
+  - **Disparo y worker:** `business_performance/trigger.py` (solo librería estándar: deployment por nombre, 409 si hay un flow run activo del deployment `manual`, `create_flow_run`); `serve.py` (deployments `manual` y `weekly`, cron `0 6 * * 1` `Europe/Madrid`, concurrencia 1); `secret.py` (block `Secret` desde el worker, mostrando solo el host).
+  - **Semanas compartidas:** `nexova_shared.reporting.weeks`, para que la API valide el `week_start` igual que el pipeline.
+  - **Compose:** `pipeline-worker` en el perfil `pipelines`, sin `DATABASE_URL`, con volúmenes `pipeline-raw` y `pipeline-eval` y `restart: unless-stopped`, porque se caía al reiniciarse el servidor de Prefect.
+  - **API:**
+    - imagen y bind mounts con solo `business_performance/__init__.py` y `trigger.py` en `/pipelines`, `services/reporting` en `/app/api/reporting` y `--reload-dir /pipelines`;
+    - `services/reporting/` con los 3 endpoints;
+    - `PIPELINE_PREFECT_API_URL` en `Settings` y `.env.example`.
+  - **Tests de la API:** `test_reporting_api.py` y `test_reporting_architecture.py` (AST). Se actualizaron `test_serialization.py` (34 → 37 endpoints) y el `PYTHONPATH` del subproceso de `test_inventory_startup.py`.
+  - **Tests del pipeline:** `test_trigger_and_serve.py`, con la REST real de Prefect en el harness.
+  - **Documentación:**
+    - `PIPELINE_DESIGN.md`: cabecera, D7/D8, §4.1 (código, tasks, reintentos con su porqué, caché, opcional, pseudocódigo con `return_state`), §4.3, §4.4, la nueva §4.5 «Frecuencia y ejecución» y la Fase 5 (por qué `request_manual_run` y no el flow, el 503 y el 409);
+    - `data/pipelines/README.es.md` y `README.md` (comandos de Windows y Linux);
+    - `services/reporting/README.md`;
+    - `docs/reporting/compose-ephemeral.yml` (override de verificación sin secretos, con la TinyDB de usuarios en `/tmp` del contenedor);
+    - `implementation-review.md` §3–§5.
+- **Verificado de punta a punta contra el efímero** (stack normal + perfil `pipelines`, con la API apuntando a `nexova-pipeline-pg` y usuarios de prueba `@example.invalid` en la TinyDB temporal):
+  - **Recorrido:** `POST` de un admin → 202 → flow run `Completed` en Prefect (deployment `manual`, `week_start` y `requested_by` del token) → fila en `pipeline_runs` (con `requested_by`, que no sale por la API) → `GET latest` 200 → `GET` de KPI 200 con el contrato del BRIEFING (Miami 40.2 USD, Valencia 2 kits).
+  - **Errores:** 401 sin token, 403 no admin, 422 no lunes y semana en curso, 404 sin calcular y sin corridas, 409 con el worker parado (el flow run pendiente se ejecutó al volver), 503 con Prefect parado (el log solo dice `URLError`).
+  - **Resto:** el worker se recupera solo tras reiniciar Prefect; `pipeline-check.sql` sigue en 0 diferencias.
+- **Suites:**
+
+  | Suite | Resultado |
+  |---|---|
+  | `services/api` | 719 OK (unittest) y 922 (pytest) |
+  | `data/pipelines` | 57 OK, 5 omitidos sin URL de Postgres |
+  | `packages/shared` | OK |
+  | `data/process` | OK |
+  | `incident-analyzer` | OK |
+  | validador de esquemas | OK |
+  | `docker compose config --quiet` | OK, con y sin perfil |
+
+  El lock, `pyproject.toml` y `requirements.txt` de la API no cambian. `uis/` y `services/telemetry` tampoco.
+- **Siguiente:** recorrido del usuario y limpieza (§4.5 de la guía). Después: `services/api/SPECS.md`, filas de `AGENTS.md` §4 y README de `data/process`; la parada 4 (la demo), solo con su confirmación; commits y PR, solo con su OK.
+
+---
+
+## 2026-11-10 — Pipeline de desempeño de negocio, Parte 2: F1, parada 2 (pipeline, migración y tests)
+
+**Estado: parada 2 hecha y verificada por el usuario con la guía (§2); sin commit, en `feature/business-pipeline`.** Nada contra la demo; el stack normal se paró durante la prueba y se volvió a levantar después.
+
+- **SQLAlchemy:** se deja el rango `>=2.1.5,<2.2` (lock en 2.1.8) y D1 dice «misma serie 2.1, versión exacta independiente». Son entornos separados por diseño, sin proceso ni lock compartidos.
+- **Hecho:**
+  - `packages/shared/nexova_shared/reporting/` (nombres del esquema, estados, fases, oficinas y centinela);
+  - `data/process/weekly_performance.py` (transformación pura y semanas, solo librería estándar);
+  - `data/pipelines/business_performance/` (`config.py` con `DATABASE_URL` del entorno o del `.env`, mostrando solo el host; `repository.py` con la SQL; `migrate.py` con `--allow-demo`);
+  - `data/pipelines/pipeline.py`: flow, backfill como subflows y 9 tasks. Caché de 1 h solo en `transform_weekly_rows`, con clave SHA-256 del contenido extraído; reintentos 2 × 10 s y 2 × 30 s, solo de errores transitorios; `return_state=True` en la carga y en el snapshot opcional. CLI con `--week-start` y `--from`/`--to`; salida 2 si falta el esquema;
+  - tests en `data/process/tests`, `data/pipelines/tests` y `packages/shared/tests/test_reporting.py`;
+  - `docs/reporting/pipeline-seed-ephemeral.sql`, `pipeline-check.sql` y la guía `implementation-review.md`.
+- **Verificado en un Postgres efímero** (rol `nexova_app` sin superusuario, solo en `127.0.0.1`):
+  - migración: `--dry-run`, aplicada y una segunda vez con «Nada que migrar»;
+  - seed de 22 eventos ficticios;
+  - `python data/pipelines/pipeline.py`, con salida 0, dos veces: la segunda con `transform_weekly_rows` en `Cached`;
+  - backfill desde el 2026-10-19: 3 semanas y 6 celdas;
+  - `pipeline-check.sql`: 0 diferencias en los dos sentidos y 0 celdas duplicadas;
+  - esquema ausente → salida 2 sin traza.
+- **Suites:**
+  - `packages/shared` 86 OK;
+  - `incident-analyzer` OK;
+  - `data/process` 18 OK;
+  - `data/pipelines` 45 OK (con la integración contra el efímero);
+  - `services/api` 686 OK con unittest y 889 con pytest;
+  - `validate_event_schemas.py` OK;
+  - imagen `nexova-pipeline:dev` reconstruida: importa el pipeline y no lleva tests ni datos.
+- **Siguiente:** parada 3: `trigger.py`, `serve.py`, el worker en el perfil `pipelines`, `services/reporting/` y el disparo de punta a punta contra el efímero. Después, la documentación final (`PIPELINE_DESIGN.md` §4.5, READMEs y filas de `AGENTS.md`).
+
+---
+
+## 2026-11-10 — Pipeline de desempeño de negocio, Parte 2: F1, parada 1 (entorno, imagen y perfil)
+
+**Estado: parada 1 hecha y aprobada por el usuario; sin commit, en `feature/business-pipeline`.** El usuario aprobó D1–D16 con cuatro matices (recogidos en la cabecera de `docs/reporting/implementation-analysis.md`): D1-A por arquitectura (`python-dateutil 4.0.0` es transitiva de Pandas, no un pin nuestro); `--allow-demo` solo en la migración, la corrida del ETL no se bloquea y sale con código 2 si falta el esquema; dos líneas sobre por qué la API importa `request_manual_run` y no el flow; el perfil `pipelines`, contra la demo solo con confirmación en el momento.
+
+- **Hecho:** `data/pipelines/pyproject.toml` (proyecto virtual de uv; `prefect>=3.9.2,<3.10`, `sqlalchemy>=2.1.5,<2.2`, `psycopg2-binary>=2.9.13,<2.10`), `uv.lock` y `requirements.txt` (`uv lock` + `uv export`, sin `uv add` ni `uv sync`), venv del host en `data/pipelines/.venv` (Python 3.14.6, ignorado), `data/pipelines/tests/test_requirements_lock.py` (7 tests OK), `data/Dockerfile` + `data/.dockerignore` (imagen `nexova-pipeline:dev`, 472 MB), servicio `prefect-server` en el perfil `pipelines` de `docker-compose.yml` (sin `env_file`, volumen `prefect-data`, UI en el 4200, analítica de Prefect desactivada) y `.gitignore` (D15).
+- **Verificado:** resuelve `prefect 3.9.2`, `sqlalchemy 2.1.8` (la API sigue en 2.1.5: entornos separados) y `python-dateutil 2.9.0.post0` **solo en el entorno del pipeline**; `git diff services/api` vacío (lock, `requirements.txt`, `pyproject.toml`); suite de `services/api` 686 OK; `docker compose config --quiet` con y sin perfil; `docker compose up -d --build` → `api` healthy, `ui` en marcha, `/health` OK por `api:8000` y por `/backend`, website 200, la API sin Prefect y `prefect-server` sin arrancar; con `--profile pipelines up -d prefect-server` → healthy, `/api/health` y UI 200, sin `DATABASE_URL` ni ningún secreto. Se paró después; el volumen `prefect-data` queda en Docker. La imagen no lleva `.env*`, `.venv`, `tests`, `__pycache__`, `raw` ni `eval`, y su `docker history` no tiene secretos.
+- **Aplazado a la parada 3:** el contexto adicional de `data/pipelines` en la imagen de la API (solo `business_performance/trigger.py`, que aún no existe) y el servicio `pipeline-worker`.
+- **Siguiente:** parada 2 (`nexova_shared.reporting`, migración, `data/process/`, `pipeline.py`, tests, efímero con seed ficticio).
+
+---
+
+## 2026-11-09 — Pipeline de desempeño de negocio, Parte 2 (implementación): análisis (F0)
+
+**Estado: F0 hecho, sin commit, en `feature/business-pipeline` (desde `main` en `9d8b0df`). Decidido por el usuario el 2026-11-10 (ver la entrada de arriba).** Solo documentación: ni código, ni dependencias instaladas en el repo, ni Supabase, ni Docker. Sin impacto técnico (las decisiones aún no están tomadas): en `techContext.md` solo se corrige que el diseño ya está en `main`.
+
+- **Hecho:** [`docs/reporting/implementation-analysis.md`](../docs/reporting/implementation-analysis.md): estado verificado, Prefect resuelto en copias temporales, conflictos C1–C17, decisiones D1–D16, cambios previstos en `PIPELINE_DESIGN.md` y plan de F1.
+- **Por qué:** el ticket implementa el diseño aprobado, pero su enunciado choca con él en varios puntos (flow y tasks en `pipeline.py`, disparo importando desde `data/pipelines/`, caché, paso opcional, `return_state`), y el usuario quiere decidirlos antes.
+- **Prefect (verificado sin instalar):** `prefect 3.9.2` resuelve con Python 3.14. **Choque:** exige `python-dateutil<3` y la API tiene `4.0.0` (vía Pandas); en el mismo `uv.lock` bajaría a `2.9.0.post0`. El resto de versiones fijadas no cambia. +≈ 102 MB en la imagen de la API; ≈ 161 MB un entorno solo del pipeline. Sin servidor, el perfil por defecto `ephemeral` arranca un servidor en subproceso con SQLite en `~/.prefect/prefect.db` y la caché en `~/.prefect/storage`.
+- **Recomendado (aprobado el 2026-11-10):** Prefect solo en un entorno propio de `data/pipelines/` (ningún pin de la API cambia); la API importa una función de disparo de solo librería estándar que crea el flow run por la REST de Prefect; servidor y worker en el perfil `pipelines`.
+- **Corrección:** la entrada siguiente (diseño) decía «sin push ni PR»; se integró en `main` con la PR #33.
+- **Siguiente:** que el usuario decida; después, F1 según el plan del §5 del análisis.
+
+---
+
 ## 2026-11-09 — Pipeline de desempeño de negocio: análisis (F0) y diseño (F1)
 
-**Estado: hecho y comiteado en `docs/business-pipeline-design` (desde `main` en `006aa1e`); sin push ni PR hasta que el usuario lea `PIPELINE_DESIGN.md`.** Solo documentación: ni código, ni `uis/`, ni dependencias, ni Supabase. `techContext.md` recoge las decisiones de arquitectura del diseño (aún sin implementar).
+**Estado: hecho en `docs/business-pipeline-design` (desde `main` en `006aa1e`); integrado en `main` con la PR #33 (merge `9d8b0df`).** Solo documentación: ni código, ni `uis/`, ni dependencias, ni Supabase. `techContext.md` recoge las decisiones de arquitectura del diseño (aún sin implementar).
 
 - **F1 (hecho):** [`data/pipelines/PIPELINE_DESIGN.md`](../data/pipelines/PIPELINE_DESIGN.md), autocontenido: Estado Actual y brecha, propósito, extracción, Mermaid, actualizaciones y duplicados, DDL del BRIEFING con `run_id` y `CHECK` aditivos, idempotencia (segunda corrida tras un fallo en la carga), `reporting.pipeline_runs`, Prefect (flow `weekly_office_program_performance`, 8 tasks con el checkpoint `mark_phase`, states, block `Secret`), los 3 endpoints, las 10 preguntas, P1 como prerrequisito de negocio y la tabla de trazabilidad.
 - **Decisiones:** el usuario aprobó D1–D14 el 2026-11-09, con tres matices (cabecera de `docs/reporting/pipeline-analysis.md`).
@@ -17,7 +191,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 - **Consulta de solo lectura en la demo (autorizada):** 66 filas en `telemetry_events`; de los 4 tipos del BRIEFING, 1 `inbound_order_created` (`valencia`), 1 `outbound_order_created` y 1 `stock_threshold_triggered` (`miami`), todos de la semana del 2026-11-02 y con `programme_id` nulo; 0 `kit_cost_variance_detected`. Solo se leyeron `office` y `programme_id` de `tags`.
 - **Hallazgos:** `programme_id` siempre nulo frente al `not null` del BRIEFING (C1); sin `TELEMETRY_SUPPLIER_KEY` no se emite ninguna entrada (el coste sale a 0 sin error); `data/` está fuera del contexto de build de la API; los blocks de Prefect implican un servidor; el pooler de transacciones invalida los advisory locks de sesión; el `TRUNCATE … RESTART IDENTITY` de la demo reutiliza ids de orden; recalcular una semana ya purgada la pondría a cero; el BRIEFING está sin versionar y enlaza a una versión inglesa que no existe; `data/README.md` no existe.
 - **Decidido:** centinela `_unassigned` solo en `reporting` (D1); telemetría como fuente con conciliación de solo lectura (D2); conteo de órdenes en kits, con `kits_delivered_units` como v2 (D4); ETL en `data/pipelines/business_performance/`, lectura en `services/reporting/` y contrato en `nexova_shared.reporting` (D7); servidor y worker de Prefect en un perfil de Compose (D8).
-- **Siguiente:** que el usuario lea `PIPELINE_DESIGN.md`; después, push y PR (con merge commit, para que el commit evaluado llegue tal cual a `main`). La implementación es otro ticket: Prefect necesita autorización como dependencia nueva, y la migración del esquema `reporting` en la demo, confirmación.
+- **Siguiente (hecho):** el usuario leyó `PIPELINE_DESIGN.md`; push y PR #33 con merge commit. La implementación es otro ticket (Parte 2, entrada de arriba): Prefect necesita autorización como dependencia nueva, y la migración del esquema `reporting` en la demo, confirmación.
 
 ---
 

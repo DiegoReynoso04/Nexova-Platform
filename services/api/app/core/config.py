@@ -98,6 +98,11 @@ class Settings:
     # las `window` entradas anteriores con coste del mismo activo y proveedor.
     cost_variance_threshold_pct: float = DEFAULT_COST_VARIANCE_THRESHOLD_PCT
     cost_variance_window: int = DEFAULT_COST_VARIANCE_WINDOW
+    # Pipeline de desempeño de negocio (Parte 2, D13): API REST del servidor de
+    # Prefect del perfil `pipelines` (con Docker, http://prefect-server:4200/api).
+    # Opcional: sin ella, `POST /reporting/pipeline-runs` responde 503
+    # `pipeline_unavailable`; las lecturas de `/reporting` funcionan igual.
+    pipeline_prefect_api_url: str = ""
 
     def __post_init__(self) -> None:
         if "*" in self.cors_allowed_origins:
@@ -108,6 +113,8 @@ class Settings:
             1 <= self.access_token_expire_minutes <= MAX_ACCESS_TOKEN_EXPIRE_MINUTES
         ):
             raise ConfigError(f"ACCESS_TOKEN_EXPIRE_MINUTES must be between 1 and {MAX_ACCESS_TOKEN_EXPIRE_MINUTES}")
+        if self.pipeline_prefect_api_url and not self.pipeline_prefect_api_url.startswith(("http://", "https://")):
+            raise ConfigError("PIPELINE_PREFECT_API_URL must start with http:// or https://")
         if not (
             MIN_PASSWORD_RESET_TOKEN_MINUTES <= self.password_reset_token_minutes <= MAX_PASSWORD_RESET_TOKEN_MINUTES
         ):
@@ -234,4 +241,5 @@ class Settings:
             telemetry_supplier_key=environ.get("TELEMETRY_SUPPLIER_KEY", "").strip(),
             cost_variance_threshold_pct=cost_variance_threshold_pct,
             cost_variance_window=cost_variance_window,
+            pipeline_prefect_api_url=environ.get("PIPELINE_PREFECT_API_URL", "").strip(),
         )

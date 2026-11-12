@@ -11,6 +11,8 @@ Una sola aplicación FastAPI (`app/main.py`) con estos dominios:
 - **Parte E (§28–§33): gestor centralizado de incidencias** — `POST`/`GET /api/incidents`, `GET /api/incidents/summary`, `GET /api/incidents/{id}`, `PATCH /api/incidents/{id}/status`; validación con 400 propio (no 422).
 - **Parte F (§34–§40): inventario de equipos y materiales (Hito 5)** — `/inventory/products*` y `/inventory/orders*`; activos y órdenes en PostgreSQL (Supabase) con SQLModel, mientras la autenticación sigue en TinyDB.
 - **Parte G (§41–§44): caché de lecturas y timing por petición** — caché en memoria con TTL para `GET /inventory/products`, `/inventory/products/{id}`, `GET /api/incidents` y `/api/incidents/summary`; sin cambios en el contrato de ninguna ruta.
+- **Parte H (§45–§48): telemetría** — `POST /telemetry/events` (colector), `direct_stock_edit_rejected`, la tabla `telemetry_events` y `GET /telemetry/report`.
+- **Parte I (§49–§53): reporte de desempeño de negocio** — `GET /reporting/weekly-office-program-performance`, `GET /reporting/pipeline-runs/latest` y `POST /reporting/pipeline-runs` (`services/reporting`); lee el esquema `reporting` que escribe el pipeline de `data/pipelines` y dispara corridas por la REST de Prefect.
 
 Este documento distingue **dos orígenes** de requisitos. Mezclarlos sería atribuir al cliente decisiones que no tomó.
 
@@ -170,6 +172,9 @@ Formato único: `{"detail": ..., "code": "..."}`.
 | 404 | `asset_not_found` | inventario: activo inexistente (Parte F) | `asset not found` |
 | 409 | `sku_already_exists` | inventario: SKU ya registrado (Parte F) | `an asset with this sku already exists` (no repite el SKU) |
 | 409 | `email_already_registered` | alta o cambio a un email ya registrado (Parte C) | `email already registered` (no repite el email) |
+| 404 | `week_not_computed` / `pipeline_run_not_found` | reporte de negocio: ninguna corrida completada cubre la semana / el pipeline aún no ha corrido (Parte I, §52) | `no completed pipeline run covers this week` / `the pipeline has not run yet` |
+| 409 | `pipeline_run_in_progress` | `POST /reporting/pipeline-runs` con una corrida en marcha o programada (Parte I) | `a pipeline run is already in progress` |
+| 503 | `pipeline_unavailable` | `POST /reporting/pipeline-runs` sin `PIPELINE_PREFECT_API_URL` o con el servidor de Prefect caído (Parte I) | `the pipeline orchestrator is not available` — nunca la URL |
 | 404 | `not_found` | ruta inexistente | `Not Found` |
 | 405 | `method_not_allowed` | método no soportado; incluye la cabecera `Allow` con los métodos permitidos | `Method Not Allowed` |
 | 413 | `file_too_large` | **body HTTP** mayor que `MAX_UPLOAD_BYTES` (por `Content-Length` o contando bytes en streaming si no hay `Content-Length`) | `request body exceeds the <N> bytes limit` |
@@ -225,6 +230,7 @@ Variables de entorno del proceso (la API no carga archivos `.env` por sí sola; 
 | `TELEMETRY_SUPPLIER_KEY` | vacío | opcional; ≥ 32 caracteres. Clave del HMAC-SHA256 del proveedor (`supplier_key`, P9). Es un secreto: nunca en `repr` ni en un log. Sin ella, `supplier_key` es `null` |
 | `TELEMETRY_COST_VARIANCE_THRESHOLD_PCT` | `10` | número > 0 y ≤ 1000. Umbral de la variación del coste unitario (P10, D3 del plan) |
 | `TELEMETRY_COST_VARIANCE_WINDOW` | `3` | entero de 1 a 100. Entradas anteriores con coste del mismo activo y proveedor con las que se calcula la referencia (P10) |
+| `PIPELINE_PREFECT_API_URL` | vacío | opcional; `http://` o `https://`, o la API no arranca. API REST del servidor de Prefect del perfil `pipelines` (con Docker, `http://prefect-server:4200/api`). Sin ella, `POST /reporting/pipeline-runs` responde 503 `pipeline_unavailable`; las lecturas de `/reporting` funcionan igual (Parte I) |
 
 ---
 
@@ -948,3 +954,71 @@ Decisiones del ticket del reporte técnico (D1–D14, C1–C17): [`docs/telemetr
 - **Sin redondeo:** las tasas salen con todos sus decimales; formatea quien presenta (`test_architecture.py` prohíbe `round` en `app/`).
 - **Caché:** §41. Clave: lo que pidió el cliente, porque con `now` dentro la ventana por defecto nunca acertaría. En esa ventana, `period` puede tener hasta 60 s. El colector no la invalida. Un 422 no llega a la caché y un 503 no se guarda.
 - **Errores:** 401 sin token; 503 `storage_unavailable` si la base no responde.
+
+---
+
+# Parte I — Reporte de desempeño de negocio (pipeline de datos, Parte 2)
+
+Diseño: [`data/pipelines/PIPELINE_DESIGN.md`](../../data/pipelines/PIPELINE_DESIGN.md) (Fase 5). Decisiones de la implementación (D1–D16, C1–C17): [`docs/reporting/implementation-analysis.md`](../../docs/reporting/implementation-analysis.md). Guía de revisión: [`docs/reporting/implementation-review.md`](../../docs/reporting/implementation-review.md). Código: [`services/reporting/`](../reporting/README.md), una librería de la API como `services/telemetry`.
+
+## 49. Requisitos heredados (BRIEFING del pipeline)
+
+Fuente: [`docs/proyectos-de-data-pipeline-diseno-implementacion-subflows-tests.md`](../../docs/proyectos-de-data-pipeline-diseno-implementacion-subflows-tests.md) («Reporte Semanal de Desempeño por Oficina y Programa»).
+
+| Requisito | Dónde se cumple |
+|---|---|
+| `GET /reporting/weekly-office-program-performance` con `week_start` opcional (por defecto, la semana calculada más reciente) y todas las combinaciones oficina/programa de la semana | §51.1 |
+| El cuerpo `{"week_start", "entries": [{office, programme_id, total_material_cost, kits_delivered_count, shortage_events_count, cost_variance_events_count, currency}]}` | `services/reporting/schemas.py` |
+| `GET /reporting/pipeline-runs/latest`: estado y metadata de la última corrida | §51.2 |
+| Disparar el pipeline desde la API importando de `data/pipelines/` | §51.3 (`request_manual_run`) |
+
+## 50. Decisiones de implementación (usuario, 2026-11-10)
+
+- **Sin ETL en la API (D1, D2):** la API no instala Prefect. Importa `business_performance.trigger.request_manual_run` (librería estándar), que solo pide el flow run al servidor de Prefect por REST; el flow lo ejecuta el `pipeline-worker`. Un flow dentro de la API moriría con cada recarga de `--reload` y ocuparía su único worker. La imagen solo copia `business_performance/__init__.py` y `trigger.py` (en `/pipelines`); lo comprueba `tests/test_reporting_architecture.py` (AST y archivos de build).
+- **Solo lectura:** la API no escribe en el esquema `reporting`; lo escribe el pipeline. La migración del esquema es de `data/pipelines` (`python -m business_performance.migrate`), nunca de la API.
+- **Auth (D13):** las tres rutas exigen Bearer (se registran con `get_current_user`); el `POST` exige además `admin`.
+- **Sin caché (D12 del diseño):** la tabla la escribe otro proceso (el worker), que no puede invalidar la caché en memoria de la API.
+- **Semanas:** las reglas (lunes, semana cerrada, guarda de retención de 84 días) son las de `nexova_shared.reporting.weeks`, las mismas que aplica el pipeline.
+
+## 51. Endpoints
+
+### 51.1 `GET /reporting/weekly-office-program-performance`
+
+- **Parámetro:** `week_start` opcional, `YYYY-MM-DD`, lunes (si no, 422 `validation_error`). Sin él: la semana más reciente cubierta por una corrida `completed` (su `week_to`).
+- **200:** `{"week_start": "2026-11-02", "entries": [...]}`, con `entries` ordenadas por `office` y `programme_id`. Cada oficina con su `currency`; nunca un total entre oficinas. `total_material_cost` es un número JSON, sin redondear en la API. Una semana calculada sin actividad devuelve `entries: []`.
+- **404 `week_not_computed`:** ninguna corrida `completed` cubre la semana (una `failed` no cuenta).
+- **401** sin token; **503 `storage_unavailable`** si la base no responde o falta el esquema `reporting`.
+
+### 51.2 `GET /reporting/pipeline-runs/latest`
+
+- **200:** la última fila de `reporting.pipeline_runs` del pipeline por `started_at`: `run_id`, `pipeline_name`, `trigger`, `prefect_flow_run_id`, `status`, `phase`, `week_from`, `week_to`, `started_at`, `finished_at`, `source_rows_read`, `rows_rejected`, `duplicates_collapsed`, `rows_upserted`, `rows_deleted`, `quality` (objeto JSON; incluye `optional_steps`), `error_class` y `schema_version`. **Nunca `requested_by`.**
+- **Ojo, es asíncrono:** justo después de un `POST`, el flow run puede no haber empezado y `latest` devuelve la corrida anterior. Se espera a ver el flow run `Completed` (UI de Prefect o `GET /api/flow_runs/{id}`) antes de leerlo.
+- **404 `pipeline_run_not_found`** sin corridas; **401**; **503**.
+
+### 51.3 `POST /reporting/pipeline-runs`
+
+- **Cuerpo opcional:** `{"week_start": "YYYY-MM-DD"}` (lunes, semana cerrada y dentro de la retención; si no, 422). Sin cuerpo, el flow calcula la última semana cerrada. Cualquier otro campo, 422 (`requested_by` nunca viene del cuerpo).
+- **202:** `{"prefect_flow_run_id": "<uuid>", "status": "scheduled"}`. Crea un flow run del deployment `weekly_office_program_performance/manual` con `trigger = manual`, `week_start` y `requested_by` = el `id` del usuario del token.
+- **409 `pipeline_run_in_progress`:** hay una fila `running` de menos de 30 min en `pipeline_runs`, o un flow run activo (`SCHEDULED`, `PENDING` o `RUNNING`) del deployment `manual` en Prefect. El flow lo comprueba otra vez en `start_run` (índice único parcial) y el deployment tiene concurrencia 1.
+- **503 `pipeline_unavailable`:** sin `PIPELINE_PREFECT_API_URL`, o el servidor de Prefect no responde, no tiene el deployment o responde algo inesperado. El log (`api.reporting`) solo dice la clase del error.
+- **401** sin token; **403 `forbidden`** si no es `admin`; **503 `storage_unavailable`** si la base no responde.
+
+## 52. Errores de estas rutas
+
+| Código | `code` | Cuándo |
+|---|---|---|
+| 401 | `not_authenticated` | sin token o con uno no válido (las tres rutas) |
+| 403 | `forbidden` | `POST` sin rol `admin` |
+| 404 | `week_not_computed` | `GET` de KPI de una semana que ninguna corrida `completed` cubre |
+| 404 | `pipeline_run_not_found` | `GET latest` sin corridas |
+| 409 | `pipeline_run_in_progress` | `POST` con una corrida en marcha o programada |
+| 422 | `validation_error` | `week_start` no es una fecha, no es lunes, es la semana en curso o futura, o sale de la retención; campo desconocido en el cuerpo |
+| 503 | `pipeline_unavailable` | `POST` sin Prefect configurado o disponible |
+| 503 | `storage_unavailable` | la base no responde, o falta el esquema `reporting` (migración sin aplicar; log `reporting schema is unavailable: <Clase>`) |
+
+## 53. Configuración, persistencia y pendiente
+
+- **Configuración:** `PIPELINE_PREFECT_API_URL` (§7). Las lecturas usan la base de la API (`DATABASE_URL`), que es donde el pipeline escribe el esquema `reporting`.
+- **Tablas:** `reporting.weekly_office_program_performance` (DDL del BRIEFING + `run_id` y `CHECK` aditivos) y `reporting.pipeline_runs`, con RLS sin políticas y sin privilegios para `PUBLIC` ni los roles de la Data API de Supabase (§2.7 y §3.3 del diseño). Las crea `python -m business_performance.migrate` (desde `data/pipelines`), nunca la API.
+- **Tests:** `tests/test_reporting_api.py` (contrato y códigos, sobre SQLite con `ATTACH … AS reporting`) y `tests/test_reporting_architecture.py`. La SQL del pipeline contra PostgreSQL la prueba `data/pipelines/tests/test_repository_postgres.py`.
+- **Pendiente:** P1 (clasificación de activos por programa): hasta entonces, todas las filas llevan `programme_id = _unassigned`.

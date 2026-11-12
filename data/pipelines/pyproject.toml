@@ -1,0 +1,29 @@
+[project]
+name = "nexova-business-pipeline"
+version = "0.1.0"
+description = "Nexova — pipeline de desempeño de negocio (Prefect 3): KPI semanales por oficina y programa en el esquema reporting"
+requires-python = ">=3.11"
+# Entorno propio de data/pipelines, separado del de services/api (D1 de
+# docs/reporting/implementation-analysis.md): la API no instala Prefect, el flow
+# no corre dentro de su --reload y el lock de la API no cambia.
+#
+# Rangos acotados a las versiones probadas, como en services/api. Versiones
+# exactas en uv.lock; la imagen instala requirements.txt (uv export), con hashes.
+#
+# nexova_shared (packages/shared) NO se declara a propósito: no está publicado y
+# su nombre está libre en PyPI (dependency confusion). Entra por ruta:
+# pipeline.py lo añade a sys.path y la imagen lo pone en PYTHONPATH.
+dependencies = [
+    # Orquestación (autorizada por el ticket, «prefect>=3»): techo en la 3.9
+    # para que una 3.10 o una 4.x no entren sin probarlas.
+    "prefect>=3.9.2,<3.10",
+    # Consultas y DDL del esquema reporting: la misma serie que la API (2.1).
+    "sqlalchemy>=2.1.5,<2.2",
+    # Driver de PostgreSQL (Supabase), el mismo rango que la API.
+    "psycopg2-binary>=2.9.13,<2.10",
+]
+
+[tool.uv]
+# Proyecto virtual: solo dependencias, sin construir ni instalar un paquete
+# (el código se importa por ruta, como en la imagen).
+package = false

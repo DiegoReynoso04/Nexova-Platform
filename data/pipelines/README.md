@@ -7,4 +7,15 @@ Each subfolder or file under `data/pipelines/` should represent **one pipeline o
 - **Main purpose**: consolidate in one place the data movement and transformation logic that powers the company’s applications and analytics.
 - **Recommendation**: document pipelines as you add them—their goal, data sources and sinks, dependencies, and how to run them in development, testing, and production.
 
+## Business performance pipeline (`pipeline.py`)
+
+The "Weekly Performance Report by Office and Programme": a Prefect 3 flow that aggregates the 4 BRIEFING KPIs per week, office and programme into `reporting.weekly_office_program_performance` and logs every run in `reporting.pipeline_runs`. Design: [`PIPELINE_DESIGN.md`](./PIPELINE_DESIGN.md) (frequency and commands in §4.5); decisions: [`docs/reporting/implementation-analysis.md`](../../docs/reporting/implementation-analysis.md); verification guide: [`docs/reporting/implementation-review.md`](../../docs/reporting/implementation-review.md).
+
+- **Own environment** (Prefect `>=3.9.2,<3.10`; the API never installs it), from `data/pipelines`: `uv venv .venv --python 3.14` and `uv pip install --python .venv --require-hashes -r requirements.txt` (no `uv sync`).
+- **Run**, from the repository root: `data\pipelines\.venv\Scripts\python data\pipelines\pipeline.py` (Windows) or `data/pipelines/.venv/bin/python data/pipelines/pipeline.py` (Linux/macOS). No options: the last closed week; `--week-start YYYY-MM-DD` for one week; `--from YYYY-MM-DD [--to …]` to backfill.
+- **Database:** `DATABASE_URL` from the terminal or, if missing, that single key from the root `.env` (**the demo**); only the host is printed. Run the migration first (`python -m business_performance.migrate`, from `data/pipelines`); against a non-local host it needs `--allow-demo` (only with the user's confirmation).
+- **Docker:** `docker compose --profile pipelines up -d` (Prefect server at `http://localhost:4200` and the worker).
+
+Full instructions (in Spanish) in [README.es.md](./README.es.md).
+
 > _Spanish version: [README.es.md](./README.es.md)._

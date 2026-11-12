@@ -16,6 +16,9 @@ services:
       additional_contexts:
         # nexova_shared e incident_analyzer: paquetes del monorepo, nunca de PyPI.
         packages: ./packages
+        # Solo business_performance/trigger.py (disparo manual, librería estándar):
+        # la API no instala Prefect ni el ETL (D1 y D2).
+        pipelines: ./data/pipelines
     env_file:
       - path: .env
         required: true
@@ -35,11 +38,17 @@ services:
       - /app/api
       - --reload-dir
       - /packages
+      - --reload-dir
+      - /pipelines
     volumes:
       # Código de la API y de los dos paquetes del monorepo, sobre las rutas de
       # la imagen (recarga sin reconstruir). El .venv del host (Windows) no entra.
       - ./services/api/app:/app/api/app
       - ./services/telemetry:/app/api/telemetry
+      - ./services/reporting:/app/api/reporting
+      # Solo los dos archivos del disparo, como en la imagen.
+      - ./data/pipelines/business_performance/__init__.py:/pipelines/business_performance/__init__.py
+      - ./data/pipelines/business_performance/trigger.py:/pipelines/business_performance/trigger.py
       - ./packages/shared/nexova_shared:/packages/shared/nexova_shared
       - ./packages/incident-analyzer/incident_analyzer:/packages/incident-analyzer/incident_analyzer
       # TinyDB (usuarios, proveedores, incidencias): los datos de desarrollo del
@@ -88,6 +97,82 @@ services:
     networks:
       - nexova
 
+  # Perfil `pipelines` (D3 de docs/reporting/implementation-analysis.md): no
+  # arranca con `docker compose up`, solo con `docker compose --profile
+  # pipelines up`. Contra la demo, solo con la confirmación del usuario.
+  prefect-server:
+    profiles: [pipelines]
+    build:
+      context: ./data
+      additional_contexts:
+        # nexova_shared: paquete del monorepo, nunca de PyPI.
+        packages: ./packages
+    image: nexova-pipeline:dev
+    # Sin env_file: el servidor de Prefect no necesita ningún secreto del .env.
+    environment:
+      # La UI la abre el navegador del host: sin esto, Prefect le daría
+      # http://0.0.0.0:4200/api (deducida de --host).
+      PREFECT_UI_API_URL: http://localhost:4200/api
+      # Sin analítica anónima de Prefect: servidor y cliente (también en la imagen).
+      PREFECT_SERVER_ANALYTICS_ENABLED: "false"
+      DO_NOT_TRACK: "1"
+    command: [prefect, server, start, --host, 0.0.0.0, --port, "4200"]
+    volumes:
+      # Estado de Prefect (SQLite: deployments, flow runs, blocks, logs).
+      - prefect-data:/root/.prefect
+    ports:
+      - "4200:4200"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - nexova
+
+  # Ejecuta el flow: sirve los deployments `manual` (POST /reporting/pipeline-runs)
+  # y `weekly` (cron lunes 06:00 Europe/Madrid). Ver data/pipelines/business_performance/serve.py.
+  pipeline-worker:
+    profiles: [pipelines]
+    build:
+      context: ./data
+      additional_contexts:
+        packages: ./packages
+    image: nexova-pipeline:dev
+    # Sin env_file ni DATABASE_URL: la credencial de la base vive solo en el block
+    # `nexova-supabase-database-url` del servidor de Prefect (D5, §4.3 del diseño).
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      PREFECT_SERVER_ANALYTICS_ENABLED: "false"
+      DO_NOT_TRACK: "1"
+      # Caché de transform_weekly_rows (D6), en su volumen.
+      PREFECT_LOCAL_STORAGE_PATH: /data/raw/business_performance/prefect-results
+    command: [python, -m, business_performance.serve]
+    # Si el servidor de Prefect se reinicia, `serve` termina: vuelve solo
+    # (un `docker compose stop` lo sigue parando).
+    restart: unless-stopped
+    volumes:
+      # Código del pipeline (sin el .venv ni los tests del host). El worker no
+      # recarga solo: tras un cambio, `docker compose --profile pipelines restart pipeline-worker`.
+      - ./data/pipelines/pipeline.py:/data/pipelines/pipeline.py
+      - ./data/pipelines/business_performance:/data/pipelines/business_performance
+      - ./data/process/weekly_performance.py:/data/process/weekly_performance.py
+      - ./packages/shared/nexova_shared:/packages/shared/nexova_shared
+      # Intermedios (caché) y snapshots de validación (D6 y D7).
+      - pipeline-raw:/data/raw/business_performance
+      - pipeline-eval:/data/eval/business_performance
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    networks:
+      - nexova
+
 networks:
   nexova:
     name: nexova-net
+
+volumes:
+  prefect-data:
+  pipeline-raw:
+  pipeline-eval:

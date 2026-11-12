@@ -313,12 +313,28 @@ Medición inicial y decisiones D1–D11 (tomadas el 2026-10-31) en [`docs/cachin
   - `SupplierTable` va con `React.memo` y sus filas derivadas con `useMemo` (reglas en `uis/backoffice/CLAUDE.md`).
 - **Seed de volumen** `scripts/seed_volume.py`: solo bases de prueba. Rechaza `services/api/data` y un PostgreSQL no local; es determinista e idempotente.
 
-### Pipeline de desempeño de negocio (diseño, 2026-11-09, rama `docs/business-pipeline-design`)
+### Pipeline de desempeño de negocio (diseño, 2026-11-09; en `main` con la PR #33)
 
 Solo diseño, **sin implementar**: [`data/pipelines/PIPELINE_DESIGN.md`](../data/pipelines/PIPELINE_DESIGN.md); decisiones D1–D14 en [`docs/reporting/pipeline-analysis.md`](../docs/reporting/pipeline-analysis.md). Lo permanente, para el ticket de implementación:
 
 - **Ubicación:** ETL y orquestación en `data/pipelines/business_performance/`; `services/reporting/` como librería de la API (lecturas y disparo, sin ETL, comprobado por un test de AST); nombres compartidos en `nexova_shared.reporting`. `data/` no está en el contexto de build de la API.
 - **Prefect** (dependencia nueva, pendiente de autorizar): servidor y worker en un perfil `pipelines` de Compose; la API crea flow runs por REST con `urllib`, sin depender de Prefect. Credencial de Supabase en un block `Secret`.
+- **Implementación (Parte 2, en curso desde el 2026-11-10, rama `feature/business-pipeline`; decisiones en [`docs/reporting/implementation-analysis.md`](../docs/reporting/implementation-analysis.md)):** Prefect autorizado y **solo** en el entorno propio de `data/pipelines` (`pyproject.toml` virtual de uv, `uv.lock`, `requirements.txt`, venv `data/pipelines/.venv`), nunca en `services/api`: allí bajaría `python-dateutil` 4.0.0 (transitiva de Pandas) a 2.9.0.post0, y además el flow no debe correr bajo el `--reload` de la API. Imagen `nexova-pipeline:dev` desde `data/Dockerfile` (contexto `data/` + `packages`, `PYTHONPATH=/data/pipelines:/data/process:/packages/shared`). Servicio `prefect-server` en el perfil `pipelines` (solo con `--profile pipelines`, sin `env_file`, volumen `prefect-data`, `PREFECT_UI_API_URL=http://localhost:4200/api`). SQLAlchemy de la misma serie 2.1 que la API, con su versión exacta propia.
+- **Código del pipeline (parada 2):**
+  - **Dónde vive cada pieza:** el flow y sus tasks están en `data/pipelines/pipeline.py`, no en `business_performance/flows.py`/`tasks.py`. La transformación pura está en `data/process/weekly_performance.py` (solo librería estándar). La SQL está en `business_performance/repository.py`, con una transacción por método.
+  - **Importaciones:** `business_performance/__init__.py` añade `data/process` y `packages/shared` a `sys.path` si no se importan ya.
+  - **Base de datos:** sin `PREFECT_API_URL`, la `DATABASE_URL` sale del entorno o, si falta, de esa sola clave del `.env` de la raíz, mostrando solo el host. Con `PREFECT_API_URL`, del block `nexova-supabase-database-url`.
+  - **`--allow-demo`:** solo en `python -m business_performance.migrate`; la corrida no lleva guarda.
+  - **Caché:** Prefect guarda la de `transform_weekly_rows` en `data/raw/business_performance/prefect-results` (`PREFECT_LOCAL_STORAGE_PATH`, salvo que venga del entorno). Los snapshots van a `data/eval/business_performance/`; las dos carpetas están ignoradas por git.
+  - **Tests:** con `prefect_test_harness` y un repositorio en memoria. La integración con Postgres solo corre con `PIPELINE_TEST_DATABASE_URL` local.
+- **Disparo manual y worker (parada 3):**
+  - **La API:** importa solo `business_performance.trigger.request_manual_run` (librería estándar, REST de Prefect); la imagen copia en `/pipelines` solo ese archivo y `__init__.py`, que no importa nada. `services/reporting/` es una librería de la API, como `services/telemetry`, y se importa como `reporting`. Fuera de Docker, uvicorn necesita `services/` y `data/pipelines` en `PYTHONPATH`. `PIPELINE_PREFECT_API_URL` es opcional: sin ella, el `POST` da 503 `pipeline_unavailable`.
+  - **El worker:** `pipeline-worker` lee la base solo del block `nexova-supabase-database-url` y lleva `restart: unless-stopped`, porque `serve` termina si se reinicia el servidor de Prefect.
+  - **Analítica de Prefect:** apagada con `DO_NOT_TRACK=1` (cliente) y `PREFECT_SERVER_ANALYTICS_ENABLED=false` (servidor), forzadas en `_bootstrap.py`, la imagen y Compose; con solo la del servidor, el cliente seguía mostrando su aviso.
+  - **Semanas:** las reglas (lunes, cerrada, retención) viven en `nexova_shared.reporting.weeks`, y las comparten el pipeline y la API.
+  - **Verificación:** `docs/reporting/compose-ephemeral.yml` apunta la API a un efímero y los usuarios a una TinyDB en `/tmp` del contenedor; la URL sale de `EPHEMERAL_DATABASE_URL` de la terminal.
+  - **Lecturas de la demo:** `python -m business_performance.readonly <archivo.sql>` (desde `data/pipelines`), con `SET TRANSACTION READ ONLY` y siempre `ROLLBACK`. Así lee las fotos y el cuadre sin `psql` y sin la URL en la terminal. `secret.py` toma la URL como el script (entorno → `.env`), así que el block de la demo se crea desde el host. Si el Control de aplicaciones de Windows bloquea una DLL de SQLAlchemy del venv (`_collections_cy`, `_util_cy`), se reintenta. Si sigue bloqueada, se usa la imagen `nexova-pipeline:dev` con el código y el `.env` montados en solo lectura; la receta está en `docs/reporting/implementation-review.md` §6.
+  - **Contrato de la API:** en `services/api/SPECS.md` Parte I.
 - **Esquema `reporting`** (`weekly_office_program_performance` con la DDL del BRIEFING + `run_id` y `CHECK` aditivos; `pipeline_runs`): migración explícita, nunca al arrancar; en la demo, solo con confirmación. Con el Transaction pooler, solo `pg_advisory_xact_lock`.
 
 ### Plan de telemetría (diseño, ticket del 2026-11-01/02, rama `docs/telemetry-plan`)
