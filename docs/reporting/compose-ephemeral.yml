@@ -1,0 +1,24 @@
+# Override de VERIFICACIÓN del pipeline (parada 3): el stack normal y el perfil
+# `pipelines` contra un Postgres efímero. NUNCA contra la demo.
+# Guía: docs/reporting/implementation-review.md §3.
+#
+#   docker compose -f docker-compose.yml -f docs/reporting/compose-ephemeral.yml --profile pipelines up -d --build
+#
+# Sin secretos: EPHEMERAL_DATABASE_URL sale de la terminal (la contraseña del rol
+# del efímero). Las rutas relativas de Compose se resuelven desde la raíz (la
+# carpeta del primer archivo), así que este archivo puede vivir aquí.
+#
+# - La API apunta al efímero (`nexova-pipeline-pg`, en la red nexova-net) y al
+#   servidor de Prefect del perfil.
+# - Usuarios en una TinyDB temporal dentro del contenedor (`/tmp`), no en
+#   services/api/data: los usuarios de prueba no tocan los del desarrollo y
+#   desaparecen al recrear el contenedor.
+# - El worker no cambia: su credencial es el block de Prefect (se crea a mano
+#   con business_performance.secret, apuntando al efímero).
+
+services:
+  api:
+    environment:
+      DATABASE_URL: ${EPHEMERAL_DATABASE_URL:?define EPHEMERAL_DATABASE_URL (Postgres efímero; nunca la demo)}
+      PIPELINE_PREFECT_API_URL: http://prefect-server:4200/api
+      AUTH_DB_PATH: /tmp/nexova-pipeline-check/auth.json

@@ -2,7 +2,7 @@
 
 **Reporte Semanal de Desempeño por Oficina y Programa** de Nexova Solutions, para Laura Mendoza (CEO) y Elena Vargas (Formación Corporativa, L&D).
 
-> **Este documento es solo diseño.** No hay código de orquestación, no se ha instalado Prefect ni se ha creado nada en Supabase. El SQL y el pseudocódigo describen lo que se implementará en el ticket siguiente. Lo que no está verificado está marcado como tal (§8).
+> **Diseño aprobado el 2026-11-09; implementado en la Parte 2** (rama `feature/business-pipeline`), con los cambios que decidió el usuario en [`docs/reporting/implementation-analysis.md`](../../docs/reporting/implementation-analysis.md) (D1–D16). Esos cambios ya están en este documento: el código en `pipeline.py` (§4.1), la credencial y la guarda (§4.3), el perfil `pipelines` (§4.4), la frecuencia y el comando (§4.5) y el disparo manual (Fase 5). Guía de verificación: [`docs/reporting/implementation-review.md`](../../docs/reporting/implementation-review.md). En la demo todavía no se ha creado nada en Supabase.
 
 | | |
 |---|---|
@@ -21,8 +21,8 @@
 | D4 | `kits_delivered_count` = conteo de órdenes; `kits_delivered_units` queda como propuesta de v2 |
 | D5 | Lunes a las 06:00 `Europe/Madrid`; cada corrida programada recalcula la última semana cerrada y la anterior |
 | D6 | Deduplicación por `event_id` (ingesta) y por id de orden dentro de la semana (transformación) |
-| D7 | ETL en `data/pipelines/business_performance/`; lecturas en `services/reporting/`; nombres compartidos en `nexova_shared.reporting` |
-| D8 | Prefect con servidor propio y un worker, en un perfil de Docker Compose; la API dispara las corridas por la API REST de Prefect |
+| D7 | Flow y tasks en `data/pipelines/pipeline.py`; soporte en `data/pipelines/business_performance/`; transformación pura en `data/process/weekly_performance.py`; lecturas en `services/reporting/`; nombres compartidos en `nexova_shared.reporting` (D4 del análisis de implementación) |
+| D8 | Prefect con servidor propio y un worker, en un perfil de Docker Compose; la API dispara las corridas por la API REST de Prefect, con `request_manual_run` de `business_performance/trigger.py` (librería estándar; D2 del análisis de implementación) |
 | D9 | DDL del BRIEFING intacta + `run_id` y `CHECK` **aditivos**; migración explícita |
 | D10 | Log de ejecución en `reporting.pipeline_runs` |
 | D11 | Una sola corrida a la vez y guarda de retención |
@@ -455,39 +455,53 @@ create index ix_pipeline_runs_latest
 
 ### 4.1 Flow y tasks
 
-Código previsto en `data/pipelines/business_performance/` (`flows.py`, `tasks.py`, `migrate.py`, `serve.py`).
+**Código:** el flow, el backfill y las tasks en [`data/pipelines/pipeline.py`](./pipeline.py); la transformación pura en [`data/process/weekly_performance.py`](../process/weekly_performance.py); el soporte en [`business_performance/`](./business_performance/) (`config.py`, `repository.py` con la SQL, `migrate.py`, `serve.py`, `secret.py` y `trigger.py`). Prefect vive en el entorno propio de `data/pipelines` (`pyproject.toml`, `uv.lock`, `requirements.txt`), nunca en la API (D1 del análisis de implementación).
 
 **Flow principal:** `weekly_office_program_performance(trigger, week_start=None, requested_by=None)`.
 
 | Task | Qué hace | Entra → sale | Reintentos |
 |---|---|---|---|
-| `start_run` | Cierra las corridas abandonadas (> 30 min) e inserta la fila `running` en `reporting.pipeline_runs` | `trigger`, `requested_by`, `prefect_flow_run_id` → `run_id` | 2 (E/S) |
-| `resolve_weeks` | Semanas a calcular (cron: última cerrada + la anterior; manual: la pedida o la última cerrada; nunca la semana en curso) y guarda de retención | `trigger`, `week_start` → `week_from`, `week_to` | 0 |
-| `extract_business_events` | La consulta de §2.3 | ventana → registros (§2.3) | 2 (E/S) |
-| `extract_quality_counts` | Conteos técnicos y de conciliación | ventana → conteos por semana y oficina | 2 (E/S) |
-| `mark_phase` | Checkpoint: `UPDATE reporting.pipeline_runs SET phase = :phase WHERE run_id = :run_id AND status = 'running'`, en una transacción corta. Se llama al entrar en `transform` y en `load` | `run_id`, `phase` → — | 2 (E/S) |
-| `transform_weekly_rows` | Las reglas de §2.5 (función pura) | registros → filas + métricas de la corrida | 0 (determinista) |
-| `load_weekly_rows` | La transacción de §3.1 | filas, `run_id` → `rows_upserted`, `rows_deleted` | 2, cada 30 s (E/S) |
-| `finish_run` | Cierra la fila: `completed`/`failed`, fase, contadores, `quality`, `error_class` | `run_id`, resultado → — | 2 (E/S) |
+| `start_run` | Cierra las corridas abandonadas (> 30 min) e inserta la fila `running` en `reporting.pipeline_runs`. **Idempotente:** el `run_id` lo genera el flow y el `INSERT` lleva `ON CONFLICT (run_id) DO NOTHING`, así que un reintento tras un `COMMIT` perdido no choca con su propia fila | `run_id`, `trigger`, `requested_by`, `prefect_flow_run_id`, semanas pedidas → `run_id` | 2 × 10 s |
+| `resolve_weeks` | Comprueba las semanas pedidas (cron: última cerrada + la anterior; manual: la pedida o la última cerrada; nunca la semana en curso) y la guarda de retención | semanas pedidas → `week_from`, `week_to` | 0 (determinista) |
+| `extract_business_events` | La consulta de §2.3 | ventana → registros (§2.3) | 2 × 10 s |
+| `extract_quality_counts` | Conteos técnicos y de conciliación | ventana → conteos por semana y oficina | 2 × 10 s |
+| `mark_phase` | Checkpoint: `UPDATE reporting.pipeline_runs SET phase = :phase WHERE run_id = :run_id AND status = 'running'`, en una transacción corta. Se llama al entrar en `transform` y en `load` | `run_id`, `phase` → — | 2 × 10 s |
+| `transform_weekly_rows` | Las reglas de §2.5 (función pura). **Caché de 1 h** (`cache_key_fn` = SHA-256 de la versión de las reglas, las semanas, cada evento extraído y los conteos; `cache_expiration` = 1 h): una corrida repetida en la misma hora con los mismos eventos no recalcula (`Cached`) | registros → filas + métricas de la corrida | 0 (determinista) |
+| `load_weekly_rows` | La transacción de §3.1. Se llama con `return_state=True`: si falla tras sus reintentos, el flow cierra la corrida como `failed`/`load` y termina en `Failed` sin un `raise` (fallo manejado) | filas, `run_id` → `rows_upserted`, `rows_deleted` | 2 × 30 s |
+| `write_eval_snapshot` | **Opcional**, con `return_state=True`: copia de validación de la corrida (contadores, filas agregadas y `quality`, sin identificadores) en `data/eval/business_performance/`. Si falla, la corrida termina `completed` y el fallo queda en `quality.optional_steps` y en el log | resultado → nombre del archivo | 0 (disco local) |
+| `finish_run` | Cierra la fila: `completed`/`failed`, fase, contadores, `quality`, `error_class` | `run_id`, resultado → — | 2 × 10 s |
+
+**Por qué esos reintentos:**
+
+- **Lectura y escritura en la base, 2 × 10 s:** cubren los cortes transitorios del pooler de Supabase (3 intentos en unos 20 s) sin dejar colgada minutos una corrida manual.
+- **La carga, 2 × 30 s:** su transacción se deshace entera, y conviene dar tiempo a que se libere el lock o la conexión. Los 3 intentos (~1 min) caben de sobra en las 4 h de margen del cron.
+- **Solo errores transitorios:** fallan al primer intento un `DataQualityError`, una semana no válida, otra corrida en marcha o una SQL rechazada (`IntegrityError`, `ProgrammingError`, `DataError`).
+- **Las deterministas, 0:** un reintento daría el mismo error.
 
 ```text
 flow weekly_office_program_performance(trigger, week_start=None, requested_by=None):
-    run_id = start_run(trigger, requested_by, flow_run_id actual)   # phase = 'extract'
+    week_from, week_to = requested_weeks(trigger, week_start, now)   # sin comprobar todavía
+    run_id = uuid4()                                                 # lo genera el flow
+    start_run(run_id, trigger, requested_by, flow_run_id actual, week_from, week_to)  # phase = 'extract'
     phase = "extract"
     try:
-        week_from, week_to = resolve_weeks(trigger, week_start)
+        resolve_weeks(week_from, week_to, now)   # lunes, cerradas, retención: un rechazo queda en el log
         events  = extract_business_events(week_from, week_to)
         quality = extract_quality_counts(week_from, week_to)
-        mark_phase(run_id, "transform")    # en la base, antes de transformar
-        phase = "transform"                # solo si mark_phase salió bien
-        rows, stats = transform_weekly_rows(events, quality)
-        mark_phase(run_id, "load")         # en la base, antes de cargar
-        phase = "load"
-        upserted, deleted = load_weekly_rows(rows, week_from, week_to, run_id)
-        finish_run(run_id, status="completed", phase="done", stats, upserted, deleted)
-    except Exception as error:
-        finish_run(run_id, status="failed", phase=phase, error_class=type(error).__name__)
-        raise    # el flow termina en Failed
+        mark_phase(run_id, "transform"); phase = "transform"
+        result  = transform_weekly_rows(events, quality, week_from, week_to)       # caché de 1 h
+        mark_phase(run_id, "load"); phase = "load"
+        load_state = load_weekly_rows(result, week_from, week_to, run_id, return_state=True)
+        if load_state.is_failed():                       # fallo manejado explícitamente
+            finish_run(run_id, "failed", phase, error_class=clase del error)
+            return Failed(...)                           # el flow termina en Failed
+        upserted, deleted = load_state.result()
+        snapshot_state = write_eval_snapshot(..., return_state=True)   # opcional
+        finish_run(run_id, "completed", "done", contadores,
+                   quality = result.quality + optional_steps)
+    except Exception as error:                           # lo que no pasó por return_state
+        finish_run(run_id, "failed", phase, error_class=type(error).__name__)
+        raise
 ```
 
 **Flow de backfill (opcional):** `backfill_weekly_office_program_performance(week_from, week_to)` llama al flow principal como **subflow**, una vez por semana y en orden, con `trigger = 'backfill'`. Cada semana deja su propia fila en el log. Sirve para cubrir las semanas desde el 2026-11-02 al poner el pipeline en marcha, y nunca pasa de la guarda de retención.
@@ -510,8 +524,11 @@ flow weekly_office_program_performance(trigger, week_start=None, requested_by=No
 |---|---|---|---|
 | `nexova-supabase-database-url` | `Secret` (incluido en Prefect, sin colecciones extra) | La URL de PostgreSQL de Supabase por el Transaction pooler (puerto 6543), driver `postgresql+psycopg2` | `start_run`, `extract_*`, `mark_phase`, `load_weekly_rows`, `finish_run` y `migrate` |
 
-- La credencial **solo** vive en el block (en la base del servidor de Prefect): nunca en el código, en el repo ni en los logs. Las tasks la cargan con `Secret.load("nexova-supabase-database-url")`.
-- Se crea una vez, a mano, desde la UI o la CLI de Prefect. Si se rota la contraseña de Supabase, se actualizan el block y el `.env` de la raíz (que sigue usando la API).
+- **Con servidor (el worker, `PREFECT_API_URL`):** la credencial del worker **solo** vive en el block, en la base del servidor de Prefect. Nunca va en el código, en el repo, en el entorno del contenedor ni en los logs. `pipeline.py` la carga con `Secret.load("nexova-supabase-database-url")`.
+- **Alta y rotación del block:** se crea una vez con `python -m business_performance.secret` dentro del worker (lee `DATABASE_URL` del `exec` e imprime solo el host), o desde la UI de Prefect. Si se rota la contraseña de Supabase, se actualizan el block y el `.env` de la raíz (que sigue usando la API).
+- **Sin servidor (el script, D5 del análisis de implementación):** `DATABASE_URL` sale de la variable de entorno de la terminal o, si falta, **solo de esa clave** del `.env` de la raíz, leída con la librería estándar. Se imprime de dónde salió y el host, nunca la URL. Un block en el modo efímero no protegería nada, porque su clave de cifrado está en la misma SQLite.
+- **Guarda de la demo, solo en la migración (DDL):** `python -m business_performance.migrate` se niega con un host que no es local salvo con `--allow-demo`. La corrida no se bloquea: solo escribe en `reporting`, es idempotente y se puede recalcular. Si falta el esquema, termina con salida 2 y el comando de la migración, sin traza.
+- **Analítica de Prefect desactivada en todos los modos:** `business_performance/_bootstrap.py` fuerza `PREFECT_SERVER_ANALYTICS_ENABLED=false` (servidor) y `DO_NOT_TRACK=1` (cliente) antes de importar Prefect. La imagen y Compose fijan las mismas dos variables.
 
 ### 4.4 Deployments y dónde corre
 
@@ -522,15 +539,37 @@ flow weekly_office_program_performance(trigger, week_start=None, requested_by=No
 | Deployment `weekly-office-program-performance/weekly` | Cron `0 6 * * 1`, zona `Europe/Madrid`, `trigger = 'schedule'`, concurrencia 1 |
 | Deployment `weekly-office-program-performance/manual` | Sin programación; lo dispara `POST /reporting/pipeline-runs` con `trigger = 'manual'` |
 
-- Los dos contenedores van en un **perfil de Compose `pipelines`** (`docker compose --profile pipelines up`): el arranque por defecto de la plataforma no cambia.
+- Los dos contenedores van en un **perfil de Compose `pipelines`** (`docker compose --profile pipelines up`): el arranque por defecto de la plataforma no cambia. Contra la demo, solo con la confirmación del usuario en el momento.
+- **Imagen** `nexova-pipeline:dev` ([`data/Dockerfile`](../Dockerfile), contexto `data/` + `packages`), con `PYTHONPATH=/data/pipelines:/data/process:/packages/shared`.
+- **`prefect-server`:** sin `env_file`, con su SQLite en el volumen `prefect-data` y la UI en `http://localhost:4200`.
+- **`pipeline-worker`:** `PREFECT_API_URL=http://prefect-server:4200/api` y sin `DATABASE_URL` (la credencial está en el block). La caché va al volumen `pipeline-raw` y los snapshots a `pipeline-eval`. Monta el código del host y se reinicia a mano tras un cambio.
 - **La API no ejecuta el flow ni depende de Prefect:** crea el flow run por la API REST del servidor con `urllib` (librería estándar, como el envío de emails con Resend). Así el flow no muere con cada recarga de la API (`--reload`) ni ocupa su único worker (`--workers 1`).
-- **Prefect es una dependencia nueva** del subproyecto `data/pipelines/`: se autoriza en el ticket de implementación, con versión fija.
+- **Prefect es una dependencia nueva** del subproyecto `data/pipelines/` (`prefect>=3.9.2,<3.10`, autorizada por el ticket), nunca de `services/api`.
+
+### 4.5 Frecuencia y ejecución
+
+| | |
+|---|---|
+| **Frecuencia** | Semanal: **lunes a las 06:00 `Europe/Madrid`** (deployment `weekly`, cron `0 6 * * 1`), que recalcula la última semana cerrada y la anterior. Además, a demanda: `POST /reporting/pipeline-runs` (deployment `manual`) o el script |
+| **Antes de la primera corrida** | La migración, una vez por base: desde `data/pipelines`, `.venv\Scripts\python -m business_performance.migrate --dry-run` y después sin `--dry-run` (en Linux, `.venv/bin/python`). En la demo, con `--allow-demo` y solo con la confirmación del usuario |
+| **Script (Windows, desde la raíz)** | `data\pipelines\.venv\Scripts\python data\pipelines\pipeline.py` |
+| **Script (Linux/macOS, desde la raíz)** | `data/pipelines/.venv/bin/python data/pipelines/pipeline.py` |
+| **Qué semana** | Sin opciones, la **última semana cerrada**; `--week-start YYYY-MM-DD` (lunes) para una concreta; `--from YYYY-MM-DD [--to YYYY-MM-DD]` para el backfill (un subflow por semana; sin `--to`, hasta la última cerrada). La primera corrida en la demo: `--from 2026-11-02` |
+| **Qué base** | `DATABASE_URL` de la terminal (`$env:DATABASE_URL = "postgresql://…"` en PowerShell, `export DATABASE_URL=…` en Linux) o, si falta, la del `.env` de la raíz (la demo). La primera línea dice de dónde salió y el host |
+| **Salida** | 0 completada; 1 alguna corrida falló; 2 configuración, argumentos o esquema ausente. Al terminar, una línea JSON `pipeline_run_finished` por el logger de Prefect |
+| **Dónde queda cada cosa** | Sin servidor, Prefect arranca uno temporal con su estado en `~/.prefect` (fuera del repo). La caché de `transform_weekly_rows`, en `data/raw/business_performance/prefect-results/`; los snapshots, en `data/eval/business_performance/` (las dos, ignoradas por git). En Compose, en los volúmenes `pipeline-raw` y `pipeline-eval` |
+| **Worker** | `docker compose --profile pipelines up -d`, y una vez el block: `docker compose --profile pipelines exec -e DATABASE_URL pipeline-worker python -m business_performance.secret` |
 
 ---
 
 ## Fase 5 — Endpoints en `services/reporting/`
 
-`services/reporting/` es una **librería de la API**, como `services/telemetry/`: un router y sus lecturas, que la imagen copia junto a `app/` y que `app/main.py` registra. **No contiene ETL**: no importa `prefect`, `pandas` ni `business_performance`, y no escribe en el esquema `reporting`. Un test de arquitectura (AST) en `services/api/tests/` lo comprobará. Los nombres de tablas, columnas, estados y el centinela vienen de `nexova_shared.reporting` (solo librería estándar), que comparten la API y el pipeline sin duplicar código.
+`services/reporting/` es una **librería de la API**, como `services/telemetry/`: un router y sus lecturas, que la imagen copia junto a `app/` y que `app/main.py` registra.
+
+- **No contiene ETL:** no importa `prefect`, `pandas`, el flow ni nada de `business_performance` salvo `trigger`, y no escribe en el esquema `reporting`. Lo comprueba `services/api/tests/test_reporting_architecture.py` (AST).
+- **Nombres compartidos:** las tablas, columnas, estados, el centinela y las reglas de las semanas vienen de `nexova_shared.reporting` (solo librería estándar). La API y el pipeline los comparten sin duplicar código.
+- **Por qué la API importa `request_manual_run` y no el flow:** Prefect no está instalado en la API (D1 del análisis de implementación: entorno propio de `data/pipelines`), y un flow ejecutado dentro de la API moriría con cada recarga de su `--reload` y ocuparía su único worker. `request_manual_run` (`data/pipelines/business_performance/trigger.py`, librería estándar) solo pide el flow run al servidor de Prefect por REST; lo ejecuta el `pipeline-worker`. La imagen de la API solo copia `business_performance/__init__.py` y `trigger.py`.
+- **Configuración:** `PIPELINE_PREFECT_API_URL` en el `.env` de la raíz (con Docker, `http://prefect-server:4200/api`). Sin ella, o con el servidor caído, el `POST` responde 503 `pipeline_unavailable`.
 
 | Ruta | Auth | Qué de `data/pipelines/` usa | Respuestas |
 |---|---|---|---|
@@ -571,7 +610,7 @@ La última fila de `reporting.pipeline_runs` del pipeline (por `started_at`): `r
 ### 5.3 `POST /reporting/pipeline-runs`
 
 - Cuerpo opcional: `{"week_start": "2026-11-02"}` (lunes, de una semana cerrada y dentro de la retención; si no, 422).
-- Antes de disparar, mira si hay una fila `running`: si la hay → 409 `pipeline_run_in_progress`. El flow lo comprueba otra vez en `start_run` (el índice único parcial manda).
+- Antes de disparar, mira si hay una fila `running` de menos de 30 min en el log, o un flow run activo (`SCHEDULED`, `PENDING` o `RUNNING`) del deployment `manual` en Prefect: si lo hay → 409 `pipeline_run_in_progress`. El flow lo comprueba otra vez en `start_run` (el índice único parcial manda) y el deployment tiene concurrencia 1.
 - 202 `{"prefect_flow_run_id": "…", "status": "scheduled"}`: la corrida es asíncrona; su estado se sigue en `GET /reporting/pipeline-runs/latest`.
 - `requested_by` = `id` del usuario del token, nunca del cuerpo. 403 si el usuario no es `admin`.
 - Servidor de Prefect no disponible → 503 `pipeline_unavailable`.

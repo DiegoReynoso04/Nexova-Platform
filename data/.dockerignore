@@ -1,0 +1,23 @@
+# Contexto de build: data/ (ver data/Dockerfile). Patrones relativos a esa
+# carpeta; "**/" los aplica también dentro de pipelines/ y process/.
+
+# Como services/.dockerignore.
+**/__pycache__
+**/*.pyc
+**/.env*
+**/tests
+**/*.log
+
+# Entorno local de Windows: nunca dentro de la imagen.
+**/.venv
+
+# Datos: incidentes reales (con emails de clientes), intermedios, caché de
+# Prefect y snapshots del pipeline. Nunca dentro de la imagen.
+raw
+eval
+
+# Artefactos de tests y cobertura.
+**/.coverage
+**/.coverage.*
+**/.pytest_cache
+**/htmlcov

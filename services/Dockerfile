@@ -3,8 +3,10 @@
 # Contexto de build: services/. Contexto adicional `packages`: packages/ del
 # monorepo (nexova_shared e incident_analyzer), que no están publicados y nunca
 # se instalan desde PyPI (ver services/api/pyproject.toml):
-#   docker build -t nexova-api:dev --build-context packages=packages services
-# En Compose (F4) el contexto adicional se declara con `additional_contexts`.
+#   docker build -t nexova-api:dev --build-context packages=packages --build-context pipelines=data/pipelines services
+# En Compose (F4) los contextos adicionales se declaran con `additional_contexts`.
+# Del contexto `pipelines` solo entran business_performance/__init__.py y
+# trigger.py: el disparo manual, de librería estándar. Nunca Prefect ni el ETL.
 #
 # Sin secretos: ni ENV ni ARG con claves. La configuración llega en tiempo de
 # ejecución desde el .env de la raíz (ver .env.example).
@@ -19,6 +21,7 @@ ARG PYTHON_IMAGE=python:3.14.6-slim
 FROM ${PYTHON_IMAGE} AS monorepo-packages
 COPY --from=packages shared/nexova_shared /packages/shared/nexova_shared
 COPY --from=packages incident-analyzer/incident_analyzer /packages/incident-analyzer/incident_analyzer
+COPY --from=pipelines business_performance/__init__.py business_performance/trigger.py /pipelines/business_performance/
 RUN find /packages \( -name __pycache__ -o -name "*.pyc" \) -prune -exec rm -rf {} +
 
 FROM ${PYTHON_IMAGE}
@@ -32,7 +35,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     # Paquetes del monorepo por ruta, sin instalarlos: instalarlos pediría
     # setuptools a PyPI (la imagen no lo trae) y, en desarrollo, una copia
     # instalada taparía el bind mount de packages/ (F4).
-    PYTHONPATH=/packages/shared:/packages/incident-analyzer
+    PYTHONPATH=/packages/shared:/packages/incident-analyzer:/pipelines
 
 WORKDIR /app/api
 
@@ -45,12 +48,16 @@ RUN uv pip install --system --no-cache --require-hashes -r requirements.txt
 #    solo el código importable, sin tests, metadatos de build, TypeScript ni
 #    caché de bytecode (ver la etapa monorepo-packages).
 COPY --from=monorepo-packages /packages /packages
+COPY --from=monorepo-packages /pipelines /pipelines
 
 # 3. Código de la API (lo que más cambia, al final).
 COPY api/app ./app
 # Análisis de telemetría (Pandas): junto a `app`, para que se importe como
 # `telemetry` sin tocar PYTHONPATH (D1 de docs/telemetry/report-analysis.md).
 COPY telemetry ./telemetry
+# Endpoints del reporte de negocio: librería de la API, como `telemetry`
+# (se importa como `reporting`). Sin ETL: ver services/reporting/README.md.
+COPY reporting ./reporting
 
 EXPOSE 8000
 

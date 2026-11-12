@@ -6,6 +6,9 @@ from pathlib import Path
 # imagen está junto a `app`, y aquí hace falta `services/` en la ruta. Vale para
 # unittest y pytest, que importan este paquete antes que cualquier test.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+# services/reporting importa `business_performance.trigger` (librería estándar):
+# en la imagen está en /pipelines; aquí, data/pipelines del monorepo.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "data" / "pipelines"))
 
 # Sin esto, cada petición de la suite imprimiría su línea de timing en stderr
 # (app/core/timing.py solo pone su StreamHandler si el logger no tiene ninguno).

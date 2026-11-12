@@ -13,4 +13,4 @@ dependencies = []
 
 [tool.setuptools]
 # Solo el paquete Python; `types/` (TypeScript, @repo/shared-types) no se empaqueta.
-packages = ["nexova_shared", "nexova_shared.incident_csv", "nexova_shared.incidents"]
+packages = ["nexova_shared", "nexova_shared.incident_csv", "nexova_shared.incidents", "nexova_shared.reporting"]

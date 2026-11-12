@@ -13,6 +13,7 @@ from typing import Any, Literal
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from reporting.router import router as reporting_router
 
 from app.auth.dependencies import get_current_user
 from app.auth.email import DisabledEmailSender, EmailSender, ResendEmailSender
@@ -101,6 +102,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Authorization). Guarda en `telemetry_events`. Ver app/modules/telemetry/router.py.
     app.include_router(telemetry_router)
     configure_telemetry_logger()
+    # Reporte de desempeño de negocio (services/reporting): GET con cualquier rol,
+    # POST solo admin (lo declara la ruta).
+    app.include_router(reporting_router, dependencies=authenticated)
 
     # OpenAPI del gestor de incidencias: sin el 422 que nunca responde (valida con 400).
     default_openapi = app.openapi
