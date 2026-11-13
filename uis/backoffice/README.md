@@ -54,6 +54,16 @@ Interfaz del inventario del Hito 5 para el personal de operaciones: consultar el
 - Necesita la API en marcha con `DATABASE_URL` y, para ver datos, el seed (`docker compose exec api python -m app.modules.inventory.seed --email <usuario>`; ver [`services/api/README.md`](../../services/api/README.md#inventario-hito-5)).
 - **Prueba manual** (las 4 páginas, paso a paso) y trazabilidad con el brief: [`docs/inventory-frontend-review.md`](../../docs/inventory-frontend-review.md).
 
+### `/reporting` — reporte semanal de desempeño por oficina y programa
+
+El «Reporte Semanal de Desempeño por Oficina y Programa» para Laura (CEO) y Elena (L&D): `GET /reporting/weekly-office-program-performance` (por `week_start`) y `GET /reporting/pipeline-runs/latest`, por el proxy `/backend`. Contexto: [`docs/proyectos-de-data-pipeline-diseno-implementacion-subflows-tests.md`](../../docs/proyectos-de-data-pipeline-diseno-implementacion-subflows-tests.md); reglas en [`CLAUDE.md`](./CLAUDE.md) («Reporte semanal»).
+
+- Un bloque por KPI con su nombre del BRIEFING (Costo de material por oficina/programa, Kits entregados, Frecuencia de escasez y Frecuencia de variación de costo), su «qué mide» y el período (lunes a domingo, UTC). Valencia (EUR) y Miami (USD) lado a lado: **nunca se suman ni se convierten**. Barras de CSS solo en los conteos; el costo no lleva barra.
+- «Sin programa asignado» en lugar del centinela, «Sin actividad esta semana» si falta una oficina, y botones de semana anterior y siguiente (una semana sin calcular no es un error).
+- Franja «Datos actualizados» con la última corrida del pipeline; avisa si falló o si pasaron más de 8 días (con el perfil `pipelines` de Compose apagado, la demo lo mostrará pasada una semana: es lo esperado).
+- Estados de carga, vacío, error y almacenamiento no disponible (503), sin códigos ni nombres técnicos. Cualquier usuario con sesión; sin librerías nuevas.
+- **Prueba manual** (con la API contra el Postgres efímero, nunca la demo): [`docs/reporting/subflows-dashboard-review.md`](../../docs/reporting/subflows-dashboard-review.md).
+
 ### Autenticación — `/login`, `/register`, `/account/profile` (AUTH-02)
 
 Contexto: [`docs/auth-frontend.md`](../../docs/auth-frontend.md); contrato: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte C.
@@ -109,6 +119,7 @@ Los casos de error y su verificación manual (auditoría de gestión de errores)
 Desde `uis/backoffice`:
 
 ```bash
+npx next typegen   # tras añadir una ruta (p. ej. /reporting), antes de tsc
 npx tsc --noEmit
 npm run lint
 npm run build
@@ -142,11 +153,13 @@ app/
 │   ├── orders/page.tsx         # Historial
 │   ├── orders/inbound/page.tsx # Entrada de activos (lee ?asset_id=)
 │   └── orders/outbound/page.tsx # Salida de activos (lee ?asset_id=)
+├── reporting/page.tsx          # Reporte semanal de desempeño por oficina y programa
 └── globals.css                 # Tailwind v4 + paleta y tokens semánticos compartidos con talent-pipeline-tracker
 
 components/
 ├── ui/                         # primitivas: button, loading-spinner, alert, nav-link, input
 ├── auth/                       # sesión, guard, navegación de cuenta, login, registro, perfil y contraseñas
+├── reporting/                  # vista cliente (weekly-performance-view), bloques por KPI, comparación de oficinas, selector de semana y frescura
 ├── incidents/                  # vista cliente (incident-analysis-view) + componentes presentacionales
 ├── suppliers/                  # vista cliente (supplier-directory-view) + filtros, tabla, formulario, badges
 ├── incident-manager/           # vistas cliente (board, form) + resumen, filtros, tabla, formulario, errores

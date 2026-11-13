@@ -23,6 +23,15 @@ dependencies = [
     "psycopg2-binary>=2.9.13,<2.10",
 ]
 
+# Solo desarrollo (`uv lock`; nunca `uv sync`): pytest para tests/pipelines/test_pipeline.py de la raíz.
+# Mismo rango que services/api (AUTH-088). El grupo NO entra en requirements.txt (la imagen
+# de producción se exporta con --no-dev); requirements-dev.txt, con hashes, lo instala en un
+# contenedor desechable o en el venv local. Autorizado por el usuario el 2026-11-12 (solo pytest).
+[dependency-groups]
+dev = [
+    "pytest>=9.1,<9.2",
+]
+
 [tool.uv]
 # Proyecto virtual: solo dependencias, sin construir ni instalar un paquete
 # (el código se importa por ruta, como en la imagen).

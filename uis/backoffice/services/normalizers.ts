@@ -20,6 +20,15 @@
 // tests/support/resolve-alias.mjs).
 
 import {
+  CURRENCY_BY_OFFICE,
+  REPORT_CURRENCIES,
+  REPORT_OFFICES,
+  RUN_STATUSES,
+  type PipelineRun,
+  type WeeklyPerformance,
+  type WeeklyPerformanceEntry,
+} from '@/types/reporting';
+import {
   USER_ROLES,
   type AccessToken,
   type AuthField,
@@ -769,5 +778,55 @@ export function normalizeTelemetryReport(input: unknown): TelemetryReport {
       dominant_event_types: readRows(metrics, 'dominant_event_types', path, dominantEventTypeRow),
       auth_failure_rate: readRows(metrics, 'auth_failure_rate', path, authFailureRateRow),
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Reporte semanal de desempeño (services/api/SPECS.md Parte I; BRIEFING §4 y §6)
+// ---------------------------------------------------------------------------
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function readIsoDate(source: JsonObject, key: string, path: string): string {
+  const value = readString(source, key, path);
+  if (!ISO_DATE.test(value)) throw new UnexpectedResponseError(`${path}.${key}`, 'date YYYY-MM-DD', 'string');
+  return value;
+}
+
+function weeklyPerformanceEntry(row: JsonObject, path: string): WeeklyPerformanceEntry {
+  const office = readOneOf(row, 'office', path, REPORT_OFFICES);
+  const currency = readOneOf(row, 'currency', path, REPORT_CURRENCIES);
+  // Cada oficina con su moneda: un par incoherente rompe el contrato y nunca se muestra.
+  if (currency !== CURRENCY_BY_OFFICE[office]) {
+    throw new UnexpectedResponseError(`${path}.currency`, CURRENCY_BY_OFFICE[office], 'another currency');
+  }
+  return {
+    office,
+    programme_id: readString(row, 'programme_id', path),
+    total_material_cost: readFiniteNumber(row, 'total_material_cost', path),
+    kits_delivered_count: readInteger(row, 'kits_delivered_count', path),
+    shortage_events_count: readInteger(row, 'shortage_events_count', path),
+    cost_variance_events_count: readInteger(row, 'cost_variance_events_count', path),
+    currency,
+  };
+}
+
+export function normalizeWeeklyPerformance(input: unknown): WeeklyPerformance {
+  const value = expectObject(input, 'response');
+  return {
+    week_start: readIsoDate(value, 'week_start', 'response'),
+    entries: readRows(value, 'entries', 'response', weeklyPerformanceEntry),
+  };
+}
+
+/** De la última corrida solo se leen estado, instantes y semanas cubiertas. */
+export function normalizePipelineRun(input: unknown): PipelineRun {
+  const value = expectObject(input, 'response');
+  return {
+    status: readOneOf(value, 'status', 'response', RUN_STATUSES),
+    started_at: readString(value, 'started_at', 'response'),
+    finished_at: readNullableString(value, 'finished_at', 'response'),
+    week_from: readIsoDate(value, 'week_from', 'response'),
+    week_to: readIsoDate(value, 'week_to', 'response'),
   };
 }

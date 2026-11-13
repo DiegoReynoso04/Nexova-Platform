@@ -4,9 +4,81 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-13 — Pipeline de desempeño de negocio, Parte 3: F1, parada 4 (documentación, verificación final y commit)
+
+**Estado: hecho y commiteado en `feature/business-pipeline-subflows` (desde `main` en `ec5cdac`); sin push ni PR hasta el OK del usuario.** Un solo commit: `feat: refactor business performance pipeline into subflows, add unit tests, and add reporting dashboard`. Docker Desktop se cayó a mitad de la verificación; el usuario lo arrancó y se retomó sin reiniciarlo.
+
+- **Contenido de la Parte 3:**
+  - 4 subflows en `data/pipelines/pipeline.py` (`extract_telemetry_events`, `transform_weekly_kpis`, `load_weekly_office_program_performance`, `snapshot_weekly_performance`) y 7 tasks nuevas de transformación (`compute_*` por KPI, con la caché de 1 h);
+  - `EventBatch`, para que Prefect no guarde `event_id`/`order_id` ni choque con su tope de 512 KiB de parámetros (`<3.10`; lo vigila `test_event_batch.py`);
+  - tipado defensivo (H4);
+  - `tests/pipelines/test_pipeline.py` (12 tests con `.fn`) y pytest como grupo `dev` de `data/pipelines` (`requirements-dev.txt` con hashes);
+  - dashboard `/reporting` en `uis/backoffice`.
+- **Verificado contra el Postgres efímero (nunca la demo):**
+  - ETL `python data/pipelines/pipeline.py` sin argumentos: salida 0, 4 subflows; segunda corrida con `Cached` en las 4 `compute_*`;
+  - `pipeline-check.sql` con 0 diferencias;
+  - `data/pipelines` 83 OK con 0 omitidos (los 5 de Postgres incluidos);
+  - `data/process` 22 OK con 0 omitidos en la imagen;
+  - pytest 12 passed en el venv y en la imagen;
+  - `services/api` (`TESTING.md` §14): `unittest` 719 OK y `pytest` 922 passed, `test_reporting_architecture` incluido;
+  - `uis/backoffice`: typegen, tsc, lint, build, `node --test` 654/654 y Jest 277/277.
+- **Documentación:** `PIPELINE_DESIGN.md` (§2.4, §2.5, §4.1, §4.3, §4.6, §6, §8, §10), READMEs de `data/`, `AGENTS.md` §4, `uis/backoffice/README.md` y `CLAUDE.md`, y `docs/reporting/subflows-dashboard-review.md` (con la tabla de los 12 criterios).
+- **Para la PR y la demo:** con el perfil `pipelines` apagado, la demo mostrará «desactualizado» pasada una semana de la última corrida (2026-11-12): comportamiento esperado. Tras el merge hay que reconstruir la imagen `nexova-pipeline`.
+- **Sin impacto en:** `telemetry_events`, `services/telemetry/analysis.py`, `services/reporting`, `services/api`, el esquema `reporting` y la imagen de producción (`requirements.txt`).
+- **Limpieza:** el contenedor `nexova-pipeline-pg` y el archivo de contraseñas temporales se borran al terminar (ver el informe del usuario).
+
+---
+
+## 2026-11-13 — Pipeline de desempeño de negocio, Parte 3: F1, parada 3 (dashboard `/reporting`)
+
+**Estado: parada 3 hecha y verificada en el navegador contra el efímero; sin commit, en `feature/business-pipeline-subflows`; a la espera del OK del usuario para la parada 4.** La demo no se ha tocado.
+
+- **Hecho en `uis/backoffice`:** página `/reporting` (`app/reporting/page.tsx`, `components/reporting/*`, `hooks/use-weekly-performance.ts` y `use-pipeline-freshness.ts`, `services/reporting.service.ts`, `lib/reporting-format.ts`, `lib/reporting-routes.ts`, `types/reporting.ts`, normalizadores nuevos) y enlace «Reporte semanal» en la cabecera para cualquier rol. Un bloque por KPI con su nombre del BRIEFING, Valencia (EUR) y Miami (USD) lado a lado sin sumar ni convertir, barras solo en los conteos, «Sin programa asignado», semana anterior/siguiente (404 = «Esta semana todavía no se ha calculado»), franja de frescura con aviso a los 8 días y estados de carga, vacío, error y 503. `services/reporting` sin cambios. Sin dependencias npm nuevas (`package.json` y `package-lock.json` sin diff). `uis/backoffice/CLAUDE.md` pasa a seis piezas de negocio y gana la sección «Reporte semanal».
+- **Validación:** `next typegen`, `tsc --noEmit`, `lint` y `build` limpios; `node --test` 654/654; Jest 277/277 (27 nuevos en `reporting-format.test.ts`, incluido que el subtotal lanza con dos monedas); `tests/reporting.test.mjs` y dos reglas nuevas de `production-source.test.mjs`.
+- **Navegador:** stack aislado (proyecto `nexova-eph`, puertos 3101 y 8100, red propia) con la API conectada al Postgres efímero; el stack del usuario no se tocó y se desmontó el aislado. Capturas de escritorio y 375 px (sin scroll horizontal) en la carpeta temporal de la sesión, fuera del repo.
+- **Pendiente para la parada 4:** `PIPELINE_DESIGN.md` (subflows, `EventBatch`, nota de H4, límite conocido con los tiempos medidos, y el aviso de que la demo mostrará «desactualizado» pasada una semana con el perfil `pipelines` apagado), guía `docs/reporting/subflows-dashboard-review.md`, `AGENTS.md` §4, READMEs y el commit.
+- **Efímero:** `nexova-pipeline-pg` sigue en marcha; borrarlo al terminar (`docker rm -f nexova-pipeline-pg`).
+
+---
+
+## 2026-11-12 — Pipeline de desempeño de negocio, Parte 3: F1, parada 2 (pytest y tests de la raíz)
+
+**Estado: parada 2 hecha y verificada; sin commit, en `feature/business-pipeline-subflows`; a la espera del OK del usuario para la parada 3.**
+
+- **pytest autorizado (H1), solo como grupo `dev` de `data/pipelines`:** `pytest>=9.1,<9.2` en `pyproject.toml`; `uv lock` (nunca `uv sync`) añadió `pytest 9.1.1` e `iniconfig 2.3.1`; nuevo `requirements-dev.txt` con hashes (`uv export --frozen --only-group dev --no-emit-project`). `requirements.txt` de la imagen, byte a byte igual. `test_requirements_lock.py` ahora comprueba además que el grupo solo tiene pytest, que el archivo sigue a `uv.lock`, que lleva hashes y que pytest no entra en el de producción.
+- **`tests/pipelines/conftest.py` y `test_pipeline.py`:** 12 tests de las tasks de transformación, llamadas con `.fn`, con filas ficticias con la forma de `telemetry_events`. Sin `__init__.py` en `tests/` ni `tests/pipelines/` (chocaría con `data/pipelines/tests`). Comando: `python -m pytest tests/pipelines/test_pipeline.py`; en Docker, con la imagen `nexova-pipeline:dev` montando solo `data/`, `packages/` y `tests/` (sin `.env`) e instalando `requirements-dev.txt` con hashes en un contenedor desechable.
+- **Verificado:** 12 pasan en la imagen y en el venv; con la fórmula del costo cambiada (suma solo `unit_cost`) fallan 2 de pytest y 2 de `data/process`, y revertida el `git diff` es idéntico. Suites: `data/pipelines` 83 (5 de Postgres en el efímero), 0 omitidos; `data/process` 22 en la imagen, 0 omitidos; `pipeline-check.sql` 0 diferencias.
+- **Pendiente para la parada 4 (decidido por el usuario):** en `PIPELINE_DESIGN.md` §4 y §8, como límite conocido, los tiempos medidos del subflow de transformación (1 000 / 10 000 / 50 000 eventos: 3,4 / 9,9 / 45,5 s; flow completo 21 s y 129 s con 10 000 y 50 000), que la causa es `visit_collection` de Prefect sobre los argumentos de las tasks y no la transformación, que el volumen actual está muy por debajo, y que la palanca, si crece, es envolver `kept` de forma opaca (no se implementa). Además, `EventBatch` (§4.3/§4.4), la nota de H4 y, en la guía y la PR, que con el perfil `pipelines` apagado la demo mostrará «desactualizado» pasada una semana (comportamiento esperado).
+
+---
+
+## 2026-11-12 — Pipeline de desempeño de negocio, Parte 3: F1, parada 1 (subflows y equivalencia de resultados)
+
+**Estado: parada 1 hecha y verificada en el efímero; aprobada por el usuario; sin commit, en `feature/business-pipeline-subflows`.** El usuario aprobó H1–H9 y eligió la alternativa C para el límite de parámetros de Prefect.
+
+- **Hecho:** `data/process/weekly_performance.py` (pasos puros por KPI, `transform()` como composición, tipos incorrectos rechazados en lugar de lanzar) y `data/pipelines/pipeline.py` (4 subflows, 7 tasks nuevas, caché de 1 h en las 4 `compute_*` y `EventBatch`).
+- **`EventBatch`:** envuelve los eventos que recibe `transform_weekly_kpis`. Prefect guarda los parámetros de cada flow run con un tope de 524 288 bytes (unos 1 900 eventos; con más, 422) y quedarían `event_id` y `order_id` en su base. La clase no es serializable para Prefect, que guarda el marcador `<EventBatch>`: depende de `Flow.serialize_parameters` de Prefect 3.9 (`<3.10`). Lo vigila `data/pipelines/tests/test_event_batch.py` (solo el marcador queda guardado; 10 000 eventos pasan; control negativo con una lista). No emite avisos en los logs (es un `logger.debug`).
+- **Tests:** `data/process` 22 (0 omitidos en la imagen; 1 en el host por tzdata); `data/pipelines` 78, 0 omitidos, con los 5 de Postgres contra el efímero. `pipeline-check.sql` con 0 diferencias.
+- **Rendimiento (límite por defecto):** el subflow de transformación tarda 9,9 s con 10 000 eventos y 45,5 s con 50 000 (la función pura, 0,09 y 0,53 s); el flow completo, 21 s y 129 s. El coste es Prefect recorriendo cada argumento de las 7 tasks (`collect_task_run_inputs`/`visit_collection`), no la transformación. Mejora posible, sin hacer: envolver también `kept` de forma opaca.
+- **Efímero:** el contenedor `nexova-pipeline-pg` (red `nexova-net`, 127.0.0.1:55432) sigue en marcha con el seed ficticio; borrarlo al terminar (`docker rm -f nexova-pipeline-pg`). El `lock_timeout` del rol se restauró. La demo no se ha tocado: todas las corridas imprimieron `host 127.0.0.1`.
+- Pendiente para la parada 4: documentar `EventBatch` en `PIPELINE_DESIGN.md` §4.3/§4.4 y la nota de H4.
+
+---
+
+## 2026-11-12 — Pipeline de desempeño de negocio, Parte 3 (subflows, tests y dashboard): F0, análisis y decisiones
+
+**Estado: F0 hecho, sin commit, en `feature/business-pipeline-subflows` (desde `main` en `ec5cdac`); a la espera de las decisiones H1–H9 del usuario.** Solo documentación: `docs/reporting/subflows-dashboard-analysis.md` y esta entrada. Ni código, ni dependencias, ni Supabase, ni Docker. Sin impacto técnico: `techContext.md` solo corrige que la implementación de la Parte 2 ya está en `main`.
+
+- **Qué recoge el análisis:** 4 subflows (`extract_telemetry_events`, `transform_weekly_kpis`, `load_weekly_office_program_performance`, `snapshot_weekly_performance`); tasks por KPI como envoltorios de funciones puras de `data/process`; 12 tests en `tests/pipelines/test_pipeline.py`; dashboard `/reporting` sin librerías y sin cambios en `services/reporting`; mejoras opcionales (ninguna de backend).
+- **Tres hallazgos:** Prefect guarda los parámetros de un subflow en su servidor; el repositorio de la base no puede ser un parámetro; el tipado actual lanza `AttributeError` con tipos incorrectos en lugar de rechazar.
+- **Pendiente de autorizar:** `pytest` como dependencia de desarrollo de `data/pipelines` (H1).
+- **Corregido en esta entrada:** las entradas de la Parte 2 decían «sin commit» o «push y PR solo con el OK»; la PR #34 ya está mergeada.
+
+---
+
 ## 2026-11-12 — Pipeline de desempeño de negocio, Parte 2: parada 4 completa (disparo desde la API en la demo)
 
-**Estado: hecho y verificado en la demo; commiteado en `feature/business-pipeline`. Push y PR, solo con el OK del usuario.** Resultado completo en `docs/reporting/implementation-review.md` §6.7.
+**Estado: hecho y verificado en la demo; integrado en `main` con la PR #34 (merge `ec5cdac`).** Resultado completo en `docs/reporting/implementation-review.md` §6.7.
 
 - **Paso 4 (el usuario, con su admin):**
   - El `POST /reporting/pipeline-runs` dio 202, y el flow run llegó a `COMPLETED`.
@@ -51,7 +123,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-11 — Pipeline de desempeño de negocio, Parte 2: documentación final y plan de la demo (parada 4)
 
-**Estado: hecho, sin commit, en `feature/business-pipeline`. El plan de la parada 4 lo aprobó el usuario el 2026-11-11 (ver la entrada de arriba).** El usuario verificó y aprobó la parada 3 contra el efímero.
+**Estado: hecho; integrado en `main` con la PR #34 (merge `ec5cdac`). El plan de la parada 4 lo aprobó el usuario el 2026-11-11 (ver la entrada de arriba).** El usuario verificó y aprobó la parada 3 contra el efímero.
 
 - **Documentación:**
   - `services/api/SPECS.md`, Parte I (§49–§53): requisitos, decisiones, los 3 endpoints, errores y configuración. Se añaden también las filas de los errores nuevos en §4, `PIPELINE_PREFECT_API_URL` en §7 y las Partes H e I en el índice.
@@ -80,7 +152,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-10 — Pipeline de desempeño de negocio, Parte 2: F1, parada 3 (disparo manual de punta a punta)
 
-**Estado: parada 3 hecha y verificada por el usuario contra el efímero (limpieza hecha; la API, de vuelta en Supabase); sin commit, en `feature/business-pipeline`.** El usuario verificó y aprobó la parada 2.
+**Estado: parada 3 hecha y verificada por el usuario contra el efímero (limpieza hecha; la API, de vuelta en Supabase); integrada en `main` con la PR #34 (merge `ec5cdac`).** El usuario verificó y aprobó la parada 2.
 
 - **Analítica de Prefect (corrección pedida por el usuario):**
   - **Qué pasaba:** en su primera corrida apareció el aviso «Prefect collects anonymous usage data…». Prefect 3.9.2 tiene dos interruptores y solo estaba apagado el del servidor; el del cliente es `DO_NOT_TRACK`.
@@ -125,7 +197,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-10 — Pipeline de desempeño de negocio, Parte 2: F1, parada 2 (pipeline, migración y tests)
 
-**Estado: parada 2 hecha y verificada por el usuario con la guía (§2); sin commit, en `feature/business-pipeline`.** Nada contra la demo; el stack normal se paró durante la prueba y se volvió a levantar después.
+**Estado: parada 2 hecha y verificada por el usuario con la guía (§2); integrada en `main` con la PR #34 (merge `ec5cdac`).** Nada contra la demo; el stack normal se paró durante la prueba y se volvió a levantar después.
 
 - **SQLAlchemy:** se deja el rango `>=2.1.5,<2.2` (lock en 2.1.8) y D1 dice «misma serie 2.1, versión exacta independiente». Son entornos separados por diseño, sin proceso ni lock compartidos.
 - **Hecho:**
@@ -156,7 +228,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-10 — Pipeline de desempeño de negocio, Parte 2: F1, parada 1 (entorno, imagen y perfil)
 
-**Estado: parada 1 hecha y aprobada por el usuario; sin commit, en `feature/business-pipeline`.** El usuario aprobó D1–D16 con cuatro matices (recogidos en la cabecera de `docs/reporting/implementation-analysis.md`): D1-A por arquitectura (`python-dateutil 4.0.0` es transitiva de Pandas, no un pin nuestro); `--allow-demo` solo en la migración, la corrida del ETL no se bloquea y sale con código 2 si falta el esquema; dos líneas sobre por qué la API importa `request_manual_run` y no el flow; el perfil `pipelines`, contra la demo solo con confirmación en el momento.
+**Estado: parada 1 hecha y aprobada por el usuario; integrada en `main` con la PR #34 (merge `ec5cdac`).** El usuario aprobó D1–D16 con cuatro matices (recogidos en la cabecera de `docs/reporting/implementation-analysis.md`): D1-A por arquitectura (`python-dateutil 4.0.0` es transitiva de Pandas, no un pin nuestro); `--allow-demo` solo en la migración, la corrida del ETL no se bloquea y sale con código 2 si falta el esquema; dos líneas sobre por qué la API importa `request_manual_run` y no el flow; el perfil `pipelines`, contra la demo solo con confirmación en el momento.
 
 - **Hecho:** `data/pipelines/pyproject.toml` (proyecto virtual de uv; `prefect>=3.9.2,<3.10`, `sqlalchemy>=2.1.5,<2.2`, `psycopg2-binary>=2.9.13,<2.10`), `uv.lock` y `requirements.txt` (`uv lock` + `uv export`, sin `uv add` ni `uv sync`), venv del host en `data/pipelines/.venv` (Python 3.14.6, ignorado), `data/pipelines/tests/test_requirements_lock.py` (7 tests OK), `data/Dockerfile` + `data/.dockerignore` (imagen `nexova-pipeline:dev`, 472 MB), servicio `prefect-server` en el perfil `pipelines` de `docker-compose.yml` (sin `env_file`, volumen `prefect-data`, UI en el 4200, analítica de Prefect desactivada) y `.gitignore` (D15).
 - **Verificado:** resuelve `prefect 3.9.2`, `sqlalchemy 2.1.8` (la API sigue en 2.1.5: entornos separados) y `python-dateutil 2.9.0.post0` **solo en el entorno del pipeline**; `git diff services/api` vacío (lock, `requirements.txt`, `pyproject.toml`); suite de `services/api` 686 OK; `docker compose config --quiet` con y sin perfil; `docker compose up -d --build` → `api` healthy, `ui` en marcha, `/health` OK por `api:8000` y por `/backend`, website 200, la API sin Prefect y `prefect-server` sin arrancar; con `--profile pipelines up -d prefect-server` → healthy, `/api/health` y UI 200, sin `DATABASE_URL` ni ningún secreto. Se paró después; el volumen `prefect-data` queda en Docker. La imagen no lleva `.env*`, `.venv`, `tests`, `__pycache__`, `raw` ni `eval`, y su `docker history` no tiene secretos.
@@ -167,7 +239,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-09 — Pipeline de desempeño de negocio, Parte 2 (implementación): análisis (F0)
 
-**Estado: F0 hecho, sin commit, en `feature/business-pipeline` (desde `main` en `9d8b0df`). Decidido por el usuario el 2026-11-10 (ver la entrada de arriba).** Solo documentación: ni código, ni dependencias instaladas en el repo, ni Supabase, ni Docker. Sin impacto técnico (las decisiones aún no están tomadas): en `techContext.md` solo se corrige que el diseño ya está en `main`.
+**Estado: F0 hecho; integrado en `main` con la PR #34 (rama `feature/business-pipeline`, desde `main` en `9d8b0df`). Decidido por el usuario el 2026-11-10 (ver la entrada de arriba).** Solo documentación: ni código, ni dependencias instaladas en el repo, ni Supabase, ni Docker. Sin impacto técnico (las decisiones aún no están tomadas): en `techContext.md` solo se corrige que el diseño ya está en `main`.
 
 - **Hecho:** [`docs/reporting/implementation-analysis.md`](../docs/reporting/implementation-analysis.md): estado verificado, Prefect resuelto en copias temporales, conflictos C1–C17, decisiones D1–D16, cambios previstos en `PIPELINE_DESIGN.md` y plan de F1.
 - **Por qué:** el ticket implementa el diseño aprobado, pero su enunciado choca con él en varios puntos (flow y tasks en `pipeline.py`, disparo importando desde `data/pipelines/`, caché, paso opcional, `return_state`), y el usuario quiere decidirlos antes.

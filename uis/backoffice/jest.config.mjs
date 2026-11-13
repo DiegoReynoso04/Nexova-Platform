@@ -29,6 +29,8 @@ const config = {
     'lib/stock-level.ts',
     'lib/stock-check.ts',
     'lib/order-format.ts',
+    // Reporte semanal (/reporting): formato, subtotales por oficina y frescura.
+    'lib/reporting-format.ts',
   ],
 };
 

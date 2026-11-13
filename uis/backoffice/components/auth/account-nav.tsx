@@ -7,6 +7,7 @@ import { NavLink, NavLinkPlaceholders } from '@/components/ui/nav-link';
 import { headerNavMode, LOGIN_PATH, PROFILE_PATH, REGISTER_PATH } from '@/lib/auth-routes';
 import { INCIDENT_MANAGER_PATH, NEW_INCIDENT_PATH } from '@/lib/incident-manager-routes';
 import { INVENTORY_PATH, INVENTORY_PRODUCTS_PATH } from '@/lib/inventory-routes';
+import { REPORTING_PATH } from '@/lib/reporting-routes';
 
 import { useSession } from './session-provider';
 
@@ -25,6 +26,7 @@ function SessionLinks({ placeholder = false }: { placeholder?: boolean }) {
       <NavLink href={INVENTORY_PRODUCTS_PATH} activePrefix={INVENTORY_PATH}>
         Inventario
       </NavLink>
+      <NavLink href={REPORTING_PATH}>Reporte semanal</NavLink>
       <NavLink href="/telemetry">Telemetría</NavLink>
       <NavLink href={PROFILE_PATH}>Mi perfil</NavLink>
     </>

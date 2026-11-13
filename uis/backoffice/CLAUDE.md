@@ -4,13 +4,14 @@ Fuente de verdad de negocio: `contexts/CONTEXT.md` si existe en tu checkout (car
 
 ## Alcance actual
 
-El backoffice tiene cinco piezas de negocio, y **solo estas cinco**, más un reporte técnico (`/telemetry`, sección propia abajo), protegidas por la autenticación de AUTH-02 (sección propia abajo):
+El backoffice tiene seis piezas de negocio, y **solo estas seis**, más un reporte técnico (`/telemetry`, sección propia abajo), protegidas por la autenticación de AUTH-02 (sección propia abajo):
 
 1. **Vista de entrada (`/`)** — ficha de empresa y roadmap. Se mantiene tal cual.
 2. **Análisis de incidentes de soporte (`/incidents`)** — capacidad de negocio **autorizada** por el tech lead como Fase 3 del procesador de incidentes de Nexova (rama `feature/incident-analyzer`). Ver sección propia abajo.
 3. **Directorio de proveedores (`/suppliers`)** — autorizado por el tech lead (Sergio Molina) para el encargo de Patricia Solís (rama `api-con-almacenamiento-ligero`). Ver sección propia abajo.
 4. **Gestor centralizado de incidencias (`/incident-manager`, `/incident-manager/new`)** — autorizado por el usuario el 2026-10-07 (rama `feature/centralized-incident-manager`, fase F5). Distinto de `/incidents`. Ver sección propia abajo.
 5. **Inventario de equipos y materiales (`/inventory/products`, `/inventory/orders/inbound`, `/inventory/orders/outbound`, `/inventory/orders`)** — autorizado por el usuario el 2026-10-19 (frontend del Hito 5, rama `feature/inventory-frontend`) sobre la API de `services/api` (SPECS Parte F). Ver sección propia abajo.
+6. **Reporte semanal de desempeño por oficina y programa (`/reporting`)** — autorizado por el usuario el 2026-11-12 (Parte 3 del hito Data Pipelines, rama `feature/business-pipeline-subflows`) sobre `GET /reporting/…` de `services/api` (SPECS Parte I). Ver sección propia abajo.
 
 Cualquier otra capacidad de negocio (gestión de personas, operaciones, comunicación interna…) sigue **prohibida** sin un contexto de hito propio que la respalde — mismo criterio que `uis/talent-pipeline-tracker` (que tiene su `SPECS.md`).
 
@@ -174,6 +175,28 @@ Extra del ticket del reporte técnico. Contrato: [`services/api/SPECS.md`](../..
 - **Ventana:** la de la API por defecto, 7 días. El periodo se muestra siempre, y el fin es exclusivo.
 - **Fuera de la telemetría a propósito:** `/telemetry` y `/telemetry/report` no están en los enums del contrato, así que la página no emite `page_viewed` ni `client_request_failed`. Añadirlos sería la versión `1.1.0` (D14 de `report-analysis.md`).
 - **Tests:** `tests/telemetry-report.test.mjs` (normalizador, servicio, reducer y sesión), `__tests__/utils/telemetry-report-format.test.ts` y las reglas de `tests/production-source.test.mjs`.
+
+## Reporte semanal de desempeño (`/reporting`)
+
+Autorizado por el usuario el 2026-11-12 (Parte 3 del hito Data Pipelines, rama `feature/business-pipeline-subflows`; decisiones D y H6/H7 de [`docs/reporting/subflows-dashboard-analysis.md`](../../docs/reporting/subflows-dashboard-analysis.md)). Lo leen Laura Mendoza (CEO) y Elena Vargas (L&D), no técnicos: números y frases, no eventos ni códigos.
+
+Fuentes de verdad, por orden:
+
+- Requisitos: el BRIEFING [`docs/proyectos-de-data-pipeline-diseno-implementacion-subflows-tests.md`](../../docs/proyectos-de-data-pipeline-diseno-implementacion-subflows-tests.md) (nombres de los KPI y su «qué mide», §2; audiencia, §1; monedas, §7).
+- Contrato HTTP: [`services/api/SPECS.md`](../../services/api/SPECS.md) Parte I (`GET /reporting/weekly-office-program-performance?week_start=` y `GET /reporting/pipeline-runs/latest`). Mismas reglas que `/incidents` para no inventar campos ni endpoints. `services/reporting` no se toca desde aquí.
+
+Reglas específicas (lo no citado sigue las de `/telemetry`: capas, sin librería de gráficos, sin `console.*` ni persistencia en el navegador):
+
+- **Capas:** `app/reporting/page.tsx` (Server Component, metadata) → `components/reporting/weekly-performance-view.tsx` (`'use client'`) → `hooks/use-weekly-performance.ts` y `hooks/use-pipeline-freshness.ts` (reducer puro + sesión sin React + hook) → `services/reporting.service.ts` → `lib/api-client.ts`. `unknown` solo en `services/normalizers.ts`. Sin variable de entorno nueva: va por `NEXT_PUBLIC_API_URL` (con Docker, `/backend`).
+- **Quién lo ve:** cualquier usuario con sesión (el endpoint acepta cualquier rol y el backoffice no filtra enlaces por rol). Enlace «Reporte semanal» en la cabecera, antes de «Telemetría». Sin botón de «ejecutar ahora»: el `POST /reporting/pipeline-runs` es solo `admin` y no está en el enunciado.
+- **Un bloque por KPI** (`lib/reporting-format.ts` → `KPIS`), con el nombre literal del BRIEFING §2 como título y su «qué mide» como subtítulo: «Costo de material por oficina/programa», «Kits entregados», «Frecuencia de escasez» y «Frecuencia de variación de costo». El período («Semana del lunes … al domingo …», lunes a domingo en UTC) va en el encabezado y en cada bloque.
+- **EUR y USD nunca se suman ni se convierten:** Valencia (EUR) y Miami (USD) van lado a lado (apiladas a 375 px) y no existe ningún total entre oficinas. `officeTotal` lanza `MixedCurrencyError` si recibe más de una moneda, y el normalizador rechaza una fila cuya moneda no sea la de su oficina. El costo se suma en céntimos enteros. Barras solo en los conteos, con escala común a las dos oficinas; **el costo no lleva barra** (monedas distintas: una escala común sugeriría una comparación que no existe).
+- **`_unassigned` nunca se muestra** (solo existe como constante en `types/reporting.ts`; `tests/production-source.test.mjs` lo comprueba): «Sin programa asignado», y mientras todas las filas sean del centinela, la nota «El material todavía no está clasificado por programa…». Una oficina sin filas dice «Sin actividad esta semana», no un cero.
+- **Semanas:** botones «← Semana anterior» y «Semana siguiente →», que desplazan siete días; «siguiente» se detiene en la última semana calculada (la de la primera carga). El endpoint no lista semanas, y no se añade una ruta que el BRIEFING no pide. 404 `week_not_computed` es «Esta semana todavía no se ha calculado», **no un error**. Estado solo en memoria.
+- **Frescura** (`GET /reporting/pipeline-runs/latest`, con su propia carga y su propio error): cuándo terminó la última corrida y qué semanas cubrió. Solo se leen estado, instantes y semanas (nunca la fase, los contadores ni `error_class`). Una corrida `failed` dice que las cifras pueden ser de una corrida anterior. **Más de 8 días** desde la última corrida completada (`STALE_AFTER_DAYS`: el cron semanal más un día) avisa «Los datos pueden estar desactualizados…». Con el perfil `pipelines` de Compose apagado, la demo lo mostrará pasada una semana: es el comportamiento esperado.
+- **Estados** (exclusivos): cargando (esqueleto con la misma rejilla, sin layout shift), con datos, vacío («No hubo actividad registrada en esta semana»), semana sin calcular, y error con «Reintentar». El 503 `storage_unavailable` tiene su propio texto («Los datos no están disponibles ahora mismo»). **Ningún texto muestra códigos, nombres de columnas ni `error_class`** (`reportingErrorCopy`, probado con Jest).
+- **Fuera de la telemetría a propósito:** como `/telemetry`, `/reporting` no está en los enums del contrato, así que la página no emite `page_viewed`. Añadirlo sería la versión `1.1.0`.
+- **Tests:** `tests/reporting.test.mjs` (normalizadores, servicio, reducers y sesiones), `__tests__/utils/reporting-format.test.ts` (Jest: semanas, subtotales, monedas, frescura y textos) y las dos reglas de `tests/production-source.test.mjs` (rutas de la API solo en el servicio; sin el centinela ni la fase de la corrida en pantalla).
 
 ## Docker (#infra-40)
 
