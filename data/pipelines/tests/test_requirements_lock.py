@@ -14,6 +14,7 @@ from pathlib import Path
 
 PIPELINES_DIR = Path(__file__).resolve().parents[1]
 REQUIREMENTS = PIPELINES_DIR / "requirements.txt"
+REQUIREMENTS_DEV = PIPELINES_DIR / "requirements-dev.txt"
 LOCKFILE = PIPELINES_DIR / "uv.lock"
 PYPROJECT = PIPELINES_DIR / "pyproject.toml"
 
@@ -40,9 +41,9 @@ def requirement_name(specifier: str) -> str:
     return normalize(match.group(1))
 
 
-def read_requirements() -> dict[str, str]:
+def read_requirements(path: Path = REQUIREMENTS) -> dict[str, str]:
     pinned = {}
-    for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         match = REQUIREMENT_LINE.match(line)
         if match:
             pinned[normalize(match.group(1))] = match.group(2)
@@ -111,6 +112,55 @@ class RequirementsFollowLockTests(unittest.TestCase):
             if match:
                 with self.subTest(package=normalize(match.group(1))):
                     self.assertIn("--hash=sha256:", stripped, f"uv pip install --require-hashes needs hashes; {REGENERATE}")
+
+
+REGENERATE_DEV = (
+    "regenerate it from data/pipelines with: uv lock && "
+    "uv export --frozen --only-group dev --no-emit-project --format requirements-txt -o requirements-dev.txt"
+)
+
+
+class DevRequirementsFollowLockTests(unittest.TestCase):
+    """requirements-dev.txt (solo pytest y sus transitivas) sigue a uv.lock y no contamina la imagen.
+
+    Lo instala, con hashes, el comando de Docker o del venv de `tests/pipelines`; la imagen de
+    producción instala `requirements.txt` y nunca lo lee. Autorizado: solo pytest (2026-11-12).
+    """
+
+    def setUp(self) -> None:
+        self.dev = read_requirements(REQUIREMENTS_DEV)
+        self.production = read_requirements()
+        self.locked = read_lock()
+        self.pyproject = read_pyproject()
+
+    def test_the_dev_group_has_only_pytest(self) -> None:
+        group = self.pyproject["dependency-groups"]["dev"]
+        self.assertEqual([requirement_name(item) for item in group], ["pytest"], "only pytest was authorised")
+        self.assertRegex(group[0].replace(" ", ""), r"^pytest>=9\.1,<9\.2$")
+
+    def test_pytest_is_pinned_in_the_dev_requirements(self) -> None:
+        self.assertRegex(self.dev.get("pytest", ""), r"^9\.1\.", f"pytest must be 9.1.x; {REGENERATE_DEV}")
+
+    def test_every_dev_pin_has_the_same_version_in_the_lock(self) -> None:
+        self.assertGreater(len(self.dev), 0)
+        for name, version in sorted(self.dev.items()):
+            with self.subTest(package=name):
+                self.assertEqual(version, self.locked.get(name), f"{name} differs from uv.lock; {REGENERATE_DEV}")
+
+    def test_every_dev_pin_has_hashes(self) -> None:
+        # Líneas lógicas: una barra invertida al final de línea continúa la siguiente.
+        text = re.sub(r"\\\r?\n", " ", REQUIREMENTS_DEV.read_text(encoding="utf-8"))
+        for line in text.splitlines():
+            match = REQUIREMENT_LINE.match(line.strip())
+            if match:
+                with self.subTest(package=normalize(match.group(1))):
+                    self.assertIn("--hash=sha256:", line, f"uv pip install --require-hashes needs hashes; {REGENERATE_DEV}")
+
+    def test_pytest_never_reaches_the_production_requirements(self) -> None:
+        # La imagen del pipeline (requirements.txt, uv export --no-dev) no lleva pytest ni sus exclusivas.
+        for name in ("pytest", "iniconfig"):
+            with self.subTest(package=name):
+                self.assertNotIn(name, self.production, f"{name} is a dev dependency; {REGENERATE}")
 
 
 if __name__ == "__main__":

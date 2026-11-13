@@ -28,7 +28,7 @@ Guía para repetir la verificación del ticket «Data Pipelines — Parte 2». D
 | Punto | En el código | Prueba |
 |---|---|---|
 | Tarea opcional con `return_state=True` que falla y el flow sigue | `write_eval_snapshot` y el bloque «Paso opcional (D7)» del flow | `tests/test_flow.py` → `OptionalStepTests` (el directorio de salida es un fichero): flow `Completed`, corrida `completed`, `quality.optional_steps.eval_snapshot = failed` |
-| Caché de `transform_weekly_rows` con su comentario | `transform_cache_key` y el decorador de `transform_weekly_rows` | `CacheTests`: dos corridas → la transformación se ejecuta **una** vez; un evento más → otra vez. En el efímero, la segunda corrida muestra `Cached(type=COMPLETED)` |
+| Caché de las tasks `compute_*` con su comentario (Parte 3) | `kpi_cache_key` y `_kpi_task_options` | `CacheTests`: dos corridas → cada cálculo por KPI se ejecuta **una** vez; una salida más → solo cambia el de kits. En el efímero, la segunda corrida muestra `Cached(type=COMPLETED)` |
 | Retries con su comentario | `DB_RETRIES`/`DB_RETRY_DELAY_SECONDS` (2 × 10 s), `LOAD_RETRIES`/`LOAD_RETRY_DELAY_SECONDS` (2 × 30 s), `_retry_transient_only` | `RetryTests`: declarados; un `OperationalError` se reintenta; un `IntegrityError` no |
 | Segunda corrida sobre las mismas semanas sin duplicados | Upsert sobre `unique (office, programme_id, week_start)` + borrado de huérfanas (`repository.py`) | `SuccessfulRunTests` y `test_repository_postgres.py`; en el efímero, `duplicated_cells = 0` tras repetir la semana |
 
@@ -113,7 +113,7 @@ data\pipelines\.venv\Scripts\python data\pipelines\pipeline.py
 $LASTEXITCODE
 ```
 
-**Caché y segunda corrida:** repítela en menos de una hora. Esperado: `transform_weekly_rows … Finished in state Cached(type=COMPLETED)` y, en §2.7, la misma tabla sin duplicados.
+**Caché y segunda corrida:** repítela en menos de una hora. Esperado: `compute_total_material_cost … Finished in state Cached(type=COMPLETED)` (y las otras tres `compute_*`; desde la Parte 3 la transformación son 7 tasks dentro del subflow `transform_weekly_kpis`) y, en §2.7, la misma tabla sin duplicados.
 
 ```powershell
 data\pipelines\.venv\Scripts\python data\pipelines\pipeline.py

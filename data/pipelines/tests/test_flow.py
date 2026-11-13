@@ -1,7 +1,7 @@
 """El flow con Prefect de verdad (`prefect_test_harness`) y un repositorio en memoria.
 
 Cubre los cuatro puntos del enunciado: paso opcional con `return_state=True`
-que falla y el flow sigue; caché de `transform_weekly_rows` (segunda corrida en
+que falla y el flow sigue; caché de las tasks `compute_*` (segunda corrida en
 menos de 1 h que no recalcula); retries declarados y efectivos; segunda corrida
 sobre las mismas semanas sin duplicados. Además, el fallo manejado de la carga.
 """
@@ -11,6 +11,7 @@ import unittest
 from datetime import timedelta
 from pathlib import Path
 from unittest import mock
+from uuid import uuid4
 
 from prefect.testing.utilities import prefect_test_harness
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -98,34 +99,67 @@ class SuccessfulRunTests(FlowTestCase):
 
 class CacheTests(FlowTestCase):
     def test_second_run_within_the_hour_does_not_recompute(self):
-        with mock.patch.object(pipeline, "transform", wraps=pipeline.transform) as spy:
+        # Órdenes con ids únicos en cada ejecución: la clave de un KPI depende de
+        # sus eventos (no de su `event_id`), así que ids fijos podrían venir de la
+        # caché en disco de una ejecución anterior de la misma hora.
+        base = uuid4().int % 10**9 * 10
+        self.repo.events = [
+            fake_event("inbound_order_created", week=self.week, quantity="4", unit_cost="12.50", order_id=str(base + 1)),
+            fake_event("outbound_order_created", week=self.week, order_id=str(base + 2)),
+            fake_event("outbound_order_created", week=self.week, office="miami", order_id=str(base + 3)),
+            fake_event("stock_threshold_triggered", week=self.week, office="miami", order_id=str(base + 3)),
+        ]
+        with mock.patch.object(pipeline.process, "kits_delivered_by_cell",
+                               wraps=pipeline.process.kits_delivered_by_cell) as kits,                 mock.patch.object(pipeline.process, "total_material_cost_by_cell",
+                                  wraps=pipeline.process.total_material_cost_by_cell) as cost:
             self.assertTrue(self.run_flow().is_completed())
             self.assertTrue(self.run_flow().is_completed())
-            self.assertEqual(spy.call_count, 1)  # la segunda vino de la caché
-            # Un evento más cambia la clave: se recalcula.
-            self.repo.events.append(fake_event("outbound_order_created", week=self.week, order_id="99"))
+            self.assertEqual((kits.call_count, cost.call_count), (1, 1))  # la segunda vino de la caché
+            # Una salida más cambia la clave de los kits (se recalcula) y no la del costo (sigue en caché).
+            self.repo.events.append(fake_event("outbound_order_created", week=self.week, order_id=str(base + 9)))
             self.assertTrue(self.run_flow().is_completed())
-            self.assertEqual(spy.call_count, 2)
+            self.assertEqual((kits.call_count, cost.call_count), (2, 1))
         self.assertEqual(self.repo.table[("valencia", "_unassigned", self.week)]["row"].kits_delivered_count, 2)
 
-    def test_cache_is_declared_for_one_hour_on_the_transformation_only(self):
-        self.assertEqual(pipeline.transform_weekly_rows.cache_expiration, timedelta(hours=1))
-        self.assertIs(pipeline.transform_weekly_rows.cache_key_fn, pipeline.transform_cache_key)
+    def test_cache_is_declared_for_one_hour_on_the_four_kpi_tasks_only(self):
+        kpi_tasks = (pipeline.compute_total_material_cost, pipeline.compute_kits_delivered_count,
+                     pipeline.compute_shortage_events_count, pipeline.compute_cost_variance_events_count)
+        for task in kpi_tasks:
+            with self.subTest(task=task.name):
+                self.assertEqual(task.cache_expiration, timedelta(hours=1))
+                self.assertIsNotNone(task.cache_key_fn)
+                self.assertTrue(task.persist_result)
+        # Las que reciben o devuelven identificadores, la E/S y la carga no se cachean (D6).
         for task in (pipeline.start_run, pipeline.extract_business_events, pipeline.extract_quality_counts,
-                     pipeline.mark_phase, pipeline.load_weekly_rows, pipeline.finish_run):
+                     pipeline.mark_phase, pipeline.type_and_validate_events, pipeline.collapse_duplicate_orders,
+                     pipeline.assemble_weekly_rows, pipeline.load_weekly_rows, pipeline.finish_run,
+                     pipeline.write_eval_snapshot):
             with self.subTest(task=task.name):
                 self.assertIsNone(task.cache_key_fn)
                 self.assertIsNone(task.cache_expiration)
+                self.assertFalse(task.persist_result)
 
-    def test_cache_key_depends_on_every_event_and_on_the_weeks(self):
-        parameters = {"events": self.repo.events, "quality": self.repo.quality,
-                      "week_from": self.week, "week_to": self.week}
-        key = pipeline.transform_cache_key(None, parameters)
-        self.assertEqual(key, pipeline.transform_cache_key(None, {**parameters, "events": self.repo.events[::-1]}))
-        changed = [self.repo.events[0].__class__(**{**_fields(self.repo.events[0]), "quantity": "5"}),
-                   *self.repo.events[1:]]
-        self.assertNotEqual(key, pipeline.transform_cache_key(None, {**parameters, "events": changed}))
-        self.assertNotEqual(key, pipeline.transform_cache_key(None, {**parameters, "week_from": closed_week(1)}))
+    def test_cache_key_depends_on_every_event_of_the_kpi(self):
+        kept = pipeline.process.type_and_validate(self.repo.events, self.week, self.week).items
+        kits = pipeline.BusinessEvent.OUTBOUND_ORDER_CREATED
+        key = pipeline.kpi_cache_key("kits_delivered_count", kits, {"kept": kept})
+        self.assertEqual(key, pipeline.kpi_cache_key("kits_delivered_count", kits, {"kept": kept[::-1]}))
+        # Otro KPI, otra clave.
+        self.assertNotEqual(key, pipeline.kpi_cache_key("shortage_events_count", kits, {"kept": kept}))
+        # Una salida de más cambia la clave de los kits...
+        extra = pipeline.process.type_and_validate(
+            [fake_event("outbound_order_created", week=self.week, order_id="99")], self.week, self.week).items
+        self.assertNotEqual(key, pipeline.kpi_cache_key("kits_delivered_count", kits, {"kept": (*kept, *extra)}))
+        # ...y una entrada de más no (no es un evento de ese KPI).
+        inbound = pipeline.process.type_and_validate(
+            [fake_event("inbound_order_created", week=self.week, unit_cost="1", order_id="98")],
+            self.week, self.week).items
+        self.assertEqual(key, pipeline.kpi_cache_key("kits_delivered_count", kits, {"kept": (*kept, *inbound)}))
+        # Una semana distinta cambia la clave.
+        other_week = pipeline.process.type_and_validate(
+            [fake_event("outbound_order_created", week=closed_week(1), order_id="2")],
+            closed_week(1), closed_week(1)).items
+        self.assertNotEqual(key, pipeline.kpi_cache_key("kits_delivered_count", kits, {"kept": other_week}))
 
 
 def _fields(item):
@@ -186,7 +220,10 @@ class RetryTests(FlowTestCase):
                 self.assertEqual((task.retries, task.retry_delay_seconds), (2, 10))
         # La task tal como la declara pipeline.py, no la copia sin esperas de setUp.
         self.assertEqual((_ORIGINAL_LOAD.retries, _ORIGINAL_LOAD.retry_delay_seconds), (2, 30))
-        for task in (pipeline.resolve_weeks, pipeline.transform_weekly_rows, pipeline.write_eval_snapshot):
+        for task in (pipeline.resolve_weeks, pipeline.type_and_validate_events, pipeline.collapse_duplicate_orders,
+                     pipeline.compute_total_material_cost, pipeline.compute_kits_delivered_count,
+                     pipeline.compute_shortage_events_count, pipeline.compute_cost_variance_events_count,
+                     pipeline.assemble_weekly_rows, pipeline.write_eval_snapshot):
             with self.subTest(task=task.name):
                 self.assertEqual(task.retries, 0)
 

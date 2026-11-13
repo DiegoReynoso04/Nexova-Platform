@@ -671,4 +671,49 @@ describe('código de producción', () => {
       }
     }
   });
+  // Reporte semanal (/reporting): el servicio centraliza las rutas de la API, la vista pasa por sus
+  // hooks, y nada técnico (códigos, centinela, fase de la corrida) llega a la pantalla.
+  test('el reporte semanal: rutas de la API solo en su servicio y vista sin saltarse los hooks', () => {
+    for (const file of [
+      'app/reporting/page.tsx',
+      'components/reporting/weekly-performance-view.tsx',
+      'components/reporting/kpi-block.tsx',
+      'components/reporting/office-comparison.tsx',
+      'components/reporting/week-picker.tsx',
+      'components/reporting/data-freshness.tsx',
+      'hooks/use-weekly-performance.ts',
+      'hooks/use-pipeline-freshness.ts',
+      'services/reporting.service.ts',
+      'lib/reporting-format.ts',
+      'lib/reporting-routes.ts',
+      'types/reporting.ts',
+    ]) {
+      assert.ok(PRODUCTION_FILES.includes(file), file);
+    }
+    // La ruta `/reporting` de la navegación (lib/reporting-routes.ts) no es una petición: se excluye.
+    const allowed = ['services/reporting.service.ts', 'lib/reporting-routes.ts'];
+    for (const file of PRODUCTION_FILES.filter((path) => !allowed.includes(path))) {
+      const code = codeWithoutComments(file).replace(/\b(PageProps|LayoutProps)<'[^']*'>/g, '$1<>');
+      assert.doesNotMatch(code, /['`]\/reporting\/(weekly-office-program-performance|pipeline-runs)/, file);
+    }
+    assert.match(codeWithoutComments('app/reporting/page.tsx'), /export const metadata/);
+    assert.doesNotMatch(codeWithoutComments('app/reporting/page.tsx'), /['"]use client['"]/);
+    assert.match(codeWithoutComments('components/reporting/weekly-performance-view.tsx'), /from '@\/hooks\/use-weekly-performance'/);
+    assert.match(codeWithoutComments('components/reporting/data-freshness.tsx'), /from '@\/hooks\/use-pipeline-freshness'/);
+    for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('components/reporting/') || path.startsWith('app/reporting/'))) {
+      assert.doesNotMatch(codeWithoutComments(file), /services\/reporting\.service/, `${file} llama al servicio sin pasar por su hook`);
+    }
+  });
+
+  test('el reporte semanal no muestra el centinela, la fase ni la clase de error de la corrida', () => {
+    // `_unassigned` solo existe como constante tipada (types/reporting.ts); la pantalla dice «Sin programa asignado».
+    const withSentinel = PRODUCTION_FILES.filter((file) => /['"`]_unassigned['"`]/.test(codeWithoutComments(file)));
+    assert.deepEqual(withSentinel, ['types/reporting.ts']);
+    for (const file of PRODUCTION_FILES.filter((path) => path.startsWith('components/reporting/') || path === 'lib/reporting-format.ts')) {
+      assert.doesNotMatch(codeWithoutComments(file), /error_class|\.phase\b|rows_upserted|duplicates_collapsed|\.quality\b/, file);
+    }
+    const normalizers = codeWithoutComments('services/normalizers.ts');
+    const runNormalizer = normalizers.slice(normalizers.indexOf('export function normalizePipelineRun'));
+    assert.doesNotMatch(runNormalizer, /error_class|'phase'|requested_by/);
+  });
 });

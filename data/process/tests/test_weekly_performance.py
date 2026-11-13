@@ -11,10 +11,18 @@ from weekly_performance import (
     DataQualityError,
     ExtractedEvent,
     QualityCounts,
+    TransformStats,
     WeekSelectionError,
+    assemble_rows,
+    collapse_duplicate_orders,
+    cost_variance_events_by_cell,
+    kits_delivered_by_cell,
     last_closed_week,
     resolve_weeks,
+    shortage_events_by_cell,
+    total_material_cost_by_cell,
     transform,
+    type_and_validate,
     week_start_of,
     weeks_between,
     window_of,
@@ -187,6 +195,75 @@ class TransformTests(unittest.TestCase):
         self.assertEqual(week["offices"]["valencia"], {
             "inventory_entries_with_cost": 2, "inbound_events": 1, "inventory_exits": 0, "outbound_events": 0})
         self.assertEqual(week["offices"]["miami"]["inventory_exits"], 1)
+
+
+class StepTests(unittest.TestCase):
+    """Los pasos con nombre propio (Parte 3): la cadena da lo mismo que `transform()` y cada KPI se calcula solo."""
+
+    def chain(self, events, quality=None, week_from=W1, week_to=W1):
+        typed = type_and_validate(events, week_from, week_to)
+        deduped = collapse_duplicate_orders(typed.items)
+        kept = deduped.items
+        return assemble_rows(
+            kept,
+            total_material_cost=total_material_cost_by_cell(kept),
+            kits_delivered_count=kits_delivered_by_cell(kept),
+            shortage_events_count=shortage_events_by_cell(kept),
+            cost_variance_events_count=cost_variance_events_by_cell(kept),
+            stats=TransformStats(len(events), typed.rejected, deduped.duplicates_collapsed),
+            quality=quality or QualityCounts(),
+            week_from=week_from,
+            week_to=week_to,
+        )
+
+    def test_the_chain_of_steps_equals_transform(self):
+        events = [
+            event("inbound_order_created", unit_cost="12.5", quantity="4", order_id="1"),
+            event("inbound_order_created", unit_cost="3.25", quantity="2", order_id="2", office="miami"),
+            event("outbound_order_created", order_id="3"),
+            event("outbound_order_created", order_id="3"),  # duplicada
+            event("stock_threshold_triggered", order_id="3", office="miami", programme_id=FAKE_PROGRAMME),
+            event("kit_cost_variance_detected", order_id="2"),
+            event("outbound_order_created", order_id="x"),  # rechazada
+            event("outbound_order_created", order_id="9", ts=datetime(2026, 11, 10, 9, tzinfo=UTC)),  # otra semana
+        ]
+        self.assertEqual(self.chain(events), run(events))
+        self.assertEqual(self.chain(list(reversed(events))), run(events))
+
+    def test_each_kpi_is_computed_alone_by_cell(self):
+        kept = collapse_duplicate_orders(type_and_validate([
+            event("inbound_order_created", unit_cost="12.5", quantity="4", order_id="1"),
+            event("inbound_order_created", unit_cost="3.25", quantity="2", order_id="2"),
+            event("outbound_order_created", order_id="3"),
+            event("stock_threshold_triggered", order_id="3"),
+            event("kit_cost_variance_detected", order_id="1"),
+        ], W1, W1).items).items
+        cell = ("valencia", "_unassigned", W1)
+        self.assertEqual(total_material_cost_by_cell(kept), {cell: Decimal("56.50")})
+        self.assertEqual(kits_delivered_by_cell(kept), {cell: 1})
+        self.assertEqual(shortage_events_by_cell(kept), {cell: 1})
+        self.assertEqual(cost_variance_events_by_cell(kept), {cell: 1})
+
+    def test_a_cell_with_only_shortage_still_has_a_row_with_zero_cost(self):
+        result = run([event("stock_threshold_triggered", order_id="1")])
+        (row,) = result.rows
+        self.assertEqual((row.total_material_cost, row.kits_delivered_count, row.shortage_events_count),
+                         (Decimal("0"), 0, 1))
+
+    def test_wrong_types_are_rejected_instead_of_crashing(self):
+        # Solo cambia entradas que antes hacían fallar la corrida con AttributeError/TypeError.
+        base = event("inbound_order_created", unit_cost="2.5", order_id="1")
+        wrong = [
+            ExtractedEvent(**{**_asdict(base), "quantity": 5}),
+            ExtractedEvent(**{**_asdict(base), "unit_cost": 2.5}),
+            ExtractedEvent(**{**_asdict(base), "order_id": 1}),
+            ExtractedEvent(**{**_asdict(base), "programme_id": 7}),
+            ExtractedEvent(**{**_asdict(base), "timestamp": "2026-11-03"}),
+            ExtractedEvent(**{**_asdict(base), "event_type": ["inbound_order_created"]}),
+        ]
+        result = run(wrong)
+        self.assertEqual(result.rows, ())
+        self.assertEqual(result.stats.rows_rejected, len(wrong))
 
 
 class SourceTests(unittest.TestCase):

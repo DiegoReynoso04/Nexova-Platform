@@ -31,12 +31,13 @@ import os
 import sys
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
 
 PIPELINES_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PIPELINES_DIR.parents[1]
-# Intermedios del pipeline: la caché de `transform_weekly_rows` (D6) y los
+# Intermedios del pipeline: la caché de las tasks `compute_*` (D6) y los
 # snapshots de validación (D7). Las dos carpetas están en .gitignore.
 RAW_DIR = REPO_ROOT / "data" / "raw" / "business_performance"
 EVAL_DIR = REPO_ROOT / "data" / "eval" / "business_performance"
@@ -61,6 +62,7 @@ from business_performance.repository import PostgresRepository, RunInProgressErr
 from nexova_shared.reporting import (  # noqa: E402
     EVENT_SCHEMA_VERSION,
     PIPELINE_NAME,
+    BusinessEvent,
     RunPhase,
     RunStatus,
     RunTrigger,
@@ -69,16 +71,25 @@ from prefect import flow, get_run_logger, task  # noqa: E402
 from prefect.cache_policies import NO_CACHE  # noqa: E402
 from prefect.states import Failed  # noqa: E402
 from sqlalchemy.exc import DataError, IntegrityError, ProgrammingError  # noqa: E402
+
+# La lógica de cada paso vive en `data/process/weekly_performance.py` (pura, sin
+# Prefect); las tasks de abajo son envoltorios finos que la llaman.
+import weekly_performance as process  # noqa: E402
 from weekly_performance import (  # noqa: E402
     TRANSFORM_VERSION,
+    CellKey,
     DataQualityError,
     ExtractedEvent,
+    ExtractionResult,
+    LoadOutcome,
     QualityCounts,
     TransformResult,
+    TransformStats,
+    TypedEvent,
+    TypedEvents,
     WeekSelectionError,
     check_weeks,
     requested_weeks,
-    transform,
     weeks_between,
     window_of,
 )
@@ -202,75 +213,133 @@ def mark_phase(run_id: UUID, phase: str) -> None:
     get_repository().mark_phase(run_id, phase)
 
 
-def transform_cache_key(context, parameters) -> str:
-    """Clave de la caché de `transform_weekly_rows` (D6).
+# --- Transformación: una task por paso y por KPI (BRIEFING §4) -----------------
+#
+# Envoltorios finos: la lógica vive en `data/process/weekly_performance.py` y
+# los tests la prueban sola. Las tasks que reciben o devuelven identificadores
+# (`event_id`, `order_id`) no se cachean ni persisten (D6): su resultado en
+# disco dejaría esos ids en `data/raw/.../prefect-results`.
 
-    SHA-256 de la versión de las reglas, las semanas, **cada evento extraído
-    completo** (ordenados por `event_id`) y los conteos de calidad. La clave
-    cambia en cuanto cambia un solo evento o un conteo, así que la caché nunca
-    sirve un resultado viejo: es exacta, no una aproximación por número de
-    filas. Subir `TRANSFORM_VERSION` la invalida si cambian las reglas.
+
+@task(name="type_and_validate_events", retries=0, cache_policy=NO_CACHE)
+def type_and_validate_events(events: Sequence[ExtractedEvent], week_from: date, week_to: date) -> TypedEvents:
+    """Pasos 1–3 de §2.5: tipar, `_unassigned`, `week_start` UTC; lo que no cumple cuenta en `rows_rejected`."""
+    return process.type_and_validate(events, week_from, week_to)
+
+
+@task(name="collapse_duplicate_orders", retries=0, cache_policy=NO_CACHE)
+def collapse_duplicate_orders(items: Sequence[TypedEvent]) -> process.DedupedEvents:
+    """Paso 4 de §2.5: una orden cuenta una vez por semana; los descartados suman `duplicates_collapsed`."""
+    return process.collapse_duplicate_orders(items)
+
+
+def kpi_cache_key(kpi: str, event_type: BusinessEvent, parameters) -> str:
+    """Clave de la caché de un cálculo por KPI (D6).
+
+    SHA-256 de la versión de las reglas, el KPI y **cada evento deduplicado que
+    lo alimenta** (los campos que cambian su valor). La clave cambia en cuanto
+    cambia un solo evento de ese KPI, así que la caché nunca sirve un resultado
+    viejo: es exacta, no una aproximación. Las semanas van implícitas en
+    `week_start` de cada evento. Subir `TRANSFORM_VERSION` la invalida si
+    cambian las reglas.
     """
-    events: Sequence[ExtractedEvent] = parameters["events"]
-    quality: QualityCounts = parameters["quality"]
+    kept: Sequence[TypedEvent] = parameters["kept"]
     digest = hashlib.sha256()
-    digest.update(
-        json.dumps(
-            [TRANSFORM_VERSION, str(parameters["week_from"]), str(parameters["week_to"])], separators=(",", ":")
-        ).encode()
-    )
-    for item in sorted(events, key=lambda event: event.event_id):
+    digest.update(json.dumps([TRANSFORM_VERSION, kpi], separators=(",", ":")).encode())
+    relevant = [item for item in kept if item.event_type == event_type]
+    for item in sorted(relevant, key=lambda event: (event.office, event.programme_id, event.week_start, event.order_id)):
         digest.update(
             json.dumps(
                 [
-                    item.event_id,
-                    item.event_type,
-                    item.timestamp.isoformat(),
                     item.office,
                     item.programme_id,
                     item.currency,
+                    item.week_start.isoformat(),
                     item.quantity,
-                    item.unit_cost,
+                    str(item.unit_cost),
                     item.order_id,
                 ],
                 separators=(",", ":"),
             ).encode()
         )
-    digest.update(
-        json.dumps(
-            [
-                sorted(quality.technical.items()),
-                sorted((list(key), value) for key, value in quality.inventory_entries_with_cost.items()),
-                sorted((list(key), value) for key, value in quality.inventory_exits.items()),
-            ],
-            separators=(",", ":"),
-        ).encode()
-    )
-    return f"{PIPELINE_NAME}-transform-{digest.hexdigest()}"
+    return f"{PIPELINE_NAME}-{kpi}-{digest.hexdigest()}"
+
+
+def _kpi_task_options(kpi: str, event_type: BusinessEvent) -> dict:
+    """Caché de una hora (lo que pide el enunciado) para un cálculo por KPI.
+
+    Una corrida repetida en la misma hora con los mismos eventos (p. ej. un
+    reintento manual tras un fallo en la carga, §3.2 del diseño) no recalcula:
+    Prefect devuelve el resultado guardado (estado `Cached`). Su resultado son
+    agregados por celda, sin identificadores (se guarda en
+    data/raw/business_performance/prefect-results, ignorado por git). Cachear
+    la extracción serviría eventos viejos; cachear la carga se saltaría escrituras.
+    """
+
+    def cache_key(context, parameters) -> str:
+        return kpi_cache_key(kpi, event_type, parameters)
+
+    return {
+        "cache_key_fn": cache_key,
+        "cache_expiration": timedelta(hours=1),
+        "persist_result": True,
+        # Determinista (sin E/S): reintentar daría el mismo error.
+        "retries": 0,
+    }
+
+
+@task(name="compute_total_material_cost", **_kpi_task_options("total_material_cost", BusinessEvent.INBOUND_ORDER_CREATED))
+def compute_total_material_cost(kept: Sequence[TypedEvent]) -> dict[CellKey, Decimal]:
+    """KPI «Costo de material por oficina/programa»: Σ `unit_cost × quantity` de `inbound_order_created`."""
+    return process.total_material_cost_by_cell(kept)
+
+
+@task(name="compute_kits_delivered_count", **_kpi_task_options("kits_delivered_count", BusinessEvent.OUTBOUND_ORDER_CREATED))
+def compute_kits_delivered_count(kept: Sequence[TypedEvent]) -> dict[CellKey, int]:
+    """KPI «Kits entregados»: conteo de `outbound_order_created`."""
+    return process.kits_delivered_by_cell(kept)
+
+
+@task(name="compute_shortage_events_count", **_kpi_task_options("shortage_events_count", BusinessEvent.STOCK_THRESHOLD_TRIGGERED))
+def compute_shortage_events_count(kept: Sequence[TypedEvent]) -> dict[CellKey, int]:
+    """KPI «Frecuencia de escasez»: conteo de `stock_threshold_triggered`."""
+    return process.shortage_events_by_cell(kept)
 
 
 @task(
-    name="transform_weekly_rows",
-    # Caché de una hora (lo que pide el enunciado): una corrida repetida en la
-    # misma hora con los mismos eventos (p. ej. un reintento manual tras un
-    # fallo en la carga, §3.2 del diseño) no recalcula: Prefect devuelve el
-    # resultado guardado (estado `Cached`). Es la única task cacheada: su
-    # resultado son agregados sin identificadores (se guarda en
-    # data/raw/business_performance/prefect-results, ignorado por git), y la
-    # clave depende del contenido exacto de la extracción (ver arriba).
-    # Cachear la extracción serviría eventos viejos; cachear la carga se
-    # saltaría escrituras.
-    cache_key_fn=transform_cache_key,
-    cache_expiration=timedelta(hours=1),
-    persist_result=True,
-    # Determinista (sin E/S): reintentar daría el mismo error.
-    retries=0,
+    name="compute_cost_variance_events_count",
+    **_kpi_task_options("cost_variance_events_count", BusinessEvent.KIT_COST_VARIANCE_DETECTED),
 )
-def transform_weekly_rows(
-    events: list[ExtractedEvent], quality: QualityCounts, week_from: date, week_to: date
+def compute_cost_variance_events_count(kept: Sequence[TypedEvent]) -> dict[CellKey, int]:
+    """KPI «Frecuencia de variación de costo»: conteo de `kit_cost_variance_detected`."""
+    return process.cost_variance_events_by_cell(kept)
+
+
+# Determinista (sin E/S): reintentar daría el mismo error (`DataQualityError` es permanente).
+@task(name="assemble_weekly_rows", retries=0, cache_policy=NO_CACHE)
+def assemble_weekly_rows(
+    kept: Sequence[TypedEvent],
+    total_material_cost: dict[CellKey, Decimal],
+    kits_delivered_count: dict[CellKey, int],
+    shortage_events_count: dict[CellKey, int],
+    cost_variance_events_count: dict[CellKey, int],
+    stats: TransformStats,
+    quality: QualityCounts,
+    week_from: date,
+    week_to: date,
 ) -> TransformResult:
-    """Tipado, `_unassigned`, `week_start` UTC, dedup por orden y agregación (§2.5)."""
-    return transform(events, quality, week_from, week_to)
+    """Pasos 5–7 de §2.5: una fila por celda con eventos, una moneda por celda y la conciliación."""
+    return process.assemble_rows(
+        kept,
+        total_material_cost=total_material_cost,
+        kits_delivered_count=kits_delivered_count,
+        shortage_events_count=shortage_events_count,
+        cost_variance_events_count=cost_variance_events_count,
+        stats=stats,
+        quality=quality,
+        week_from=week_from,
+        week_to=week_to,
+    )
 
 
 @task(name="load_weekly_rows", retries=LOAD_RETRIES, retry_delay_seconds=LOAD_RETRY_DELAY_SECONDS,
@@ -353,6 +422,119 @@ def write_eval_snapshot(output_dir: str, run_id: UUID, week_from: date, week_to:
     return path.name
 
 
+# --- Subflows -----------------------------------------------------------------
+#
+# Cada uno recibe sus datos por parámetros y los devuelve; ninguno lee datos de
+# otro por una variable de módulo. Se pueden llamar solos (README del pipeline).
+# La conexión a la base no es un dato: se resuelve dentro (`get_repository()`),
+# porque un parámetro de flow se serializa y se guarda en el servidor de Prefect.
+# `retries=0`: los reintentos son de las tasks; con los del subflow se multiplicarían.
+
+
+class EventBatch:
+    """Los eventos extraídos, como entrada del subflow de transformación, **sin que Prefect los guarde**.
+
+    Por qué existe. Prefect guarda en su servidor los parámetros de cada flow
+    run (`Flow.serialize_parameters`). Pasar `list[ExtractedEvent]` directamente
+    a `transform_weekly_kpis` tendría dos efectos:
+
+    1. **Límite de tamaño:** `server.api.max_parameter_size` (524 288 bytes,
+       JSON; unos 1 950 eventos). Con más, el servidor responde 422 al crear el
+       flow run y la corrida falla antes de transformar nada.
+    2. **Identificadores en Prefect:** `event_id` y `order_id` de cada evento
+       quedarían en la base del servidor, y hoy ninguna otra cosa los guarda
+       fuera de Postgres (D6 de `docs/reporting/implementation-analysis.md`).
+
+    Cómo lo evita. Esta clase es deliberadamente opaca para el serializador:
+    tiene `__slots__` (sin `__dict__`), no es iterable y no es un dataclass ni
+    un modelo de Pydantic. `Flow.serialize_parameters` llama a
+    `fastapi.encoders.jsonable_encoder`, que no sabe codificarla y lanza; Prefect
+    captura el error (en un `logger.debug`, no un aviso) y guarda en su lugar el
+    marcador `"<EventBatch>"`. Es la misma vía por la que `QualityCounts` ya se
+    guardaba como `"<QualityCounts>"`.
+
+    De qué depende. De ese comportamiento de Prefect 3.9 (`prefect>=3.9.2,<3.10`,
+    `prefect/flows.py`, `Flow.serialize_parameters`): si una versión nueva
+    dejara de usar el marcador o empezara a recorrer objetos arbitrarios, esta
+    clase dejaría de proteger. Lo vigila `tests/test_event_batch.py`, que falla
+    si los eventos llegan a `flow_run.parameters` o si 10 000 eventos no pasan.
+    Subir el techo de Prefect exige revisar ese test.
+
+    Los eventos siguen siendo un parámetro explícito y tipado del subflow, y se
+    pueden ejecutar solos: `transform_weekly_kpis(EventBatch(events), ...)`.
+    """
+
+    __slots__ = ("events",)
+
+    def __init__(self, events: Sequence[ExtractedEvent]) -> None:
+        self.events: tuple[ExtractedEvent, ...] = tuple(events)
+
+    def __len__(self) -> int:
+        return len(self.events)
+
+    def __repr__(self) -> str:  # sin los eventos: ni un repr ni un log los arrastran
+        return f"EventBatch({len(self.events)} events)"
+
+
+@flow(name="extract_telemetry_events", retries=0, log_prints=False)
+def extract_telemetry_events(week_from: date, week_to: date) -> ExtractionResult:
+    """Extracción de `telemetry_events` (§2.3): los eventos de negocio y los conteos de calidad. Necesita la base."""
+    events = extract_business_events(week_from, week_to)
+    quality = extract_quality_counts(week_from, week_to)
+    return ExtractionResult(events=tuple(events), quality=quality)
+
+
+@flow(name="transform_weekly_kpis", retries=0, log_prints=False)
+def transform_weekly_kpis(
+    events: EventBatch, quality: QualityCounts, week_from: date, week_to: date
+) -> TransformResult:
+    """Los 4 KPI del BRIEFING por oficina, programa y semana (§2.5). Sin base: solo Prefect.
+
+    `events` es un `EventBatch` (ver su docstring): Prefect no guarda su contenido.
+    """
+    events = events.events
+    typed = type_and_validate_events(events, week_from, week_to)
+    deduped = collapse_duplicate_orders(typed.items)
+    kept = deduped.items
+    total_material_cost = compute_total_material_cost(kept)
+    kits_delivered_count = compute_kits_delivered_count(kept)
+    shortage_events_count = compute_shortage_events_count(kept)
+    cost_variance_events_count = compute_cost_variance_events_count(kept)
+    stats = TransformStats(
+        source_rows_read=len(events), rows_rejected=typed.rejected, duplicates_collapsed=deduped.duplicates_collapsed
+    )
+    return assemble_weekly_rows(
+        kept,
+        total_material_cost,
+        kits_delivered_count,
+        shortage_events_count,
+        cost_variance_events_count,
+        stats,
+        quality,
+        week_from,
+        week_to,
+    )
+
+
+@flow(name="load_weekly_office_program_performance", retries=0, log_prints=False)
+def load_weekly_office_program_performance(
+    result: TransformResult, week_from: date, week_to: date, run_id: UUID
+) -> LoadOutcome:
+    """La carga de §3.1. Necesita la base y que `run_id` exista en `reporting.pipeline_runs` (FK)."""
+    upserted, deleted = load_weekly_rows(result, week_from, week_to, run_id)
+    return LoadOutcome(rows_upserted=upserted, rows_deleted=deleted)
+
+
+@flow(name="snapshot_weekly_performance", retries=0, log_prints=False)
+def snapshot_weekly_performance(
+    output_dir: str, run_id: UUID, week_from: date, week_to: date, result: TransformResult, outcome: LoadOutcome
+) -> str:
+    """Opcional (D7): copia de validación en disco. Sin base."""
+    return write_eval_snapshot(
+        output_dir, run_id, week_from, week_to, result, outcome.rows_upserted, outcome.rows_deleted
+    )
+
+
 # --- Flows -------------------------------------------------------------------
 
 
@@ -392,7 +574,7 @@ def weekly_office_program_performance(
     week_start: date | None = None,
     requested_by: UUID | None = None,
 ):
-    """Extracción → transformación → carga de una corrida (§4.1 y D8)."""
+    """Extracción → transformación → carga de una corrida, como 3 subflows (§4.1 y D8)."""
     logger = get_run_logger()
     started = _now()
     week_from, week_to = requested_weeks(trigger, week_start, started)
@@ -423,29 +605,29 @@ def weekly_office_program_performance(
 
     try:
         resolve_weeks(week_from, week_to, started)
-        events = extract_business_events(week_from, week_to)
-        quality = extract_quality_counts(week_from, week_to)
+        extraction = extract_telemetry_events(week_from, week_to)
         mark_phase(run_id, RunPhase.TRANSFORM.value)
         phase = RunPhase.TRANSFORM.value  # solo si mark_phase salió bien
-        result = transform_weekly_rows(events, quality, week_from, week_to)
+        result = transform_weekly_kpis(EventBatch(extraction.events), extraction.quality, week_from, week_to)
         mark_phase(run_id, RunPhase.LOAD.value)
         phase = RunPhase.LOAD.value
 
-        # Fallo manejado explícitamente (D8): con return_state=True la carga
-        # devuelve su State en lugar de lanzar. Si falló (tras sus reintentos),
-        # se cierra la corrida como `failed` en la fase `load` y el flow termina
-        # en Failed sin un raise.
-        load_state = load_weekly_rows(result, week_from, week_to, run_id, return_state=True)
+        # Fallo manejado explícitamente (D8): con return_state=True el subflow de
+        # carga devuelve su State en lugar de lanzar. Si falló (tras los
+        # reintentos de su task), se cierra la corrida como `failed` en la fase
+        # `load` y el flow termina en Failed sin un raise.
+        load_state = load_weekly_office_program_performance(result, week_from, week_to, run_id, return_state=True)
         if load_state.is_failed():
             summary = close_failed(load_state.result(raise_on_failure=False))
             return Failed(message=f"load_weekly_rows failed ({summary['error_class']})", data=summary)
-        upserted, deleted = load_state.result()
+        outcome: LoadOutcome = load_state.result()
+        upserted, deleted = outcome.rows_upserted, outcome.rows_deleted
 
         # Paso opcional (D7) con return_state=True: si falla, la corrida ya está
         # cargada y termina `completed`; el fallo queda en `quality` y en el log.
         optional_steps: dict[str, str] = {}
-        snapshot_state = write_eval_snapshot(
-            str(EVAL_DIR), run_id, week_from, week_to, result, upserted, deleted, return_state=True
+        snapshot_state = snapshot_weekly_performance(
+            str(EVAL_DIR), run_id, week_from, week_to, result, outcome, return_state=True
         )
         if snapshot_state.is_failed():
             error = snapshot_state.result(raise_on_failure=False)

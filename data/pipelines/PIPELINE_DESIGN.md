@@ -2,7 +2,7 @@
 
 **Reporte Semanal de Desempeño por Oficina y Programa** de Nexova Solutions, para Laura Mendoza (CEO) y Elena Vargas (Formación Corporativa, L&D).
 
-> **Diseño aprobado el 2026-11-09; implementado en la Parte 2** (rama `feature/business-pipeline`), con los cambios que decidió el usuario en [`docs/reporting/implementation-analysis.md`](../../docs/reporting/implementation-analysis.md) (D1–D16). Esos cambios ya están en este documento: el código en `pipeline.py` (§4.1), la credencial y la guarda (§4.3), el perfil `pipelines` (§4.4), la frecuencia y el comando (§4.5) y el disparo manual (Fase 5). Guía de verificación: [`docs/reporting/implementation-review.md`](../../docs/reporting/implementation-review.md). En la demo todavía no se ha creado nada en Supabase.
+> **Diseño aprobado el 2026-11-09; implementado en la Parte 2** (rama `feature/business-pipeline`), con los cambios que decidió el usuario en [`docs/reporting/implementation-analysis.md`](../../docs/reporting/implementation-analysis.md) (D1–D16). Esos cambios ya están en este documento: el código en `pipeline.py` (§4.1), la credencial y la guarda (§4.3), el perfil `pipelines` (§4.4), la frecuencia y el comando (§4.5) y el disparo manual (Fase 5). Guía de verificación: [`docs/reporting/implementation-review.md`](../../docs/reporting/implementation-review.md). **Parte 3** (subflows, tests y dashboard): rama `feature/business-pipeline-subflows`; ver §2.4, §2.5, §4.1, §4.3 y §4.6. La demo ya tiene el esquema `reporting` (parada 4 de la Parte 2).
 
 | | |
 |---|---|
@@ -193,12 +193,34 @@ flowchart LR
 
     subgraph FLOW["Prefect: flow weekly_office_program_performance"]
         S[start_run] --> R[resolve_weeks]
-        R --> E1[extract_business_events]
-        R --> E2[extract_quality_counts]
-        E1 --> T[transform_weekly_rows<br/>tipado · _unassigned · week_start UTC<br/>dedup por order_id · agregación]
-        E2 --> T
-        T --> L[load_weekly_rows<br/>advisory lock · borrar huérfanas · upsert]
-        L --> F[finish_run]
+        R --> SX
+        subgraph SX["subflow extract_telemetry_events"]
+            E1[extract_business_events]
+            E2[extract_quality_counts]
+        end
+        SX --> M1[mark_phase: transform]
+        M1 --> ST
+        subgraph ST["subflow transform_weekly_kpis"]
+            T1[type_and_validate_events<br/>tipado · _unassigned · week_start UTC] --> T2[collapse_duplicate_orders<br/>dedup por order_id]
+            T2 --> K1[compute_total_material_cost]
+            T2 --> K2[compute_kits_delivered_count]
+            T2 --> K3[compute_shortage_events_count]
+            T2 --> K4[compute_cost_variance_events_count]
+            K1 --> T3[assemble_weekly_rows<br/>una moneda por celda · conciliación]
+            K2 --> T3
+            K3 --> T3
+            K4 --> T3
+        end
+        ST --> M2[mark_phase: load]
+        M2 --> SL
+        subgraph SL["subflow load_weekly_office_program_performance"]
+            L[load_weekly_rows<br/>advisory lock · borrar huérfanas · upsert]
+        end
+        SL --> SS
+        subgraph SS["subflow snapshot_weekly_performance (opcional)"]
+            WS[write_eval_snapshot]
+        end
+        SS --> F[finish_run]
     end
 
     subgraph DESTINO["Supabase: esquema reporting"]
@@ -224,7 +246,18 @@ flowchart LR
     P1 -- "REST de Prefect: deployment manual" --> S
 ```
 
-### 2.5 Transformación (`transform_weekly_rows`, función pura)
+### 2.5 Transformación (`transform_weekly_kpis`: funciones puras envueltas en tasks)
+
+La lógica vive en [`data/process/weekly_performance.py`](../process/weekly_performance.py) como funciones puras con nombre propio; `transform()` es su composición y [`pipeline.py`](./pipeline.py) ejecuta cada paso como una task del subflow `transform_weekly_kpis` (§4.1). Las tasks son envoltorios de una línea: no repiten ninguna regla.
+
+| Paso de abajo | Función pura (`data/process`) | Task (`pipeline.py`) |
+|---|---|---|
+| 1–3 | `type_and_validate` | `type_and_validate_events` |
+| 4 | `collapse_duplicate_orders` | `collapse_duplicate_orders` |
+| 5 (los 4 KPI) | `total_material_cost_by_cell`, `kits_delivered_by_cell`, `shortage_events_by_cell`, `cost_variance_events_by_cell` | `compute_total_material_cost`, `compute_kits_delivered_count`, `compute_shortage_events_count`, `compute_cost_variance_events_count` |
+| 5 (celdas y monedas), 6 y 7 | `assemble_rows` | `assemble_weekly_rows` |
+
+**Cambio de la Parte 3 (H4):** un campo de un tipo que no es texto (`quantity`, `unit_cost`, `order_id` o `programme_id` que no sean `str`, un `timestamp` que no sea `datetime`, un `event_type` que no sea `str`) se **rechaza y cuenta en `rows_rejected`**, como cualquier otro registro mal formado. **Solo cambia entradas que hasta ahora hacían fallar la corrida** (`AttributeError` o `TypeError` al llamar a `.strip()` o al buscar en un conjunto): con los datos reales de la extracción, que siempre son texto (§2.3), el resultado es el mismo, y `pipeline-check.sql` da 0 diferencias.
 
 1. **Tipar y validar** cada registro: `office` en `valencia`/`miami`; `currency` coherente con la oficina; `quantity` entero ≥ 1; `unit_cost` decimal > 0 en `inbound_order_created`; `order_id` entero ≥ 1. Un registro que no cumple se descarta y cuenta en `rows_rejected` (no debería pasar: la allowlist del colector ya lo garantiza).
 2. **Programa:** `programme_id` nulo → **`_unassigned`**. El centinela no cumple el patrón slug `^[a-z0-9]+(-[a-z0-9]+)*$`, así que nunca coincide con un programa real.
@@ -313,14 +346,14 @@ BEGIN;
 -- un lock de sesión no lo sería, porque cada transacción puede ir por otra conexión).
 SELECT pg_advisory_xact_lock(hashtext('weekly_office_program_performance'));
 
--- 0. El resultado de transform_weekly_rows, en una tabla temporal que solo vive
+-- 0. El resultado de transform_weekly_kpis, en una tabla temporal que solo vive
 --    en esta transacción (válido con el Transaction pooler). Puede quedar vacía.
 CREATE TEMP TABLE new_cells (
   office text, programme_id text, week_start date,
   total_material_cost numeric, kits_delivered_count integer,
   shortage_events_count integer, cost_variance_events_count integer, currency text
 ) ON COMMIT DROP;
-INSERT INTO new_cells VALUES (/* filas de transform_weekly_rows; ninguna si no hubo actividad */);
+INSERT INTO new_cells VALUES (/* filas de transform_weekly_kpis; ninguna si no hubo actividad */);
 
 -- 1. Filas de las semanas recalculadas que no están en el resultado nuevo.
 DELETE FROM reporting.weekly_office_program_performance AS w
@@ -369,7 +402,7 @@ COMMIT;
 1. **`start_run`:** busca una fila `running` del pipeline. R1 ya está `failed`: no hay. Inserta R2 con `status = 'running'`, `phase = 'extract'`. El índice único parcial garantiza que es la única activa.
 2. **`resolve_weeks`:** calcula las semanas y comprueba la guarda de retención (todas dentro de los últimos 84 días).
 3. **`extract_business_events`:** relee `telemetry_events`. Como la tabla es inmutable y no puede entrar ningún evento con `timestamp` en semanas cerradas, **lee exactamente los mismos registros que R1**.
-4. **`mark_phase('transform')`** y **`transform_weekly_rows`:** función pura, **mismas filas que R1**.
+4. **`mark_phase('transform')`** y el subflow **`transform_weekly_kpis`:** funciones puras, **mismas filas que R1**.
 5. **`mark_phase('load')`** y **`load_weekly_rows`:** una transacción nueva: lock, `DELETE` (borra 0 filas si el resultado coincide con R0, o las huérfanas si no) y upsert. Cada celda que existía se **actualiza** (no se duplica: lo impide el `unique`) con los mismos números, `computed_at` = hora de la transacción de R2 y `run_id` = R2; las celdas nuevas se insertan. `COMMIT`.
 6. **`finish_run`:** R2 → `completed`, `phase = 'done'`, con `rows_upserted` y `rows_deleted`.
 
@@ -453,11 +486,33 @@ create index ix_pipeline_runs_latest
 
 ## Fase 4 — Mapeo a Prefect
 
-### 4.1 Flow y tasks
+### 4.1 Flow, subflows y tasks
 
 **Código:** el flow, el backfill y las tasks en [`data/pipelines/pipeline.py`](./pipeline.py); la transformación pura en [`data/process/weekly_performance.py`](../process/weekly_performance.py); el soporte en [`business_performance/`](./business_performance/) (`config.py`, `repository.py` con la SQL, `migrate.py`, `serve.py`, `secret.py` y `trigger.py`). Prefect vive en el entorno propio de `data/pipelines` (`pyproject.toml`, `uv.lock`, `requirements.txt`), nunca en la API (D1 del análisis de implementación).
 
-**Flow principal:** `weekly_office_program_performance(trigger, week_start=None, requested_by=None)`.
+**Flow principal:** `weekly_office_program_performance(trigger, week_start=None, requested_by=None)`. Conserva `start_run`, `resolve_weeks`, `mark_phase`, `finish_run`, el resumen JSON y el fallo manejado, y delega el trabajo en **4 subflows** (Parte 3 del hito). `__main__`, `main()`, los códigos de salida y la CLI no cambian (§4.5).
+
+#### Subflows
+
+Los datos entran por parámetros y salen por el retorno; ninguno lee datos de otro por una variable de módulo. Todos con `retries=0`: los reintentos son de las tasks (con los del subflow se multiplicarían). La conexión a la base **no** es un dato: se resuelve dentro (`get_repository()`, `DATABASE_URL` o el block), porque un parámetro de flow se serializa y se guarda en el servidor de Prefect (§4.3).
+
+| Subflow | Firma | Tasks | ¿Necesita base? |
+|---|---|---|---|
+| `extract_telemetry_events` | `(week_from: date, week_to: date) -> ExtractionResult` | `extract_business_events`, `extract_quality_counts` | Sí |
+| `transform_weekly_kpis` | `(events: EventBatch, quality: QualityCounts, week_from: date, week_to: date) -> TransformResult` | `type_and_validate_events`, `collapse_duplicate_orders`, las 4 `compute_*` y `assemble_weekly_rows` | No: solo Prefect |
+| `load_weekly_office_program_performance` | `(result: TransformResult, week_from: date, week_to: date, run_id: UUID) -> LoadOutcome` | `load_weekly_rows` | Sí, y un `run_id` que exista en `reporting.pipeline_runs` (FK) |
+| `snapshot_weekly_performance` (opcional) | `(output_dir: str, run_id: UUID, week_from: date, week_to: date, result: TransformResult, outcome: LoadOutcome) -> str` | `write_eval_snapshot` | No: solo disco |
+
+`ExtractionResult(events, quality)` y `LoadOutcome(rows_upserted, rows_deleted)` son dataclasses puras de `data/process/weekly_performance.py`. **Ejecutable por separado** significa que se llama solo desde Python con sus entradas, sin pasar por el flow principal ni por `main()` (los tests de `data/pipelines/tests/test_subflows.py` lo hacen sin base de datos, con un repositorio en memoria):
+
+```python
+# Desde data/pipelines, con el Python de su entorno (o la imagen nexova-pipeline). Sin base de datos:
+import pipeline
+from weekly_performance import QualityCounts
+result = pipeline.transform_weekly_kpis(pipeline.EventBatch(events), QualityCounts(), week_from, week_to)
+```
+
+#### Tasks
 
 | Task | Qué hace | Entra → sale | Reintentos |
 |---|---|---|---|
@@ -466,9 +521,12 @@ create index ix_pipeline_runs_latest
 | `extract_business_events` | La consulta de §2.3 | ventana → registros (§2.3) | 2 × 10 s |
 | `extract_quality_counts` | Conteos técnicos y de conciliación | ventana → conteos por semana y oficina | 2 × 10 s |
 | `mark_phase` | Checkpoint: `UPDATE reporting.pipeline_runs SET phase = :phase WHERE run_id = :run_id AND status = 'running'`, en una transacción corta. Se llama al entrar en `transform` y en `load` | `run_id`, `phase` → — | 2 × 10 s |
-| `transform_weekly_rows` | Las reglas de §2.5 (función pura). **Caché de 1 h** (`cache_key_fn` = SHA-256 de la versión de las reglas, las semanas, cada evento extraído y los conteos; `cache_expiration` = 1 h): una corrida repetida en la misma hora con los mismos eventos no recalcula (`Cached`) | registros → filas + métricas de la corrida | 0 (determinista) |
-| `load_weekly_rows` | La transacción de §3.1. Se llama con `return_state=True`: si falla tras sus reintentos, el flow cierra la corrida como `failed`/`load` y termina en `Failed` sin un `raise` (fallo manejado) | filas, `run_id` → `rows_upserted`, `rows_deleted` | 2 × 30 s |
-| `write_eval_snapshot` | **Opcional**, con `return_state=True`: copia de validación de la corrida (contadores, filas agregadas y `quality`, sin identificadores) en `data/eval/business_performance/`. Si falla, la corrida termina `completed` y el fallo queda en `quality.optional_steps` y en el log | resultado → nombre del archivo | 0 (disco local) |
+| `type_and_validate_events` | Pasos 1–3 de §2.5 (función pura). No se cachea ni persiste: recibe y devuelve identificadores | eventos extraídos → `TypedEvents` | 0 (determinista) |
+| `collapse_duplicate_orders` | Paso 4 de §2.5 (función pura). No se cachea ni persiste, por lo mismo | `TypedEvent` → `DedupedEvents` | 0 (determinista) |
+| `compute_total_material_cost`, `compute_kits_delivered_count`, `compute_shortage_events_count`, `compute_cost_variance_events_count` | Una por KPI del BRIEFING (§2.2): el valor por (`office`, `programme_id`, `week_start`). **Caché de 1 h** (`kpi_cache_key`: SHA-256 de la versión de las reglas, el KPI y cada evento deduplicado que lo alimenta; `cache_expiration` = 1 h; resultado persistido, solo agregados sin identificadores): una corrida repetida en la misma hora con los mismos eventos no recalcula (`Cached`), y un evento que no es de ese KPI no la invalida | `TypedEvent` → `dict[CellKey, valor]` | 0 (determinista) |
+| `assemble_weekly_rows` | Pasos 5–7 de §2.5: una fila por celda con eventos, **una moneda por celda** (`DataQualityError` si no) y la conciliación | los 4 KPI, `kept`, `TransformStats`, `QualityCounts` → filas + métricas de la corrida | 0 (determinista) |
+| `load_weekly_rows` | La transacción de §3.1. Su subflow se llama con `return_state=True`: si falla tras los reintentos, el flow cierra la corrida como `failed`/`load` y termina en `Failed` sin un `raise` (fallo manejado), con la clase del error original (`OperationalError`, no un envoltorio) | filas, `run_id` → `rows_upserted`, `rows_deleted` | 2 × 30 s |
+| `write_eval_snapshot` | **Opcional**, su subflow con `return_state=True`: copia de validación de la corrida (contadores, filas agregadas y `quality`, sin identificadores) en `data/eval/business_performance/`. Si falla, la corrida termina `completed` y el fallo queda en `quality.optional_steps` y en el log | resultado → nombre del archivo | 0 (disco local) |
 | `finish_run` | Cierra la fila: `completed`/`failed`, fase, contadores, `quality`, `error_class` | `run_id`, resultado → — | 2 × 10 s |
 
 **Por qué esos reintentos:**
@@ -486,23 +544,26 @@ flow weekly_office_program_performance(trigger, week_start=None, requested_by=No
     phase = "extract"
     try:
         resolve_weeks(week_from, week_to, now)   # lunes, cerradas, retención: un rechazo queda en el log
-        events  = extract_business_events(week_from, week_to)
-        quality = extract_quality_counts(week_from, week_to)
+        extraction = extract_telemetry_events(week_from, week_to)                     # subflow
         mark_phase(run_id, "transform"); phase = "transform"
-        result  = transform_weekly_rows(events, quality, week_from, week_to)       # caché de 1 h
+        result = transform_weekly_kpis(EventBatch(extraction.events), extraction.quality,
+                                       week_from, week_to)                            # subflow (caché de 1 h por KPI)
         mark_phase(run_id, "load"); phase = "load"
-        load_state = load_weekly_rows(result, week_from, week_to, run_id, return_state=True)
+        load_state = load_weekly_office_program_performance(
+            result, week_from, week_to, run_id, return_state=True)                    # subflow
         if load_state.is_failed():                       # fallo manejado explícitamente
             finish_run(run_id, "failed", phase, error_class=clase del error)
             return Failed(...)                           # el flow termina en Failed
-        upserted, deleted = load_state.result()
-        snapshot_state = write_eval_snapshot(..., return_state=True)   # opcional
+        outcome = load_state.result()                    # LoadOutcome
+        snapshot_state = snapshot_weekly_performance(..., return_state=True)          # subflow opcional
         finish_run(run_id, "completed", "done", contadores,
                    quality = result.quality + optional_steps)
     except Exception as error:                           # lo que no pasó por return_state
         finish_run(run_id, "failed", phase, error_class=type(error).__name__)
         raise
 ```
+
+Un fallo dentro de un subflow deja en `pipeline_runs` la fase en la que se llamó (`extract`, `transform` o `load`) y la clase del error original; `test_subflows.py` lo comprueba para cada uno.
 
 **Flow de backfill (opcional):** `backfill_weekly_office_program_performance(week_from, week_to)` llama al flow principal como **subflow**, una vez por semana y en orden, con `trigger = 'backfill'`. Cada semana deja su propia fila en el log. Sirve para cubrir las semanas desde el 2026-11-02 al poner el pipeline en marcha, y nunca pasa de la guarda de retención.
 
@@ -529,6 +590,23 @@ flow weekly_office_program_performance(trigger, week_start=None, requested_by=No
 - **Sin servidor (el script, D5 del análisis de implementación):** `DATABASE_URL` sale de la variable de entorno de la terminal o, si falta, **solo de esa clave** del `.env` de la raíz, leída con la librería estándar. Se imprime de dónde salió y el host, nunca la URL. Un block en el modo efímero no protegería nada, porque su clave de cifrado está en la misma SQLite.
 - **Guarda de la demo, solo en la migración (DDL):** `python -m business_performance.migrate` se niega con un host que no es local salvo con `--allow-demo`. La corrida no se bloquea: solo escribe en `reporting`, es idempotente y se puede recalcular. Si falta el esquema, termina con salida 2 y el comando de la migración, sin traza.
 - **Analítica de Prefect desactivada en todos los modos:** `business_performance/_bootstrap.py` fuerza `PREFECT_SERVER_ANALYTICS_ENABLED=false` (servidor) y `DO_NOT_TRACK=1` (cliente) antes de importar Prefect. La imagen y Compose fijan las mismas dos variables.
+
+#### Qué guarda el servidor de Prefect de los subflows, y `EventBatch`
+
+Prefect guarda en su servidor los **parámetros de cada flow run** (`Flow.serialize_parameters`, en `prefect/flows.py`), con un tope de **524 288 bytes** serializados (`server.api.max_parameter_size`; con más, el servidor responde 422 al crear el flow run). Qué queda guardado de cada subflow:
+
+| Parámetro | ¿Se guarda? | Contenido |
+|---|---|---|
+| `week_from`, `week_to`, `run_id`, `output_dir` | Sí | Fechas, UUID de la corrida y la ruta del snapshot |
+| `events` de `transform_weekly_kpis` | **No**: solo el marcador `"<EventBatch>"` | — |
+| `quality` | Sus conteos, o el marcador `"<QualityCounts>"` si sus claves son tuplas | Solo conteos, nunca identificadores |
+| `result` de `load_…` y `snapshot_…` | Sí | Agregados por celda: sin identificadores |
+
+**Por qué existe `EventBatch`** (`pipeline.py`): pasar `list[ExtractedEvent]` directamente a `transform_weekly_kpis` tendría dos efectos. Un **tope**: unos 1 950 eventos por corrida (270 bytes cada uno); con 10 000 el subflow falla al crearse. Y **identificadores en Prefect**: el `event_id` y el `order_id` de cada evento quedarían en la base del servidor, y hoy ninguna otra cosa los guarda fuera de Postgres (D6 de [`docs/reporting/implementation-analysis.md`](../../docs/reporting/implementation-analysis.md)).
+
+**Cómo lo evita:** `EventBatch` es una clase opaca para el serializador (`__slots__`, sin `__dict__`, no iterable, ni dataclass ni modelo de Pydantic). `jsonable_encoder` no sabe codificarla y lanza; Prefect captura el error con un `logger.debug` (**no escribe ningún aviso en la corrida**) y guarda el marcador. Los eventos siguen siendo un parámetro explícito y tipado del subflow.
+
+**De qué depende:** de ese comportamiento de Prefect 3.9 (`prefect>=3.9.2,<3.10`). Si una versión nueva dejara de usar el marcador, o empezara a recorrer objetos arbitrarios, `EventBatch` dejaría de proteger. Lo vigila [`tests/test_event_batch.py`](./tests/test_event_batch.py), que **falla** si los eventos llegan a `flow_run.parameters`, si 10 000 eventos no pasan o si Prefect cambia el tope (con un control negativo que demuestra que una lista normal sí se guardaría). Subir la versión de Prefect exige revisar ese test.
 
 ### 4.4 Deployments y dónde corre
 
@@ -557,8 +635,24 @@ flow weekly_office_program_performance(trigger, week_start=None, requested_by=No
 | **Qué semana** | Sin opciones, la **última semana cerrada**; `--week-start YYYY-MM-DD` (lunes) para una concreta; `--from YYYY-MM-DD [--to YYYY-MM-DD]` para el backfill (un subflow por semana; sin `--to`, hasta la última cerrada). La primera corrida en la demo: `--from 2026-11-02` |
 | **Qué base** | `DATABASE_URL` de la terminal (`$env:DATABASE_URL = "postgresql://…"` en PowerShell, `export DATABASE_URL=…` en Linux) o, si falta, la del `.env` de la raíz (la demo). La primera línea dice de dónde salió y el host |
 | **Salida** | 0 completada; 1 alguna corrida falló; 2 configuración, argumentos o esquema ausente. Al terminar, una línea JSON `pipeline_run_finished` por el logger de Prefect |
-| **Dónde queda cada cosa** | Sin servidor, Prefect arranca uno temporal con su estado en `~/.prefect` (fuera del repo). La caché de `transform_weekly_rows`, en `data/raw/business_performance/prefect-results/`; los snapshots, en `data/eval/business_performance/` (las dos, ignoradas por git). En Compose, en los volúmenes `pipeline-raw` y `pipeline-eval` |
+| **Dónde queda cada cosa** | Sin servidor, Prefect arranca uno temporal con su estado en `~/.prefect` (fuera del repo). La caché de las tasks `compute_*`, en `data/raw/business_performance/prefect-results/`; los snapshots, en `data/eval/business_performance/` (las dos, ignoradas por git). En Compose, en los volúmenes `pipeline-raw` y `pipeline-eval` |
 | **Worker** | `docker compose --profile pipelines up -d`, y una vez el block: `docker compose --profile pipelines exec -e DATABASE_URL pipeline-worker python -m business_performance.secret` |
+
+**Parte 3:** `python data/pipelines/pipeline.py` (con sus opciones y códigos de salida) sigue siendo el comando del ETL completo, y los comandos de arriba siguen siendo válidos. Se ejecutan con el Python del entorno de `data/pipelines` (su `.venv`) o en la imagen `nexova-pipeline`, nunca con el de `services/api`. Los tests de transformación por KPI: `python -m pytest tests/pipelines/test_pipeline.py` (mismo Python; en la imagen, ver `data/pipelines/README.es.md`).
+
+### 4.6 Límite conocido: tiempo con volúmenes grandes
+
+La transformación pura es rápida, pero el subflow que la envuelve crece de forma lineal con el número de eventos. Medido con eventos ficticios (el límite de parámetros de Prefect por defecto, sin tocarlo, en Postgres efímero y el servidor temporal de Prefect):
+
+| Eventos de la semana | `transform_weekly_kpis` | La transformación pura | Flow principal completo (repositorio en memoria) |
+|---|---|---|---|
+| 1 000 | 3,4 s | 0,008 s | — |
+| 10 000 | 9,9 s | 0,09 s | 21 s |
+| 50 000 | 45,5 s | 0,53 s | 129 s |
+
+- **Causa:** Prefect recorre cada argumento de cada task (`collect_task_run_inputs_sync` llama a `visit_collection` 1,5 millones de veces con 10 000 eventos; el perfil está en `docs/reporting/subflows-dashboard-review.md`), y los eventos pasan por 7 tasks. **No es la transformación.**
+- **Volumen actual:** muy por debajo. La demo tiene 3 eventos de negocio en su semana con datos, y 10 000 por semana serían unos 1 400 al día. El cron semanal tiene 4 h de margen.
+- **Palanca, si crece:** envolver `kept` (los eventos deduplicados) de forma opaca, como `EventBatch`, para que Prefect no recorra los argumentos de las tasks. **No está implementado** (decisión del usuario del 2026-11-12).
 
 ---
 
@@ -641,6 +735,8 @@ Los ejemplos del enunciado son genéricos. En nuestro sistema: `stock_waste_regi
 
 **7. ¿Qué pasa si la base no está disponible?** El colector responde 503 `storage_unavailable` y el backoffice reintenta 3 veces antes de descartar el lote; las rutas de `services/reporting/` responden 503. El pipeline falla en la extracción tras sus reintentos y queda `Failed` en Prefect; como tampoco puede escribir su log, ese fallo solo consta en Prefect. La siguiente corrida o un backfill lo recupera, porque los eventos guardados no cambian.
 
+**Señal de «datos desactualizados» (Parte 3, la única mejora añadida).** El dashboard `/reporting` lee `GET /reporting/pipeline-runs/latest` y avisa «Los datos pueden estar desactualizados…» si la última corrida completada terminó hace **más de 8 días** (el cron semanal más un día de margen, `STALE_AFTER_DAYS` en `uis/backoffice/lib/reporting-format.ts`). **Qué pregunta responde:** la 7, la que dejaba abierta §6 («si la base no está disponible, ese fallo solo consta en Prefect»): ahora quien abre el reporte ve que no se ha actualizado, aunque la corrida no haya podido escribir su propio fallo. **Por qué se priorizó:** es la única brecha del diseño que Laura o Elena notarían (un reporte viejo que parece actual), y no cuesta ninguna ruta ni credencial nuevas: sale de la tabla `pipeline_runs` y de la API que ya existían. Con una corrida `failed` el dashboard lo dice aparte («La última actualización falló; las cifras pueden ser de una corrida anterior»). **Con el perfil `pipelines` de Compose apagado, la demo mostrará «desactualizado» pasada una semana de la última corrida: es el comportamiento esperado.**
+
 **8. ¿Hay un buffer en el cliente?** Solo en memoria: `lib/telemetry.ts` agrupa hasta 10 s o 20 eventos, reintenta 3 veces con backoff y usa `sendBeacon` al ocultar la pestaña. **No hay buffer persistente** (`localStorage` no aplica): si se cierra la pestaña y el beacon no sale, el evento se pierde. Es un riesgo aceptado del plan de telemetría. El pipeline no lo recupera, pero lo hace visible con la conciliación (pregunta 4).
 
 **9. ¿Cómo se reintenta una transmisión sin duplicar?** El backoffice reenvía el lote con **los mismos `eventId`**; el colector cuenta como `stored` también los que ya estaban, así que un reintento da la misma respuesta y no duplica. Un 503 provoca reintento; un 422 (cuerpo mal formado), no.
@@ -679,9 +775,19 @@ Los ejemplos del enunciado son genéricos. En nuestro sistema: `stock_waste_regi
 
 ## 8. Fuera de alcance y sin verificar
 
-- **Fuera de este ticket:** cualquier código, migración o dependencia; cambios en `services/telemetry/analysis.py`, en `GET /telemetry/report` o en `uis/`; escribir en `telemetry_events` o en Supabase; P1 y P2; una pantalla para Laura y Elena (el BRIEFING pide la tabla y los endpoints); la conversión de monedas (v2, cuando exista una fuente de tipo de cambio).
+- **Fuera de este ticket:** cualquier código, migración o dependencia; cambios en `services/telemetry/analysis.py`, en `GET /telemetry/report` o en `uis/`; escribir en `telemetry_events` o en Supabase; P1 y P2; la conversión de monedas (v2, cuando exista una fuente de tipo de cambio).
 - **Sin verificar (se comprueba en la implementación):** la versión de Prefect, `serve` con un servidor propio, el límite de concurrencia del deployment, el cron con zona horaria y la ruta REST para crear un flow run; si existe ya un esquema `reporting` en la demo; la versión de PostgreSQL de Supabase y los privilegios por defecto y esquemas expuestos de su Data API; si la API de la demo tiene hoy `TELEMETRY_SUPPLIER_KEY`; el volumen real (3 eventos de negocio en una semana).
 
+
+- **Parte 3 (subflows, tests y dashboard):** hecha en la rama `feature/business-pipeline-subflows` (§4.1, §4.3, §4.6). Guía de verificación: [`docs/reporting/subflows-dashboard-review.md`](../../docs/reporting/subflows-dashboard-review.md). La pantalla para Laura y Elena es `/reporting` en el backoffice.
+- **Límite conocido:** el tiempo con volúmenes grandes (§4.6): 9,9 s con 10 000 eventos y 45,5 s con 50 000 en el subflow de transformación, por `visit_collection` de Prefect sobre los argumentos de las tasks y no por la transformación. El volumen actual está muy por debajo; la palanca, si crece, es envolver `kept` de forma opaca (no implementada).
+- **Mejoras, qué ya estaba y qué falta** (la PR lo dice):
+  - **Ya implementado desde la Parte 2:** una corrida a la vez (índice único parcial de `pipeline_runs`, `pg_advisory_xact_lock` en la carga y concurrencia 1 del deployment); cierre de las corridas abandonadas a los 30 min; checkpoint de fase con `mark_phase`; reintentos solo ante errores transitorios; `start_run` idempotente; conciliación en `pipeline_runs.quality` (preguntas 4 y 6); guarda de retención de 84 días; paso opcional con `return_state=True`; backfill; analítica de Prefect desactivada.
+  - **No aplica por diseño:** `Idempotency-Key` (la clave de idempotencia es el `eventId`, §6 pregunta 1).
+  - **Añadida en la Parte 3:** la señal de «datos desactualizados» del dashboard (§6, pregunta 7).
+  - **Documentado y sin implementar:** roles de base de datos separados (§2.7), `kits_delivered_units` y la conversión de monedas (v2), P1 y P2 (dependen de Elena), y que la purga de administración compruebe la cobertura en `pipeline_runs` antes del 2027-02-03 (§3.4).
+  - **No existen en el diseño y no se inventan:** heartbeat y alerta de silencio. Una notificación necesitaría un canal y credenciales que el pipeline no tiene ([`implementation-analysis.md`](../../docs/reporting/implementation-analysis.md), D7).
+- **Sin verificar de la Parte 3:** el comportamiento con volúmenes por encima de 50 000 eventos; `EventBatch` con una versión de Prefect distinta de 3.9 (el test de guardia lo detectaría); el dashboard contra los datos reales de la demo (lo verifica el usuario, en solo lectura).
 ---
 
 ## 9. Vocabulario
@@ -735,3 +841,8 @@ Los ejemplos del enunciado son genéricos. En nuestro sistema: `stock_waste_regi
 | Monedas sin mezclar | §2.2, §2.5, §2.7 |
 | Vocabulario de dominio real | §1.1, §9 |
 | Prerrequisito P1 (programas) | §7.1 |
+| Parte 3: ≥ 3 subflows con entradas y salidas explícitas, ejecutables por separado | §4.1 (subflows), `pipeline.py` (`extract_telemetry_events`, `transform_weekly_kpis`, `load_weekly_office_program_performance`, `snapshot_weekly_performance`), `tests/test_subflows.py` |
+| Parte 3: lo que Prefect guarda de los parámetros y `EventBatch` | §4.3, `tests/test_event_batch.py` |
+| Parte 3: tasks de transformación por KPI y tests unitarios | §2.5, `data/process/weekly_performance.py`, `tests/pipelines/test_pipeline.py` |
+| Parte 3: límite conocido de volumen | §4.6, §8 |
+| Parte 3: dashboard `/reporting` y señal de «datos desactualizados» | §6 (pregunta 7), §8, `uis/backoffice/CLAUDE.md` («Reporte semanal») |
