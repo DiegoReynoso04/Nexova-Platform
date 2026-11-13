@@ -15,7 +15,9 @@ function OfficeColumn({ kpi, office, scale }: { kpi: KpiDefinition; office: Offi
   return (
     <section aria-label={`${kpi.title}: ${office.officeLabel}`} className="rounded-lg border border-border bg-surface p-4">
       <h3 className="text-sm font-semibold text-ink">
-        {office.officeLabel} <span className="font-normal text-ink-muted">({office.currency})</span>
+        {office.officeLabel}
+        {/* La moneda solo tiene sentido en el costo: los conteos no son dinero. */}
+        {kpi.kind === 'money' && <span className="font-normal text-ink-muted"> ({office.currency})</span>}
       </h3>
       {!office.hasActivity ? (
         <p className="mt-2 text-sm text-ink-muted">Sin actividad esta semana</p>
