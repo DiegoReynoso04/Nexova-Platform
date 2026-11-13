@@ -4,6 +4,16 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-13 — Pipeline de desempeño de negocio, Parte 3: ajustes antes del push
+
+**Estado: hecho; dos commits más sobre el de la Parte 3, en `feature/business-pipeline-subflows`; push y PR contra `main` con el OK del usuario.** El usuario verificó `/reporting` con los datos reales de la demo, en solo lectura (4 KPI con su nombre del BRIEFING; Valencia 16,00 € de costo; Miami 1 kit y 1 escasez; «Sin programa asignado»; franja de frescura sin aviso; «Semana siguiente» desactivada; EUR y USD sin sumar).
+
+- **`docs: clarify pipelines image rebuild without starting the profile`:** la reconstrucción de la imagen tras el merge es `docker compose --profile pipelines build` (solo construye), no `up -d --build`, que arrancaría Prefect y el worker contra la demo con el cron activo. Arrancar el perfil contra la demo es una decisión aparte. La guía ya no lista el dashboard con la demo como no verificado.
+- **`fix(backoffice): show currency only on the material cost block`:** «(EUR)» y «(USD)» solo en la cabecera de Valencia y Miami del bloque del costo; los conteos no son dinero. Sin tests que lo comprobaran; backoffice revalidado (typegen, tsc, lint, build, `node --test` 654/654 y Jest 277/277).
+- **Sin impacto técnico** en `techContext.md`.
+
+---
+
 ## 2026-11-13 — Pipeline de desempeño de negocio, Parte 3: F1, parada 4 (documentación, verificación final y commit)
 
 **Estado: hecho y commiteado en `feature/business-pipeline-subflows` (desde `main` en `ec5cdac`); sin push ni PR hasta el OK del usuario.** Un solo commit: `feat: refactor business performance pipeline into subflows, add unit tests, and add reporting dashboard`. Docker Desktop se cayó a mitad de la verificación; el usuario lo arrancó y se retomó sin reiniciarlo.
