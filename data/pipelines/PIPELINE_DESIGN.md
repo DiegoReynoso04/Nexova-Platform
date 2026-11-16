@@ -637,10 +637,20 @@ Prefect guarda en su servidor los **parámetros de cada flow run** (`Flow.serial
 | **Qué semana** | Sin opciones, la **última semana cerrada**; `--week-start YYYY-MM-DD` (lunes) para una concreta; `--from YYYY-MM-DD [--to YYYY-MM-DD]` para el backfill (un subflow por semana; sin `--to`, hasta la última cerrada). La primera corrida en la demo: `--from 2026-11-02` |
 | **Qué base** | `DATABASE_URL` de la terminal (`$env:DATABASE_URL = "postgresql://…"` en PowerShell, `export DATABASE_URL=…` en Linux) o, si falta, la del `.env` de la raíz (la demo). La primera línea dice de dónde salió y el host |
 | **Salida** | 0 completada; 1 alguna corrida falló; 2 configuración, argumentos o esquema ausente. Al terminar, una línea JSON `pipeline_run_finished` por el logger de Prefect |
-| **Dónde queda cada cosa** | Sin servidor, Prefect arranca uno temporal con su estado en `~/.prefect` (fuera del repo). La caché de las tasks `compute_*`, en `data/raw/business_performance/prefect-results/`; los snapshots, en `data/eval/business_performance/` (las dos, ignoradas por git). En Compose, en los volúmenes `pipeline-raw` y `pipeline-eval` |
+| **Dónde queda cada cosa** | Sin servidor, Prefect arranca uno temporal (con 90 s para arrancar: ver «Arranque del servidor temporal», más abajo) con su estado en `~/.prefect` (fuera del repo). La caché de las tasks `compute_*`, en `data/raw/business_performance/prefect-results/`; los snapshots, en `data/eval/business_performance/` (las dos, ignoradas por git). En Compose, en los volúmenes `pipeline-raw` y `pipeline-eval` |
 | **Worker** | `docker compose --profile pipelines up -d`, y una vez el block: `docker compose --profile pipelines exec -e DATABASE_URL pipeline-worker python -m business_performance.secret` |
 
 **Parte 3:** `python data/pipelines/pipeline.py` (con sus opciones y códigos de salida) sigue siendo el comando del ETL completo, y los comandos de arriba siguen siendo válidos. Se ejecutan con el Python del entorno de `data/pipelines` (su `.venv`) o en la imagen `nexova-pipeline`, nunca con el de `services/api`. Los tests de transformación por KPI: `python -m pytest tests/pipelines/test_pipeline.py` (mismo Python; en la imagen, ver `data/pipelines/README.es.md`).
+
+**Arranque del servidor temporal de Prefect (corrección del 2026-11-16, tras DEV-53).** Sin `PREFECT_API_URL`, Prefect arranca un servidor en un subproceso y espera a que responda `PREFECT_SERVER_EPHEMERAL_STARTUP_TIMEOUT_SECONDS` segundos: **20 por defecto** en Prefect 3.9.2 (`prefect/settings/models/server/ephemeral.py`; el bucle de espera está en `prefect/server/api/server.py` y falla con `RuntimeError: Timed out while attempting to connect to ephemeral Prefect API server.`). El arranque (de «Starting temporary server» a «Beginning flow run») se midió así:
+
+| Dónde | Arranque | Con 20 s |
+|---|---|---|
+| Máquina del usuario, 4 corridas de la guía | 18,1 / 19,8 / 20,2 / 20,7 s | La instancia ganadora de una corrida del caso c falló con el error de arriba |
+| Esta sesión, Docker Desktop, 3 ganadoras del caso c | 8,9 / 9,2 / 9,9 s | Pasa |
+| Esta sesión, CPU limitada a 0,25 núcleo (`--cpus 0.25`) | 35,8 s | **Falla** con el error de arriba (reproducido con la variable fijada a 20) |
+
+`business_performance/_bootstrap.py` fija **90 s** con `os.environ.setdefault`, **antes** de importar Prefect: una variable que ya venga puesta se respeta. Es el mismo punto donde se fija la analítica, así que vale en los tres modos sin tocar Compose ni la imagen: `pipeline.py` a mano, el subproceso del job nocturno (la variable pasa por la lista blanca de su entorno por el prefijo `PREFECT_`) y el contenedor `nightly-scheduler`. 90 s es unas 4,5 veces el arranque más lento medido en una máquina normal y deja margen a una máquina lenta, mientras que un servidor que de verdad no arranca sigue fallando en 90 s y no se queda colgado (el subproceso del job tiene además un timeout de 20 min). Si Prefect cambiara su valor por defecto, `tests/test_ephemeral_timeout.py` avisa.
 
 ### 4.6 Límite conocido: tiempo con volúmenes grandes
 

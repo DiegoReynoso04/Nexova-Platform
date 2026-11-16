@@ -4,6 +4,16 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-16 — fix: timeout de arranque del servidor efímero de Prefect (tras DEV-53)
+
+**Estado: hecho y verificado, sin commit todavía; rama `fix/prefect-ephemeral-startup-timeout` desde `main` (PR #36 ya mergeada).** El usuario probó la guía y una instancia ganadora del caso c terminó `failed` con `RuntimeError: Timed out while attempting to connect to ephemeral Prefect API server`: el servidor temporal tarda 18–21 s en su máquina y Prefect 3.9.2 le da 20 s por defecto.
+
+- **Cambio:** `data/pipelines/business_performance/_bootstrap.py` fija `PREFECT_SERVER_EPHEMERAL_STARTUP_TIMEOUT_SECONDS=90` con `setdefault` (antes de importar Prefect; una variable ya puesta se respeta). Vale a mano, en el subproceso del job (la variable pasa su lista blanca por el prefijo `PREFECT_`) y en `nightly-scheduler`, sin tocar Compose ni la imagen. Tests: `data/pipelines/tests/test_ephemeral_timeout.py` y dos en `services/job_runner/tests/test_nightly_export_pipeline.py`. Documentado en `PIPELINE_DESIGN.md` §4.5 y en la guía `nightly-export-review.md` §3.
+- **Verificado contra un Postgres efímero:** reproducido el fallo (CPU a 0,25 núcleo + 20 s: error y fila `failed`) y el arreglo (mismo caso: arranque de 35,8 s y `completed`); el caso c tres veces seguidas, la ganadora completa y la perdedora sale `locked`.
+- **Sin impacto en** `services/api`, `telemetry_events` ni la demo. Tras el merge, reconstruir las imágenes sin `up` (`docker compose --profile pipelines build` y `--profile nightly build`).
+
+---
+
 ## 2026-11-16 — DEV-53, script nocturno de telemetría: F1 completa (paradas 1 a 4)
 
 **Estado: hecho y commiteado en `feature/nightly-telemetry-export` (desde `main` en `f88e3a4`), un solo commit `feat: add nightly telemetry export job with job_runs state machine`; sin push ni PR hasta el OK del usuario (la PR lleva la etiqueta `cronjob`).** M1–M18 aprobadas con 4 precisiones; M19 (`-overlapping`) aprobada.
