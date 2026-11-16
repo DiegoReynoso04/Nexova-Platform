@@ -25,6 +25,10 @@ results.csv
 data/raw/business_performance/
 data/eval/business_performance/
 
+# Export nocturno de telemetría (DEV-53): CSV de auditoría y su temporal de escritura atómica
+data/raw/telemetry_*.csv
+data/raw/telemetry_*.csv.part
+
 # Bases TinyDB locales de services/api: proveedores (suppliers.json) y
 # usuarios/perfiles con hashes de contraseña (auth.json)
 services/api/data/

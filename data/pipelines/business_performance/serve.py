@@ -1,15 +1,20 @@
-"""Worker del perfil `pipelines` de Compose: sirve los dos deployments del flow (§4.4 del diseño).
+"""Worker del perfil `pipelines` de Compose: sirve el deployment `manual` del flow (§4.4 del diseño).
 
     python -m business_performance.serve      # desde data/pipelines (en la imagen, el comando del servicio)
 
 - `weekly_office_program_performance/manual`: sin programación; lo dispara
   `POST /reporting/pipeline-runs` (por `trigger.py`) con `trigger = 'manual'`.
-- `weekly_office_program_performance/weekly`: cron `0 6 * * 1` en
-  `Europe/Madrid` (lunes a las 06:00; D5 del diseño), `trigger = 'schedule'`:
-  la última semana cerrada y la anterior.
 
-Concurrencia 1 en cada deployment; entre los dos, manda el índice único parcial
-de `pipeline_runs` (una sola corrida `running`). Necesita `PREFECT_API_URL` (el
+**Ya no hay deployment programado (DEV-53, 2026-11-16).** El cron semanal
+(`weekly`, lunes 06:00 `Europe/Madrid`) se quitó: la programación pasó al job
+nocturno `scripts/nightly_export.py` (perfil `nightly` de Compose), que lanza este
+mismo pipeline cada noche y es el único disparador programado. Motivo: el
+nocturno recalcula la misma semana con datos más frescos y no depende de este
+servidor de Prefect; dos disparadores del mismo cálculo se habrían pisado.
+Ver `docs/telemetry/nightly-export-analysis.md` (A.4, M5).
+
+Concurrencia 1 en el deployment; manda además el índice único parcial de
+`pipeline_runs` (una sola corrida `running`). Necesita `PREFECT_API_URL` (el
 servidor de Compose) y el block `Secret` `nexova-supabase-database-url`
 (`python -m business_performance.secret`).
 """
@@ -21,15 +26,10 @@ import sys
 
 from nexova_shared.reporting import RunTrigger
 from prefect import serve
-from prefect.schedules import Cron
 
 import pipeline
 
 from .trigger import FLOW_NAME, MANUAL_DEPLOYMENT
-
-WEEKLY_DEPLOYMENT = "weekly"
-WEEKLY_CRON = "0 6 * * 1"
-WEEKLY_TIMEZONE = "Europe/Madrid"
 
 
 def build_deployments():
@@ -41,14 +41,7 @@ def build_deployments():
         concurrency_limit=1,
         description="Disparo manual (POST /reporting/pipeline-runs).",
     )
-    weekly = flow.to_deployment(
-        name=WEEKLY_DEPLOYMENT,
-        schedule=Cron(WEEKLY_CRON, timezone=WEEKLY_TIMEZONE),
-        parameters={"trigger": RunTrigger.SCHEDULE.value},
-        concurrency_limit=1,
-        description="Lunes 06:00 Europe/Madrid: la última semana cerrada y la anterior.",
-    )
-    return manual, weekly
+    return (manual,)
 
 
 def main() -> None:

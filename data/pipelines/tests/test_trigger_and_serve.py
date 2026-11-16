@@ -16,6 +16,11 @@ from prefect.testing.utilities import prefect_test_harness
 from tests.support import closed_week
 
 TRIGGER_SOURCE = Path(trigger.__file__)
+SERVE_SOURCE = Path(serve.__file__)
+PIPELINES_DIR = Path(__file__).resolve().parents[1]
+DESIGN = PIPELINES_DIR / "PIPELINE_DESIGN.md"
+README_ES = PIPELINES_DIR / "README.es.md"
+README_EN = PIPELINES_DIR / "README.md"
 
 _harness = None
 
@@ -98,18 +103,39 @@ class TriggerOfflineTests(unittest.TestCase):
 
 
 class ServeTests(unittest.TestCase):
-    def test_manual_and_weekly_deployments(self):
-        manual, weekly = serve.build_deployments()
-        self.assertEqual((manual.name, weekly.name), ("manual", "weekly"))
+    def test_only_the_manual_deployment_remains(self):
+        """DEV-53: el cron `weekly` se quitó; queda solo `manual`, que dispara `POST /reporting/pipeline-runs`."""
+        deployments = serve.build_deployments()
+        self.assertEqual([deployment.name for deployment in deployments], ["manual"])
+        (manual,) = deployments
         self.assertEqual(manual.parameters, {"trigger": "manual"})
-        self.assertEqual(weekly.parameters, {"trigger": "schedule"})
-        self.assertEqual(manual.schedules or [], [])
-        (schedule,) = weekly.schedules
-        self.assertEqual((schedule.schedule.cron, schedule.schedule.timezone), ("0 6 * * 1", "Europe/Madrid"))
-        for deployment in (manual, weekly):
+        limit = manual.concurrency_limit
+        self.assertEqual(getattr(limit, "limit", limit), 1)
+
+    def test_no_deployment_is_scheduled(self):
+        """El único disparador programado es el job nocturno: ningún deployment lleva cron, intervalo ni rrule."""
+        for deployment in serve.build_deployments():
             with self.subTest(deployment=deployment.name):
-                limit = deployment.concurrency_limit
-                self.assertEqual(getattr(limit, "limit", limit), 1)
+                self.assertEqual(deployment.schedules or [], [])
+
+    def test_serve_has_no_schedule_machinery_left(self):
+        source = SERVE_SOURCE.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        imported = {
+            node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module
+        } | {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names}
+        self.assertNotIn("prefect.schedules", imported)
+        for name in ("WEEKLY_DEPLOYMENT", "WEEKLY_CRON", "WEEKLY_TIMEZONE"):
+            self.assertFalse(hasattr(serve, name), name)
+        self.assertNotIn("schedule=", source)
+        self.assertNotIn("Cron(", source)
+
+    def test_the_move_to_the_nightly_job_is_recorded_in_the_design_and_the_readmes(self):
+        for path in (DESIGN, README_ES, README_EN):
+            with self.subTest(path=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertIn("DEV-53", text)
+                self.assertIn("2026-11-16", text)
 
 
 if __name__ == "__main__":

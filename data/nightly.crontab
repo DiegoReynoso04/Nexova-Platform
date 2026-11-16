@@ -1,0 +1,10 @@
+# Crontab del job nocturno de telemetría (DEV-53). Lo ejecuta supercronic en el contenedor
+# `nightly-scheduler` (perfil `nightly` de Compose; ver docker-compose.yml y
+# docs/telemetry/nightly-export-analysis.md, apartado G).
+#
+# Todo en UTC: 02:00 UTC = 03:00/04:00 en Valencia y 21:00/22:00 del día anterior en
+# Miami. Deja 2 h de margen tras el cierre del día UTC para eventos tardíos.
+# El script exporta el día anterior (UTC) a data/raw/telemetry_YYYY-MM-DD.csv y lanza el
+# pipeline; es idempotente por día y un segundo disparo simultáneo aborta por el lock.
+CRON_TZ=UTC
+0 2 * * * python /scripts/nightly_export.py
