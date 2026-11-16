@@ -113,6 +113,24 @@ class ChildTests(unittest.TestCase):
             time.sleep(0.2)
         self.assertFalse(pid_alive(grandchild), "the grandchild survived the timeout")
 
+    def test_the_prefect_startup_timeout_passes_the_whitelist(self):
+        """DEV-53: la variable que alarga el arranque del servidor efímero de Prefect llega al subproceso."""
+        name = "PREFECT_SERVER_EPHEMERAL_STARTUP_TIMEOUT_SECONDS"
+        self.assertEqual(script.child_environment(URL, {name: "45", "JWT_SECRET_KEY": "x" * 40})[name], "45")
+
+    def test_the_child_gets_90_seconds_unless_the_parent_already_sets_it(self):
+        """El entorno que arma el job + el `_bootstrap` real del pipeline, sin Prefect: 90 por defecto y se respeta 45."""
+        name = "PREFECT_SERVER_EPHEMERAL_STARTUP_TIMEOUT_SECONDS"
+        pipelines = script.REPO_ROOT / "data" / "pipelines"
+        code = f"import sys; sys.path.insert(0, {str(pipelines)!r}); import business_performance._bootstrap, os; print(os.environ[{name!r}])"
+        for parent, expected in (({}, "90"), ({name: "45"}, "45")):
+            with self.subTest(parent=parent):
+                base = {k: v for k, v in os.environ.items() if k != name}
+                env = script.child_environment(URL, {**base, **parent})
+                out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=60)
+                self.assertEqual(out.returncode, 0, out.stderr[-800:])
+                self.assertEqual(out.stdout.strip(), expected)
+
     def test_the_default_timeout_is_20_minutes(self):
         self.assertEqual(script.PIPELINE_TIMEOUT_SECONDS, 1200)
 

@@ -84,6 +84,10 @@ Salidas del script: **0** completed, skipped o locked; **1** failed; **2** confi
 | **g) `TARGET_DATE` inválida** | `2026-13-01`, `20261015`, `2026-W44-1`, hoy, mañana, `2099-01-01`, `2026-06-01`, `garbage` | Salida 2 en todas, mensaje fijo a stderr (sin repetir el valor) y una línea `status=rejected target_date=-`; **ninguna fila nueva** y sin conectar a la base |
 | **Sin `TARGET_DATE`** | `$env:TARGET_DATE=''` | Toma ayer en UTC; el 2026-11-16 fue `2026-11-15`, semana `2026-11-09` |
 
+### Si un caso falla con `Timed out while attempting to connect to ephemeral Prefect API server`
+
+Es el arranque del servidor temporal de Prefect (el subproceso del pipeline lo levanta en cada corrida), no el job. Prefect 3.9.2 le da **20 s por defecto** (`PREFECT_SERVER_EPHEMERAL_STARTUP_TIMEOUT_SECONDS`) y en una máquina normal tarda **18–21 s**; en la del usuario, 18,1 / 19,8 / 20,2 / 20,7 s, y una corrida del caso c falló por eso (la fila quedó `failed`, el reintento completó). Desde la corrección del 2026-11-16, `business_performance/_bootstrap.py` fija **90 s** con `setdefault` (una variable ya puesta se respeta), así que **hay que usar una imagen reconstruida**: `docker compose --profile pipelines build` (y `--profile nightly build` para el scheduler), sin `up`. Para comprobarlo: el caso c con la imagen nueva completa la ganadora y la perdedora sale `locked`; con la variable fijada a `20` (`-e PREFECT_SERVER_EPHEMERAL_STARTUP_TIMEOUT_SECONDS=20`) y la CPU limitada (`docker run --cpus 0.25 …`), el arranque tarda ~36 s y la corrida falla con ese error. Detalle y tiempos en `data/pipelines/PIPELINE_DESIGN.md` §4.5.
+
 ### Los tres disparos (supercronic)
 
 Construir la imagen (solo construye; no arranca nada) y probarla con un crontab de prueba **que no se versiona**, montado encima del real:
