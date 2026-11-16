@@ -37,6 +37,9 @@ Tras cambiar una dependencia: `uv lock` y `uv export --frozen --no-dev --no-emit
 | Backfill | `… pipeline.py --from 2026-11-02 [--to 2026-11-09]` | ídem |
 | Tests | `data\pipelines\.venv\Scripts\python -m unittest discover -s data/pipelines/tests -t data/pipelines` | `data/pipelines/.venv/bin/python -m unittest discover -s data/pipelines/tests -t data/pipelines` |
 
+
+**Programación (cambio DEV-53, 2026-11-16).** El pipeline ya **no** tiene cron en Prefect: el deployment `weekly` (lunes 06:00 `Europe/Madrid`) se quitó de `business_performance/serve.py` y el worker solo sirve `manual` (`POST /reporting/pipeline-runs`). La programación pasó al job nocturno `scripts/nightly_export.py` (perfil `nightly` de Compose, `0 2 * * *` UTC), que lanza `python data/pipelines/pipeline.py --week-start <lunes>` cada noche y es el único disparador programado. Motivo: recalcula la misma semana con datos más frescos, mantiene al día la franja de frescura de `/reporting` sin el perfil `pipelines` y evita dos disparadores del mismo cálculo. Detalle: [`docs/telemetry/nightly-export-analysis.md`](../../docs/telemetry/nightly-export-analysis.md).
+
 - **Qué base:** `DATABASE_URL` de la terminal (`$env:DATABASE_URL = "postgresql://…"` / `export DATABASE_URL=…`) o, si falta, solo esa clave del `.env` de la raíz (**la demo**). La primera línea dice de dónde salió y el host; nunca la URL.
 - **Guarda:** la migración se niega con una base que no es local salvo con `--allow-demo` (solo con la confirmación del usuario). La corrida no tiene guarda: solo escribe en `reporting` y es idempotente. Sin el esquema, sale con 2 y dice qué migración ejecutar.
 - **Salida:** 0 completada; 1 alguna corrida falló; 2 configuración, argumentos o esquema ausente.

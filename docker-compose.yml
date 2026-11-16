@@ -131,8 +131,9 @@ services:
     networks:
       - nexova
 
-  # Ejecuta el flow: sirve los deployments `manual` (POST /reporting/pipeline-runs)
-  # y `weekly` (cron lunes 06:00 Europe/Madrid). Ver data/pipelines/business_performance/serve.py.
+  # Ejecuta el flow: sirve el deployment `manual` (POST /reporting/pipeline-runs). Desde
+  # DEV-53 ya no hay cron en Prefect: la programación es el servicio `nightly-scheduler`.
+  # Ver data/pipelines/business_performance/serve.py.
   pipeline-worker:
     profiles: [pipelines]
     build:
@@ -165,6 +166,45 @@ services:
     depends_on:
       prefect-server:
         condition: service_healthy
+    networks:
+      - nexova
+
+  # Job nocturno de telemetría (DEV-53): supercronic ejecuta `scripts/nightly_export.py` a
+  # las 02:00 UTC (data/nightly.crontab). Perfil `nightly`: NO arranca con `docker compose
+  # up`, solo con `docker compose --profile nightly up -d nightly-scheduler`. Como
+  # DATABASE_URL sale del .env de la raíz (la demo), arrancarlo así es una decisión aparte y
+  # solo con la confirmación del usuario. Para probarlo contra otra base, un override que no
+  # se versiona (ver docs/telemetry/nightly-export-analysis.md).
+  #
+  # Entorno mínimo (lista blanca, M14): solo DATABASE_URL. Sin env_file: ni JWT_SECRET_KEY,
+  # ni RESEND_API_KEY, ni TELEMETRY_SUPPLIER_KEY entran en el contenedor. Sin TARGET_DATE: la
+  # fecha es siempre «ayer en UTC» (para probar otra, `docker compose run -e TARGET_DATE=...`).
+  # Sin puertos. Usuario no root. La imagen lleva solo el script y job_runner (sin montar código).
+  nightly-scheduler:
+    profiles: [nightly]
+    build:
+      context: ./data
+      target: scheduler
+      additional_contexts:
+        # nexova_shared; nightly_export.py y job_runner (solo se copian esos archivos).
+        packages: ./packages
+        scripts: ./scripts
+        services: ./services
+    image: nexova-nightly-scheduler:dev
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?falta DATABASE_URL en el .env de la raíz (ver .env.example)}
+      TZ: UTC
+      PREFECT_SERVER_ANALYTICS_ENABLED: "false"
+      DO_NOT_TRACK: "1"
+    # Prefect lanza su servidor efímero como proceso hijo: `init` recoge los huérfanos.
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+      # Los CSV (`telemetry_YYYY-MM-DD.csv`) quedan en data/raw del host (ignorados por git).
+      # OJO: este montaje también expone data/raw/incidents/ (datos reales, ignorados por git)
+      # dentro del contenedor, aunque el job solo escribe sus CSV y su caché.
+      - ./data/raw:/data/raw
     networks:
       - nexova
 

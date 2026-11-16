@@ -9,3 +9,6 @@
 *.sh text eol=lf
 # Dockerfiles (uis/Dockerfile, services/Dockerfile), leídos por el builder en Linux.
 Dockerfile text eol=lf
+# Crontab del job nocturno (DEV-53), leido por supercronic dentro del contenedor: con CRLF la
+# linea CRON_TZ=UTC no seria valida.
+*.crontab text eol=lf

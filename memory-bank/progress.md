@@ -4,6 +4,31 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-16 — DEV-53, script nocturno de telemetría: F1 completa (paradas 1 a 4)
+
+**Estado: hecho y commiteado en `feature/nightly-telemetry-export` (desde `main` en `f88e3a4`), un solo commit `feat: add nightly telemetry export job with job_runs state machine`; sin push ni PR hasta el OK del usuario (la PR lleva la etiqueta `cronjob`).** M1–M18 aprobadas con 4 precisiones; M19 (`-overlapping`) aprobada.
+
+- **Qué entra:** `services/job_runner/` (`ops.job_runs`, `run_job`, migración), `scripts/nightly_export.py` (CSV atómico con lista blanca de tags, subproceso del pipeline, `TARGET_DATE`, SIGTERM), `data/Dockerfile` en tres etapas con supercronic v0.2.51 (SHA-256), `data/nightly.crontab`, servicio `nightly-scheduler` (perfil `nightly`, apagado), cron `weekly` retirado de `serve.py` (M5, trazado en `PIPELINE_DESIGN.md` y README), `.gitignore`, `AGENTS.md` §4, READMEs, y los documentos `docs/telemetry/nightly-export-analysis.md` y `nightly-export-review.md` (con la tabla de criterios).
+- **Verificado contra un Postgres efímero** (nunca la demo): migración (dry-run y dos veces), RLS y `REVOKE`, casos a–g con procesos reales en `nexova-pipeline:dev` sin `.env`, los tres disparos de supercronic (completed, locked, skipped) y el build con checksum incorrecto (falla). Suites con 0 omitidos: `job_runner` y script 189, `data/pipelines` 86 (con Postgres), `services/api` 719 `unittest` + 922 `pytest` (`TESTING.md` §14).
+- **Pendiente (decisiones del usuario):** migrar `ops` en la demo y arrancar el perfil `nightly` contra ella (hoy `ops.job_runs` no existe allí); tras el merge, `docker compose --profile pipelines build` y `docker compose --profile nightly build`, sin `up`.
+- **Nota de entorno:** el `.venv` de `data/pipelines` no importa SQLAlchemy (Control de aplicaciones de Windows); se validó en la imagen. El efímero y sus bases se borraron al terminar.
+
+*(Entrada de F0, debajo.)*
+
+- **Entregable:** [`docs/telemetry/nightly-export-analysis.md`](../docs/telemetry/nightly-export-analysis.md) (apartados A–L del encargo y las decisiones M1–M18 con su recomendación). Ubicado en `docs/telemetry/` porque esa carpeta ya agrupa los análisis por ticket de telemetría.
+- **Hallazgos que condicionan F1:**
+  - el comando de referencia del enunciado no existe; el entry point real es `data/pipelines/pipeline.py`, semanal;
+  - `check_weeks` rechaza la semana en curso, así que se propone `min(lunes de target_date, última semana cerrada)` cada noche;
+  - hoy hay dos disparadores posibles (cron `weekly` de Prefect y el nocturno): se recomienda dejar solo `manual` en Prefect;
+  - lock por `UNIQUE (job_name) WHERE status = 'processing'` en `ops.job_runs`, una fila por intento, barrido de zombis a los 45 min, omisión y bloqueo solo en log;
+  - CSV sin `user_id`/`session_id` (D9: 90 días de retención), escritura atómica `.part` + `os.replace`;
+  - `data/raw/telemetry_*.csv` aún no está en `.gitignore`;
+  - disparador recomendado: supercronic en un contenedor con perfil `nightly` (binario nuevo: necesita autorización del usuario).
+- **Docker Desktop no estaba en marcha** al hacer F0 (no hacía falta); F1 lo necesita para el Postgres efímero.
+- **Sin impacto técnico** en `techContext.md` (solo documentación); nada contra la demo; ningún archivo fuera del repo tocado.
+
+---
+
 ## 2026-11-13 — Pipeline de desempeño de negocio, Parte 3: ajustes antes del push
 
 **Estado: hecho; dos commits más sobre el de la Parte 3, en `feature/business-pipeline-subflows`; push y PR contra `main` con el OK del usuario.** El usuario verificó `/reporting` con los datos reales de la demo, en solo lectura (4 KPI con su nombre del BRIEFING; Valencia 16,00 € de costo; Miami 1 kit y 1 escasez; «Sin programa asignado»; franja de frescura sin aviso; «Semana siguiente» desactivada; EUR y USD sin sumar).

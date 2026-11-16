@@ -4,7 +4,7 @@
 - `config`: de dónde sale la URL de la base y qué host se imprime (D5).
 - `repository`: la SQL de extracción, carga y log (`reporting.pipeline_runs`).
 - `migrate`: el esquema `reporting` (DDL), con la guarda `--allow-demo`.
-- `serve`: el worker de Compose (deployments `manual` y `weekly`).
+- `serve`: el worker de Compose (solo el deployment `manual`; la programación pasó al job nocturno, DEV-53).
 - `trigger`: el disparo manual por la REST de Prefect. **Solo librería
   estándar**: es lo único de este paquete que importa la API.
 

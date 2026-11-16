@@ -19,7 +19,7 @@
 | D2 | Fuente: `telemetry_events` para los 4 KPI, más una **conciliación de solo lectura** con `asset_entries` y `asset_exits` que se guarda en el log y no cambia ningún KPI |
 | D3 | Entran todos los eventos de los 4 tipos, sin filtrar por categoría |
 | D4 | `kits_delivered_count` = conteo de órdenes; `kits_delivered_units` queda como propuesta de v2 |
-| D5 | Lunes a las 06:00 `Europe/Madrid`; cada corrida programada recalcula la última semana cerrada y la anterior |
+| D5 | ~~Lunes a las 06:00 `Europe/Madrid`; cada corrida programada recalcula la última semana cerrada y la anterior~~ **Superada por DEV-53 (2026-11-16):** la programación es ahora el job nocturno `0 2 * * *` UTC (ver §4.5) |
 | D6 | Deduplicación por `event_id` (ingesta) y por id de orden dentro de la semana (transformación) |
 | D7 | Flow y tasks en `data/pipelines/pipeline.py`; soporte en `data/pipelines/business_performance/`; transformación pura en `data/process/weekly_performance.py`; lecturas en `services/reporting/`; nombres compartidos en `nexova_shared.reporting` (D4 del análisis de implementación) |
 | D8 | Prefect con servidor propio y un worker, en un perfil de Docker Compose; la API dispara las corridas por la API REST de Prefect, con `request_manual_run` de `business_performance/trigger.py` (librería estándar; D2 del análisis de implementación) |
@@ -532,7 +532,7 @@ result = pipeline.transform_weekly_kpis(pipeline.EventBatch(events), QualityCoun
 **Por qué esos reintentos:**
 
 - **Lectura y escritura en la base, 2 × 10 s:** cubren los cortes transitorios del pooler de Supabase (3 intentos en unos 20 s) sin dejar colgada minutos una corrida manual.
-- **La carga, 2 × 30 s:** su transacción se deshace entera, y conviene dar tiempo a que se libere el lock o la conexión. Los 3 intentos (~1 min) caben de sobra en las 4 h de margen del cron.
+- **La carga, 2 × 30 s:** su transacción se deshace entera, y conviene dar tiempo a que se libere el lock o la conexión. Los 3 intentos (~1 min) caben de sobra en el timeout de 20 min del job nocturno (antes, las 4 h de margen del cron semanal).
 - **Solo errores transitorios:** fallan al primer intento un `DataQualityError`, una semana no válida, otra corrida en marcha o una SQL rechazada (`IntegrityError`, `ProgrammingError`, `DataError`).
 - **Las deterministas, 0:** un reintento daría el mismo error.
 
@@ -614,7 +614,7 @@ Prefect guarda en su servidor los **parámetros de cada flow run** (`Flow.serial
 |---|---|
 | `prefect-server` | Contenedor nuevo: servidor y UI de Prefect (guarda deployments, flow runs, states y blocks) |
 | `pipeline-worker` | Contenedor nuevo, con la imagen de `data/pipelines/` (Prefect y el driver de PostgreSQL). Ejecuta `serve.py`, que sirve los dos deployments |
-| Deployment `weekly-office-program-performance/weekly` | Cron `0 6 * * 1`, zona `Europe/Madrid`, `trigger = 'schedule'`, concurrencia 1 |
+| ~~Deployment `weekly-office-program-performance/weekly`~~ | **Quitado el 2026-11-16 (DEV-53):** su cron `0 6 * * 1` lo sustituye el job nocturno (§4.5). Ya no hay ningún deployment programado |
 | Deployment `weekly-office-program-performance/manual` | Sin programación; lo dispara `POST /reporting/pipeline-runs` con `trigger = 'manual'` |
 
 - Los dos contenedores van en un **perfil de Compose `pipelines`** (`docker compose --profile pipelines up`): el arranque por defecto de la plataforma no cambia. Contra la demo, solo con la confirmación del usuario en el momento.
@@ -626,9 +626,11 @@ Prefect guarda en su servidor los **parámetros de cada flow run** (`Flow.serial
 
 ### 4.5 Frecuencia y ejecución
 
+> **Cambio DEV-53 (2026-11-16): la programación pasó al job nocturno.** El deployment `weekly` (cron `0 6 * * 1`, `Europe/Madrid`) se quitó de `serve.py`; queda solo `manual`. Motivo: el job nocturno (`scripts/nightly_export.py`, perfil `nightly` de Compose, cron `0 2 * * *` UTC) lanza este mismo pipeline cada noche con `--week-start` y es el **único disparador programado**: recalcula la semana del día exportado (o la última cerrada) con datos más frescos, mantiene al día la franja de «frescura» de `/reporting` sin el perfil `pipelines` y no depende del servidor de Prefect. Dos disparadores del mismo cálculo se habrían pisado. Los textos de este documento que hablan del cron semanal (D5, §3.4 y la cadencia de §2) describen el diseño original, **superado por este cambio**. Análisis: [`docs/telemetry/nightly-export-analysis.md`](../../docs/telemetry/nightly-export-analysis.md).
+
 | | |
 |---|---|
-| **Frecuencia** | Semanal: **lunes a las 06:00 `Europe/Madrid`** (deployment `weekly`, cron `0 6 * * 1`), que recalcula la última semana cerrada y la anterior. Además, a demanda: `POST /reporting/pipeline-runs` (deployment `manual`) o el script |
+| **Frecuencia** | **Cada noche, 02:00 UTC** (`0 2 * * *`), por el job nocturno `scripts/nightly_export.py` (perfil `nightly` de Compose, supercronic), que lanza `pipeline.py --week-start <lunes>`: la semana del día exportado, sin pasar de la última cerrada (el upsert es idempotente). A demanda: `POST /reporting/pipeline-runs` (deployment `manual`) o el script. **Desde DEV-53 (2026-11-16) ya no hay cron en Prefect** |
 | **Antes de la primera corrida** | La migración, una vez por base: desde `data/pipelines`, `.venv\Scripts\python -m business_performance.migrate --dry-run` y después sin `--dry-run` (en Linux, `.venv/bin/python`). En la demo, con `--allow-demo` y solo con la confirmación del usuario |
 | **Script (Windows, desde la raíz)** | `data\pipelines\.venv\Scripts\python data\pipelines\pipeline.py` |
 | **Script (Linux/macOS, desde la raíz)** | `data/pipelines/.venv/bin/python data/pipelines/pipeline.py` |
@@ -651,7 +653,7 @@ La transformación pura es rápida, pero el subflow que la envuelve crece de for
 | 50 000 | 45,5 s | 0,53 s | 129 s |
 
 - **Causa:** Prefect recorre cada argumento de cada task (`collect_task_run_inputs_sync` llama a `visit_collection` 1,5 millones de veces con 10 000 eventos; el perfil está en `docs/reporting/subflows-dashboard-review.md`), y los eventos pasan por 7 tasks. **No es la transformación.**
-- **Volumen actual:** muy por debajo. La demo tiene 3 eventos de negocio en su semana con datos, y 10 000 por semana serían unos 1 400 al día. El cron semanal tiene 4 h de margen.
+- **Volumen actual:** muy por debajo. La demo tiene 3 eventos de negocio en su semana con datos, y 10 000 por semana serían unos 1 400 al día. El job nocturno tiene un timeout de 20 min por corrida.
 - **Palanca, si crece:** envolver `kept` (los eventos deduplicados) de forma opaca, como `EventBatch`, para que Prefect no recorra los argumentos de las tasks. **No está implementado** (decisión del usuario del 2026-11-12).
 
 ---
