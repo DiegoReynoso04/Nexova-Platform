@@ -4,9 +4,21 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-18 — Memory-bank: sincronización tras las PRs #25–#37
+
+**Estado: hecho.** Sin impacto técnico (solo `memory-bank/`; ni código, ni tests, ni `docs/`). Las PRs #25–#27 se revisaron solo para corregir entradas antiguas; el resto de la lista es lo nuevo desde `390d3aa`. `origin/main` está en **`cc9df5b`** (merge de la PR #37, 2026-11-16), verificado con `git fetch` y `git log --merges 390d3aa..origin/main`: nada posterior. Rama `chore/memory-bank-post-dev53`.
+
+- **PRs integradas (verificadas con `git log --merges`, con su merge y fecha):** #25 `feature/perf-audit` (`d987a06`, 2026-10-28); #26 `feature/serialization-audit` (`9f312e1`, 2026-10-30); #27 `feature/caching-optimisation` (`390d3aa`, 2026-11-01); desde `390d3aa`: #28 `docs/telemetry-plan` (`8a23d17`, 2026-11-02); #29 `feature/telemetry-capture` (`8461f34`, 2026-11-03); #30 `feature/telemetry-storage` (`fed0e39`, 2026-11-05); #31 `feature/telemetry-report` (`fc190f5`, 2026-11-06); #32 `fix/not-found-telemetry-once` (`006aa1e`, 2026-11-09); #33 `docs/business-pipeline-design` (`9d8b0df`, 2026-11-09); #34 `feature/business-pipeline` (`ec5cdac`, 2026-11-12); #35 `feature/business-pipeline-subflows` (`f88e3a4`, 2026-11-13); #36 `feature/nightly-telemetry-export` (`5901486`, 2026-11-16); #37 `fix/prefect-ephemeral-startup-timeout` (`cc9df5b`, 2026-11-16).
+- **Entradas corregidas** (solo la línea de estado; el resto no se tocó): el fix del timeout de Prefect → PR #37; DEV-53 → PR #36 (ahora son dos commits, no «un solo commit»); Parte 3 (F0, paradas 1–4 y ajustes antes del push) → PR #35; almacenamiento de telemetría F1 → PR #30; captura F1 y F0 → PR #29; plan F0 → PR #28. Cada una lleva la marca «*Corregido el 2026-11-18*». También las anteriores a #28: la auditoría de rendimiento (F0–F1, F2, revisión de F2 y F3, H1 —dos entradas—, H2 y un pendiente de la entrada de H3/H4/R1 que seguía diciendo «borrar la cuenta de prueba, push y PR») → PR #25 (`d987a06`), y la F0 del caching → PR #27 (`390d3aa`). La auditoría de serialización (PR #26) ya estaba correcta.
+- **`projectbrief.md`** (con el OK del usuario): dos filas nuevas en la tabla de departamentos, el reporte semanal de desempeño por oficina y programa (fuente: `docs/proyectos-de-data-pipeline-diseno-implementacion-subflows-tests.md` §1–§2) y la telemetría del inventario (fuente: `docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md` §1, sin responsable porque no consta), y la línea de Dirección Ejecutiva pasa a «solo tiene el Reporte Semanal de Desempeño por Oficina y Programa (material de formación); el resto de su informe semanal sigue sin herramienta».
+- **`techContext.md`:** nueva actualización del 2026-11-18 en «Estado real en `main`»; la fila y las secciones del plan, captura, almacenamiento, reporte técnico, dashboard `/reporting` y DEV-53 pasan de «rama» a su PR y su merge.
+- **Pendientes vigentes (siguen sin hacer):** migrar el esquema `ops` en la demo (`python -m job_runner.migrate --dry-run` y después `--allow-demo`, solo con la confirmación del usuario) y arrancar el perfil `nightly` contra ella; hoy `ops.job_runs` no existe allí y el perfil sigue apagado. Reconstrucción de las imágenes tras el merge (`docker compose --profile pipelines build` y `--profile nightly build`, sin `up`): **no hecha**. La repetición del caso c en la máquina del usuario también la hace él tras el merge.
+
+---
+
 ## 2026-11-16 — fix: timeout de arranque del servidor efímero de Prefect (tras DEV-53)
 
-**Estado: hecho y verificado, sin commit todavía; rama `fix/prefect-ephemeral-startup-timeout` desde `main` (PR #36 ya mergeada).** El usuario probó la guía y una instancia ganadora del caso c terminó `failed` con `RuntimeError: Timed out while attempting to connect to ephemeral Prefect API server`: el servidor temporal tarda 18–21 s en su máquina y Prefect 3.9.2 le da 20 s por defecto.
+**Estado: hecho y verificado; integrado en `main` con la PR #37 (merge `cc9df5b`, 2026-11-16; commit `9739010`, rama `fix/prefect-ephemeral-startup-timeout`, desde `main` con la PR #36 ya mergeada).** *Corregido el 2026-11-18: antes decía «sin commit todavía».* El usuario probó la guía y una instancia ganadora del caso c terminó `failed` con `RuntimeError: Timed out while attempting to connect to ephemeral Prefect API server`: el servidor temporal tarda 18–21 s en su máquina y Prefect 3.9.2 le da 20 s por defecto.
 
 - **Cambio:** `data/pipelines/business_performance/_bootstrap.py` fija `PREFECT_SERVER_EPHEMERAL_STARTUP_TIMEOUT_SECONDS=90` con `setdefault` (antes de importar Prefect; una variable ya puesta se respeta). Vale a mano, en el subproceso del job (la variable pasa su lista blanca por el prefijo `PREFECT_`) y en `nightly-scheduler`, sin tocar Compose ni la imagen. Tests: `data/pipelines/tests/test_ephemeral_timeout.py` y dos en `services/job_runner/tests/test_nightly_export_pipeline.py`. Documentado en `PIPELINE_DESIGN.md` §4.5 y en la guía `nightly-export-review.md` §3.
 - **Verificado contra un Postgres efímero:** reproducido el fallo (CPU a 0,25 núcleo + 20 s: error y fila `failed`) y el arreglo (mismo caso: arranque de 35,8 s y `completed`); el caso c tres veces seguidas, la ganadora completa y la perdedora sale `locked`.
@@ -16,7 +28,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-16 — DEV-53, script nocturno de telemetría: F1 completa (paradas 1 a 4)
 
-**Estado: hecho y commiteado en `feature/nightly-telemetry-export` (desde `main` en `f88e3a4`), un solo commit `feat: add nightly telemetry export job with job_runs state machine`; sin push ni PR hasta el OK del usuario (la PR lleva la etiqueta `cronjob`).** M1–M18 aprobadas con 4 precisiones; M19 (`-overlapping`) aprobada.
+**Estado: hecho; integrado en `main` con la PR #36 (merge `5901486`, 2026-11-16; commits `dda5af9` `feat: add nightly telemetry export job with job_runs state machine` y `273efb0` `docs: align nightly export evidence in review guide`; rama `feature/nightly-telemetry-export`, desde `main` en `f88e3a4`; la PR lleva la etiqueta `cronjob`).** *Corregido el 2026-11-18: antes decía «un solo commit … sin push ni PR hasta el OK del usuario».* M1–M18 aprobadas con 4 precisiones; M19 (`-overlapping`) aprobada.
 
 - **Qué entra:** `services/job_runner/` (`ops.job_runs`, `run_job`, migración), `scripts/nightly_export.py` (CSV atómico con lista blanca de tags, subproceso del pipeline, `TARGET_DATE`, SIGTERM), `data/Dockerfile` en tres etapas con supercronic v0.2.51 (SHA-256), `data/nightly.crontab`, servicio `nightly-scheduler` (perfil `nightly`, apagado), cron `weekly` retirado de `serve.py` (M5, trazado en `PIPELINE_DESIGN.md` y README), `.gitignore`, `AGENTS.md` §4, READMEs, y los documentos `docs/telemetry/nightly-export-analysis.md` y `nightly-export-review.md` (con la tabla de criterios).
 - **Verificado contra un Postgres efímero** (nunca la demo): migración (dry-run y dos veces), RLS y `REVOKE`, casos a–g con procesos reales en `nexova-pipeline:dev` sin `.env`, los tres disparos de supercronic (completed, locked, skipped) y el build con checksum incorrecto (falla). Suites con 0 omitidos: `job_runner` y script 189, `data/pipelines` 86 (con Postgres), `services/api` 719 `unittest` + 922 `pytest` (`TESTING.md` §14).
@@ -41,7 +53,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-13 — Pipeline de desempeño de negocio, Parte 3: ajustes antes del push
 
-**Estado: hecho; dos commits más sobre el de la Parte 3, en `feature/business-pipeline-subflows`; push y PR contra `main` con el OK del usuario.** El usuario verificó `/reporting` con los datos reales de la demo, en solo lectura (4 KPI con su nombre del BRIEFING; Valencia 16,00 € de costo; Miami 1 kit y 1 escasez; «Sin programa asignado»; franja de frescura sin aviso; «Semana siguiente» desactivada; EUR y USD sin sumar).
+**Estado: hecho; dos commits más sobre el de la Parte 3, en `feature/business-pipeline-subflows`; integrado en `main` con la PR #35 (merge `f88e3a4`, 2026-11-13).** *Corregido el 2026-11-18: antes decía «push y PR contra `main` con el OK del usuario».* El usuario verificó `/reporting` con los datos reales de la demo, en solo lectura (4 KPI con su nombre del BRIEFING; Valencia 16,00 € de costo; Miami 1 kit y 1 escasez; «Sin programa asignado»; franja de frescura sin aviso; «Semana siguiente» desactivada; EUR y USD sin sumar).
 
 - **`docs: clarify pipelines image rebuild without starting the profile`:** la reconstrucción de la imagen tras el merge es `docker compose --profile pipelines build` (solo construye), no `up -d --build`, que arrancaría Prefect y el worker contra la demo con el cron activo. Arrancar el perfil contra la demo es una decisión aparte. La guía ya no lista el dashboard con la demo como no verificado.
 - **`fix(backoffice): show currency only on the material cost block`:** «(EUR)» y «(USD)» solo en la cabecera de Valencia y Miami del bloque del costo; los conteos no son dinero. Sin tests que lo comprobaran; backoffice revalidado (typegen, tsc, lint, build, `node --test` 654/654 y Jest 277/277).
@@ -51,7 +63,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-13 — Pipeline de desempeño de negocio, Parte 3: F1, parada 4 (documentación, verificación final y commit)
 
-**Estado: hecho y commiteado en `feature/business-pipeline-subflows` (desde `main` en `ec5cdac`); sin push ni PR hasta el OK del usuario.** Un solo commit: `feat: refactor business performance pipeline into subflows, add unit tests, and add reporting dashboard`. Docker Desktop se cayó a mitad de la verificación; el usuario lo arrancó y se retomó sin reiniciarlo.
+**Estado: hecho y commiteado en `feature/business-pipeline-subflows` (desde `main` en `ec5cdac`); integrado en `main` con la PR #35 (merge `f88e3a4`, 2026-11-13).** *Corregido el 2026-11-18: antes decía «sin push ni PR hasta el OK del usuario».* Un solo commit: `feat: refactor business performance pipeline into subflows, add unit tests, and add reporting dashboard`. Docker Desktop se cayó a mitad de la verificación; el usuario lo arrancó y se retomó sin reiniciarlo.
 
 - **Contenido de la Parte 3:**
   - 4 subflows en `data/pipelines/pipeline.py` (`extract_telemetry_events`, `transform_weekly_kpis`, `load_weekly_office_program_performance`, `snapshot_weekly_performance`) y 7 tasks nuevas de transformación (`compute_*` por KPI, con la caché de 1 h);
@@ -76,7 +88,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-13 — Pipeline de desempeño de negocio, Parte 3: F1, parada 3 (dashboard `/reporting`)
 
-**Estado: parada 3 hecha y verificada en el navegador contra el efímero; sin commit, en `feature/business-pipeline-subflows`; a la espera del OK del usuario para la parada 4.** La demo no se ha tocado.
+**Estado: parada 3 hecha y verificada en el navegador contra el efímero; en `feature/business-pipeline-subflows`, integrada en `main` con la PR #35 (merge `f88e3a4`, 2026-11-13); el OK para la parada 4 ya se dio.** *Corregido el 2026-11-18: antes decía «sin commit … a la espera del OK del usuario para la parada 4».* La demo no se ha tocado.
 
 - **Hecho en `uis/backoffice`:** página `/reporting` (`app/reporting/page.tsx`, `components/reporting/*`, `hooks/use-weekly-performance.ts` y `use-pipeline-freshness.ts`, `services/reporting.service.ts`, `lib/reporting-format.ts`, `lib/reporting-routes.ts`, `types/reporting.ts`, normalizadores nuevos) y enlace «Reporte semanal» en la cabecera para cualquier rol. Un bloque por KPI con su nombre del BRIEFING, Valencia (EUR) y Miami (USD) lado a lado sin sumar ni convertir, barras solo en los conteos, «Sin programa asignado», semana anterior/siguiente (404 = «Esta semana todavía no se ha calculado»), franja de frescura con aviso a los 8 días y estados de carga, vacío, error y 503. `services/reporting` sin cambios. Sin dependencias npm nuevas (`package.json` y `package-lock.json` sin diff). `uis/backoffice/CLAUDE.md` pasa a seis piezas de negocio y gana la sección «Reporte semanal».
 - **Validación:** `next typegen`, `tsc --noEmit`, `lint` y `build` limpios; `node --test` 654/654; Jest 277/277 (27 nuevos en `reporting-format.test.ts`, incluido que el subtotal lanza con dos monedas); `tests/reporting.test.mjs` y dos reglas nuevas de `production-source.test.mjs`.
@@ -88,7 +100,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-12 — Pipeline de desempeño de negocio, Parte 3: F1, parada 2 (pytest y tests de la raíz)
 
-**Estado: parada 2 hecha y verificada; sin commit, en `feature/business-pipeline-subflows`; a la espera del OK del usuario para la parada 3.**
+**Estado: parada 2 hecha y verificada; en `feature/business-pipeline-subflows`, integrada en `main` con la PR #35 (merge `f88e3a4`, 2026-11-13); el OK para la parada 3 ya se dio.** *Corregido el 2026-11-18: antes decía «sin commit … a la espera del OK del usuario para la parada 3».*
 
 - **pytest autorizado (H1), solo como grupo `dev` de `data/pipelines`:** `pytest>=9.1,<9.2` en `pyproject.toml`; `uv lock` (nunca `uv sync`) añadió `pytest 9.1.1` e `iniconfig 2.3.1`; nuevo `requirements-dev.txt` con hashes (`uv export --frozen --only-group dev --no-emit-project`). `requirements.txt` de la imagen, byte a byte igual. `test_requirements_lock.py` ahora comprueba además que el grupo solo tiene pytest, que el archivo sigue a `uv.lock`, que lleva hashes y que pytest no entra en el de producción.
 - **`tests/pipelines/conftest.py` y `test_pipeline.py`:** 12 tests de las tasks de transformación, llamadas con `.fn`, con filas ficticias con la forma de `telemetry_events`. Sin `__init__.py` en `tests/` ni `tests/pipelines/` (chocaría con `data/pipelines/tests`). Comando: `python -m pytest tests/pipelines/test_pipeline.py`; en Docker, con la imagen `nexova-pipeline:dev` montando solo `data/`, `packages/` y `tests/` (sin `.env`) e instalando `requirements-dev.txt` con hashes en un contenedor desechable.
@@ -99,7 +111,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-12 — Pipeline de desempeño de negocio, Parte 3: F1, parada 1 (subflows y equivalencia de resultados)
 
-**Estado: parada 1 hecha y verificada en el efímero; aprobada por el usuario; sin commit, en `feature/business-pipeline-subflows`.** El usuario aprobó H1–H9 y eligió la alternativa C para el límite de parámetros de Prefect.
+**Estado: parada 1 hecha y verificada en el efímero; aprobada por el usuario; en `feature/business-pipeline-subflows`, integrada en `main` con la PR #35 (merge `f88e3a4`, 2026-11-13).** *Corregido el 2026-11-18: antes decía «sin commit».* El usuario aprobó H1–H9 y eligió la alternativa C para el límite de parámetros de Prefect.
 
 - **Hecho:** `data/process/weekly_performance.py` (pasos puros por KPI, `transform()` como composición, tipos incorrectos rechazados en lugar de lanzar) y `data/pipelines/pipeline.py` (4 subflows, 7 tasks nuevas, caché de 1 h en las 4 `compute_*` y `EventBatch`).
 - **`EventBatch`:** envuelve los eventos que recibe `transform_weekly_kpis`. Prefect guarda los parámetros de cada flow run con un tope de 524 288 bytes (unos 1 900 eventos; con más, 422) y quedarían `event_id` y `order_id` en su base. La clase no es serializable para Prefect, que guarda el marcador `<EventBatch>`: depende de `Flow.serialize_parameters` de Prefect 3.9 (`<3.10`). Lo vigila `data/pipelines/tests/test_event_batch.py` (solo el marcador queda guardado; 10 000 eventos pasan; control negativo con una lista). No emite avisos en los logs (es un `logger.debug`).
@@ -112,7 +124,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-12 — Pipeline de desempeño de negocio, Parte 3 (subflows, tests y dashboard): F0, análisis y decisiones
 
-**Estado: F0 hecho, sin commit, en `feature/business-pipeline-subflows` (desde `main` en `ec5cdac`); a la espera de las decisiones H1–H9 del usuario.** Solo documentación: `docs/reporting/subflows-dashboard-analysis.md` y esta entrada. Ni código, ni dependencias, ni Supabase, ni Docker. Sin impacto técnico: `techContext.md` solo corrige que la implementación de la Parte 2 ya está en `main`.
+**Estado: F0 hecho; en `feature/business-pipeline-subflows` (desde `main` en `ec5cdac`), integrado en `main` con la PR #35 (merge `f88e3a4`, 2026-11-13); el usuario aprobó H1–H9 (ver la entrada de F1, parada 1).** *Corregido el 2026-11-18: antes decía «sin commit … a la espera de las decisiones H1–H9 del usuario».* Solo documentación: `docs/reporting/subflows-dashboard-analysis.md` y esta entrada. Ni código, ni dependencias, ni Supabase, ni Docker. Sin impacto técnico: `techContext.md` solo corrige que la implementación de la Parte 2 ya está en `main`.
 
 - **Qué recoge el análisis:** 4 subflows (`extract_telemetry_events`, `transform_weekly_kpis`, `load_weekly_office_program_performance`, `snapshot_weekly_performance`); tasks por KPI como envoltorios de funciones puras de `data/process`; 12 tests en `tests/pipelines/test_pipeline.py`; dashboard `/reporting` sin librerías y sin cambios en `services/reporting`; mejoras opcionales (ninguna de backend).
 - **Tres hallazgos:** Prefect guarda los parámetros de un subflow en su servidor; el repositorio de la base no puede ser un parámetro; el tipado actual lanza `AttributeError` con tipos incorrectos en lugar de rechazar.
@@ -369,7 +381,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-04 — Almacenamiento de telemetría, F1: colector real y tabla `telemetry_events`
 
-**Estado: hecho y verificado por el usuario en el efímero y en la demo; demo migrada el 2026-11-05; PR `feat: telemetry event storage` abierta contra `main`, pendiente de que el usuario suba la captura de Supabase y de la revisión.** Rama `feature/telemetry-storage`. El colector se sustituyó sin tocar `uis/`, `TelemetryEvent`, `event-schemas.json` ni `schemaVersion`, y sin dependencias nuevas.
+**Estado: hecho y verificado por el usuario en el efímero y en la demo; demo migrada el 2026-11-05; integrado en `main` con la PR #30 (`feat: telemetry event storage`; merge `fed0e39`, 2026-11-05).** *Corregido el 2026-11-18: antes decía «PR abierta contra `main`, pendiente de que el usuario suba la captura de Supabase y de la revisión».* Rama `feature/telemetry-storage`. El colector se sustituyó sin tocar `uis/`, `TelemetryEvent`, `event-schemas.json` ni `schemaVersion`, y sin dependencias nuevas.
 
 - **Decisiones del usuario:** D1–D3 y D5–D10, D12 como se recomendaron; D4 = B; D11 en su variante literal (`events: []` → 200 con ceros; más de 50 → los 50 primeros y el resto en `rejected`). Detalle en `docs/telemetry/storage-analysis.md`.
 - **Rol de la demo (consultas de solo lectura autorizadas):** `postgres`, `rolsuper = false`, `rolbypassrls = true`, no es miembro de `pg_write_all_data` (sí de `pg_read_all_data`). `anon`, `authenticated` y `service_role` heredan todos los privilegios de una tabla nueva.
@@ -406,7 +418,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-03 — Captura de telemetría en el frontend + endpoint stub, F1: implementación
 
-**Estado: hecho y verificado por el usuario en Network; demo migrada; PR `feat: telemetry event capture` abierta contra `main`, pendiente de que el usuario suba las capturas y de la revisión.** Rama `feature/telemetry-capture`.
+**Estado: hecho y verificado por el usuario en Network; demo migrada; integrado en `main` con la PR #29 (`feat: telemetry event capture`; merge `8461f34`, 2026-11-03).** *Corregido el 2026-11-18: antes decía «PR abierta contra `main`, pendiente de que el usuario suba las capturas y de la revisión».* Rama `feature/telemetry-capture`.
 
 - **Decisiones del usuario (2026-11-03):**
   - D1 «A ligera»: la API calcula y el frontend emite. Las respuestas de Entrada y Salida devuelven lo que solo sabe la API, y el frontend llama a `track()` con eso;
@@ -497,7 +509,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-02 — Captura de telemetría en el frontend + endpoint stub, F0: análisis y decisiones
 
-**Estado: F0 hecha; el usuario decidió D1–D9 el 2026-11-03 (ver la entrada de F1, arriba).** Rama `feature/telemetry-capture`, desde `main` en `8a23d17`. Sin push. Ningún código.
+**Estado: F0 hecha; el usuario decidió D1–D9 el 2026-11-03 (ver la entrada de F1, arriba).** Rama `feature/telemetry-capture`, desde `main` en `8a23d17`. ~~Sin push.~~ *Corregido el 2026-11-18: integrada en `main` con la PR #29 (merge `8461f34`).* Ningún código.
 
 - **Documento de trabajo:** `docs/telemetry/capture-analysis.md`. El enunciado del ticket no se versiona.
 - **Conflictos confirmados entre el enunciado y el plan aprobado (C1–C9):**
@@ -554,7 +566,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-01 — Plan de Telemetría, F0: briefing, inventario de puntos, desajustes y decisiones
 
-**Estado: F0 hecha; el usuario decidió D1–D14 el 2026-11-02 (ver la entrada de F1, arriba).** *Corregido el 2026-11-02: antes decía «pendiente de que el usuario decida D1–D14».* Solo diseño: ningún código de instrumentación. Rama `docs/telemetry-plan`, desde `main` en `390d3aa`. Sin push.
+**Estado: F0 hecha; el usuario decidió D1–D14 el 2026-11-02 (ver la entrada de F1, arriba).** *Corregido el 2026-11-02: antes decía «pendiente de que el usuario decida D1–D14».* Solo diseño: ningún código de instrumentación. Rama `docs/telemetry-plan`, desde `main` en `390d3aa`. ~~Sin push.~~ *Corregido el 2026-11-18: integrada en `main` con la PR #28 (merge `8a23d17`).*
 
 - **Archivos:**
   - el BRIEFING de telemetría, que se versiona ahora (`docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`): métricas obligatorias, entidades e identificadores;
@@ -627,7 +639,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-10-31 — Caching y optimización, F0: medir y proponer
 
-**Estado: F0 cerrada; el usuario decidió D1–D11 el mismo día (ver la entrada de F1, arriba).** Sin ninguna caché implementada y sin push. Rama `feature/caching-optimisation`, desde `main` en `9f312e1`.
+**Estado: F0 cerrada; el usuario decidió D1–D11 el mismo día (ver la entrada de F1, arriba).** Sin ninguna caché implementada y ~~sin push~~ *Corregido el 2026-11-18: integrada en `main` con la PR #27 (merge `390d3aa`, 2026-11-01).* Rama `feature/caching-optimisation`, desde `main` en `9f312e1`.
 
 - **Commits:**
   - `1178ddf`: middleware de timing (`app/core/timing.py`; el brief decía `main.py`, pero la regla de logging de `test_architecture.py` solo admite `core/`);
@@ -716,11 +728,11 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - `REPORT.md`, nuevo;
   - `AUDIT.md` §3.2, §4 y §5;
   - `audit/skills-findings.md` §7 y §8.
-- **Pendiente con el OK del usuario:** borrar la cuenta de prueba de la TinyDB, push y PR.
+- ~~**Pendiente con el OK del usuario:** borrar la cuenta de prueba de la TinyDB, push y PR.~~ *Corregido el 2026-11-18: la cuenta se borró el 2026-10-28 (ver más arriba en esta entrada) y la auditoría se integró con la PR #25 (merge `d987a06`).*
 
 ## 2026-10-28 — Auditoría de rendimiento: H2 (esqueleto del resumen de `/incident-manager`)
 
-**Estado: H2 cerrada** (código en `4039279`, medición en `audit/after/runs.md` §2). Rama `feature/perf-audit`. Sin push. **No se empieza H3 hasta que el usuario revise esta medición.**
+**Estado: H2 cerrada** (código en `4039279`, medición en `audit/after/runs.md` §2). Rama `feature/perf-audit`. ~~Sin push.~~ *Corregido el 2026-11-18: integrada en `main` con la PR #25 (merge `d987a06`, 2026-10-28).* **No se empieza H3 hasta que el usuario revise esta medición.**
 
 - **Medición de H2** (`audit/after/steps/H2/incident-manager-mobile.json`, ventana de invitado, 0 peticiones `chrome-extension://`):
   - **Perf** 82 → **100** (88 en H1);
@@ -755,7 +767,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-10-28 — Auditoría de rendimiento: medición intermedia de H1 y cambio de plan
 
-**Estado: H1 cerrada** (código en `4e23d91`, arreglo de CRLF en `126d067`, medición en `audit/after/runs.md` §2). Rama `feature/perf-audit`. Sin push. **No se empieza H2 hasta que el usuario revise esta medición.**
+**Estado: H1 cerrada** (código en `4e23d91`, arreglo de CRLF en `126d067`, medición en `audit/after/runs.md` §2). Rama `feature/perf-audit`. ~~Sin push.~~ *Corregido el 2026-11-18: integrada en `main` con la PR #25 (merge `d987a06`, 2026-10-28).* **No se empieza H2 hasta que el usuario revise esta medición.**
 
 - **Cambio de plan del usuario:**
   - **Intermedias:** tras cada corrección, 1 sola ejecución en la URL clave, solo el JSON:
@@ -783,7 +795,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-10-27 — Auditoría de rendimiento: H1 (espacio reservado de la navegación)
 
-**Estado: hecho** (código en `4e23d91`; medición intermedia y cierre en la entrada de arriba). Rama `feature/perf-audit`. Sin push.
+**Estado: hecho** (código en `4e23d91`; medición intermedia y cierre en la entrada de arriba). Rama `feature/perf-audit`. ~~Sin push.~~ *Corregido el 2026-11-18: integrada en `main` con la PR #25 (merge `d987a06`, 2026-10-28).*
 
 - **Código (`uis/backoffice`):**
   - **`lib/auth-routes.ts`:** función pura `headerNavMode(pathname, status)` → `session` | `reserved` | `access` | `none`. Es `reserved` en `initializing`/`checking` solo si `routeAccess(...) === 'wait'`.
@@ -818,7 +830,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-10-27 — Auditoría de rendimiento: revisión de F2 y F3 (`AUDIT.md`)
 
-**Estado: F3 hecha.** Rama `feature/perf-audit`. Sin push. Solo documentación: no se ha tocado código de las apps. **Siguiente: H1.**
+**Estado: F3 hecha.** Rama `feature/perf-audit`. ~~Sin push.~~ *Corregido el 2026-11-18: integrada en `main` con la PR #25 (merge `d987a06`, 2026-10-28).* Solo documentación: no se ha tocado código de las apps. **Siguiente: H1.**
 
 - **Revisión de F2 (decisiones del usuario, ya en `audit/skills-findings.md` §3, §7 y §8):**
   - **§8.1:** H4 sigue como requerida, en último lugar. En `REPORT.md` se dirá que su impacto es en bytes, no en la puntuación.
@@ -848,7 +860,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-10-27 — Auditoría de rendimiento: F2 (skills)
 
-**Estado: hecha y revisada por el usuario** (decisiones en la entrada de arriba). Instalación comiteada en `8871787` y hallazgos en `audit/skills-findings.md`. Rama `feature/perf-audit`. Sin push. La sesión de la instalación no detectaba skills nuevas en `.claude/skills/` (`Unknown skill: core-web-vitals`); los pasos 3–5 se hicieron tras reiniciarla.
+**Estado: hecha y revisada por el usuario** (decisiones en la entrada de arriba). Instalación comiteada en `8871787` y hallazgos en `audit/skills-findings.md`. Rama `feature/perf-audit`. ~~Sin push.~~ *Corregido el 2026-11-18: integrada en `main` con la PR #25 (merge `d987a06`, 2026-10-28).* La sesión de la instalación no detectaba skills nuevas en `.claude/skills/` (`Unknown skill: core-web-vitals`); los pasos 3–5 se hicieron tras reiniciarla.
 
 - **D4, decidida tras F1:** la imagen sobredimensionada (`uis/website/src/img/ambiente-trabajo-nexova.jpg`) se corrige solo si la skill la señala como causa de una auditoría fallida (criterio de «requerida»). En ese caso, en una fase de corrección posterior, con `npx sharp-cli@<versión fija>` puntual y sin añadir dependencias.
 - **Paso 1 — ensayo en el scratchpad, fuera del repo:**
@@ -890,7 +902,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-10-27 — Auditoría de rendimiento de los dos frontends: F0–F1
 
-**Estado: en curso** (F1 hecha), en `feature/perf-audit`, creada desde `main` en `6877599`. Sin push.
+**Estado: hecha (F0–F1); integrada en `main` con la PR #25 (merge `d987a06`, 2026-10-28)**, en `feature/perf-audit`, creada desde `main` en `6877599`. *Corregido el 2026-11-18: antes decía «en curso (F1 hecha) … Sin push».*
 
 - **F0 — análisis y decisiones del usuario:**
   - **Ubicación:** `AUDIT.md`, `REPORT.md` y `audit/` en la raíz. `audit/` queda como carpeta de evidencias en `.agents/rules/monorepo-structure.md`.
