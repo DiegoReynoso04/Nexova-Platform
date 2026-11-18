@@ -37,7 +37,7 @@ Una responsabilidad por carpeta de primer nivel: `uis/` (frontends), `services/`
 | Recuperación y cambio de contraseña AUTH-03 | `services/api/` → `/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`; `uis/backoffice` y `uis/talent-pipeline-tracker` → `/forgot-password`, `/reset-password`, `/account/change-password` | Misma app FastAPI y mismas apps Next.js, **sin dependencias nuevas**: email con Resend por `urllib` (`app/auth/email.py`). Contrato en `SPECS.md` Parte D — no duplicado aquí | AUTH-03 (2026-10-05/06, rama `feature/password-reset`; validado con email real y con H-1 corregido; commit `cb9d0d5`; integrado en `main` con la PR #16, merge `677e735`, 2026-10-07) |
 | Autenticación AUTH-01 (API) | `services/api/` → `/auth`, `/users`, `/profiles` | Misma app FastAPI + **libpass 1.9.3 / bcrypt 5.0.0** (`libpass[bcrypt]>=1.9.3,<1.10`) + **python-jose 3.5.0** (`python-jose[cryptography]>=3.5,<3.6`, backend cryptography 50.0.2), ambas autorizadas por el ticket; `User`/`Profile` en TinyDB. Código en `app/auth/` + `app/routes/{auth,users,profiles}.py`; comando `uv run create-admin`. Contrato en `SPECS.md` Parte C — no duplicado aquí | AUTH-01 (2026-09-30, rama `feature/auth-api`, PR #10 mergeado) |
 | Entorno de desarrollo (Docker) | `docker-compose.yml` (raíz), `services/Dockerfile`, `uis/Dockerfile`, `uis/start.sh`, `uis/serve-website.mjs`, `.env.example` (raíz) | **Único modo de arrancar la plataforma en desarrollo** desde #infra-40: `docker compose up` con un solo `.env` en la raíz. `api` (`python:3.14.6-slim`, uv 0.12.21, `services/api/requirements.txt` exportado de `uv.lock` con hashes) y `ui` (`node:24.20.0-alpine`; website en el 3000 con `serve-website.mjs`, backoffice en el 3001 con `next dev --webpack`) en la red `nexova-net`; API en el 8000. Sin dependencias nuevas. Decisiones abajo (sección «Docker»); guía en `docs/local-development.md` y revisión en `docs/infra-40-review.md` — no duplicadas aquí | Ticket #infra-40 (2026-10-22/25, rama `feature/docker-dev-env`; el despliegue en el VPS quedó fuera de esta entrega) |
-| Job nocturno de telemetría (DEV-53) | `scripts/nightly_export.py`, `services/job_runner/`, `data/nightly.crontab`, etapa `scheduler` de `data/Dockerfile`, servicio `nightly-scheduler` (perfil `nightly`) | Python ≥ 3.11 con el entorno de `data/pipelines` (SQLAlchemy y `psycopg2` ya estaban; el pipeline que lanza necesita Prefect), **sin dependencias de Python nuevas**. **Única dependencia nueva: supercronic v0.2.51** (binario fijado por SHA-256 en `data/Dockerfile`, descarga solo en el build). Esquema `ops` en PostgreSQL con migración propia `python -m job_runner.migrate`. Decisiones M1–M19 en `docs/telemetry/nightly-export-analysis.md`; guía en `docs/telemetry/nightly-export-review.md` — no duplicadas aquí | Ticket DEV-53 (2026-11-15/16, rama `feature/nightly-telemetry-export`) |
+| Job nocturno de telemetría (DEV-53) | `scripts/nightly_export.py`, `services/job_runner/`, `data/nightly.crontab`, etapa `scheduler` de `data/Dockerfile`, servicio `nightly-scheduler` (perfil `nightly`) | Python ≥ 3.11 con el entorno de `data/pipelines` (SQLAlchemy y `psycopg2` ya estaban; el pipeline que lanza necesita Prefect), **sin dependencias de Python nuevas**. **Única dependencia nueva: supercronic v0.2.51** (binario fijado por SHA-256 en `data/Dockerfile`, descarga solo en el build). Esquema `ops` en PostgreSQL con migración propia `python -m job_runner.migrate`. Decisiones M1–M19 en `docs/telemetry/nightly-export-analysis.md`; guía en `docs/telemetry/nightly-export-review.md` — no duplicadas aquí | Ticket DEV-53 (2026-11-15/16, rama `feature/nightly-telemetry-export`; integrado en `main` con la PR #36, merge `5901486`, 2026-11-16; el fix del timeout de arranque de Prefect, con la PR #37, merge `cc9df5b`) |
 
 Ambas apps Next.js (`talent-pipeline-tracker`, `backoffice`) tienen su propio `package.json`/`node_modules` — no hay workspaces de monorepo configurados en la raíz (existe metadata en `packages/shared/package.json`, pero no hay runner de workspace en raíz).
 
@@ -57,6 +57,17 @@ Verificado el 2026-10-21 (`git fetch` + `git log origin/main`): `origin/main` es
 - Actualización 2026-10-21 (`git fetch`): el frontend del inventario (PR #22, `feature/inventory-frontend`; merge `410da71`, 2026-10-21, sobre `8e5448e`), con F1–F6: `0e0f133`, `2dccef0` (`style(api)`), `72bd839`, `064a569`, `a591686`, `0fa0da3`, `09e53ef` y `0199caf`. `origin/main` está en **`410da71`**. El merge no aprueba las decisiones D1–D10 ni sus ajustes (`docs/inventory-frontend-review.md`), que siguen pendientes de revisión.
 - Actualización 2026-10-31 (`git pull`): las auditorías de rendimiento (PR #25, merge `d987a06`, 2026-10-28) y de serialización (PR #26, `feature/serialization-audit`; merge `9f312e1`). `origin/main` está en **`9f312e1`**.
 - Actualización 2026-11-01 (`git pull`): caching y optimización (PR #27, `feature/caching-optimisation`; merge `390d3aa`, 2026-11-01). `origin/main` está en **`390d3aa`**.
+- Actualización 2026-11-18 (`git fetch`, verificada con `git log --merges 390d3aa..origin/main`): las PRs #28–#37. `origin/main` está en **`cc9df5b`** (merge de la PR #37, 2026-11-16), sin nada posterior:
+  - #28 plan de telemetría (`docs/telemetry-plan`; merge `8a23d17`, 2026-11-02);
+  - #29 captura de telemetría en el frontend (`feature/telemetry-capture`; `8461f34`, 2026-11-03);
+  - #30 almacenamiento de telemetría (`feature/telemetry-storage`; `fed0e39`, 2026-11-05);
+  - #31 reporte técnico de telemetría (`feature/telemetry-report`; `fc190f5`, 2026-11-06);
+  - #32 `page_not_found_viewed` una vez por montaje (`fix/not-found-telemetry-once`; `006aa1e`, 2026-11-09);
+  - #33 diseño del pipeline de desempeño de negocio (`docs/business-pipeline-design`; `9d8b0df`, 2026-11-09);
+  - #34 pipeline de desempeño de negocio, Parte 2 (`feature/business-pipeline`; `ec5cdac`, 2026-11-12);
+  - #35 subflows, tests y dashboard `/reporting`, Parte 3 (`feature/business-pipeline-subflows`; `f88e3a4`, 2026-11-13);
+  - #36 job nocturno de telemetría, DEV-53 (`feature/nightly-telemetry-export`; `5901486`, 2026-11-16);
+  - #37 timeout de arranque del servidor efímero de Prefect (`fix/prefect-ephemeral-startup-timeout`; `cc9df5b`, 2026-11-16).
 - **Repositorio renombrado (2026-09-30):** `DiegoReynoso04/Milestone-0-Elige-tu-empresa` → `DiegoReynoso04/nexova-platform` (GitHub lo muestra como `Nexova-Platform`; el nombre no distingue mayúsculas y las URLs antiguas redirigen). El remoto `origin` local ya apunta a `https://github.com/DiegoReynoso04/nexova-platform.git`. La carpeta local puede seguir llamándose `Milestone-0-Elige-tu-empresa`: no afecta a nada.
 
 - ~~**No está en `main` (2026-10-10):** la auditoría de gestión de errores vive en la rama `feature/error-handling-audit`, pendiente de push y PR.~~ *Corregido el 2026-10-10: integrada en `main` con la PR #18 (merge `843ae26`).*
@@ -314,7 +325,7 @@ Medición inicial y decisiones D1–D11 (tomadas el 2026-10-31) en [`docs/cachin
   - `SupplierTable` va con `React.memo` y sus filas derivadas con `useMemo` (reglas en `uis/backoffice/CLAUDE.md`).
 - **Seed de volumen** `scripts/seed_volume.py`: solo bases de prueba. Rechaza `services/api/data` y un PostgreSQL no local; es determinista e idempotente.
 
-### Pipeline de desempeño de negocio (diseño 2026-11-09, PR #33; implementación Parte 2, PR #34, ambas en `main`)
+### Pipeline de desempeño de negocio (diseño 2026-11-09, PR #33; implementación Parte 2, PR #34; subflows, tests y dashboard Parte 3, PR #35; las tres en `main`)
 
 Diseño: [`data/pipelines/PIPELINE_DESIGN.md`](../data/pipelines/PIPELINE_DESIGN.md); decisiones D1–D14 en [`docs/reporting/pipeline-analysis.md`](../docs/reporting/pipeline-analysis.md). Lo permanente:
 
@@ -337,10 +348,10 @@ Diseño: [`data/pipelines/PIPELINE_DESIGN.md`](../data/pipelines/PIPELINE_DESIGN
   - **Lecturas de la demo:** `python -m business_performance.readonly <archivo.sql>` (desde `data/pipelines`), con `SET TRANSACTION READ ONLY` y siempre `ROLLBACK`. Así lee las fotos y el cuadre sin `psql` y sin la URL en la terminal. `secret.py` toma la URL como el script (entorno → `.env`), así que el block de la demo se crea desde el host. Si el Control de aplicaciones de Windows bloquea una DLL de SQLAlchemy del venv (`_collections_cy`, `_util_cy`), se reintenta. Si sigue bloqueada, se usa la imagen `nexova-pipeline:dev` con el código y el `.env` montados en solo lectura; la receta está en `docs/reporting/implementation-review.md` §6.
   - **Contrato de la API:** en `services/api/SPECS.md` Parte I.
 - **Esquema `reporting`** (`weekly_office_program_performance` con la DDL del BRIEFING + `run_id` y `CHECK` aditivos; `pipeline_runs`): migración explícita, nunca al arrancar; en la demo, solo con confirmación. Con el Transaction pooler, solo `pg_advisory_xact_lock`.
-- **Dashboard `/reporting` (Parte 3, rama `feature/business-pipeline-subflows`):** en `uis/backoffice`, con el patrón de `/telemetry` (servicio → hooks → vista, sin librería de gráficos ni dependencias nuevas), sobre `GET /reporting/weekly-office-program-performance` y `/pipeline-runs/latest` por el proxy `/backend`. EUR y USD nunca se suman (`officeTotal` lanza con dos monedas); el centinela `_unassigned` se muestra como «Sin programa asignado»; aviso de datos desactualizados a los 8 días. Reglas en `uis/backoffice/CLAUDE.md` («Reporte semanal»).
+- **Dashboard `/reporting` (Parte 3, rama `feature/business-pipeline-subflows`; integrada en `main` con la PR #35, merge `f88e3a4`, 2026-11-13):** en `uis/backoffice`, con el patrón de `/telemetry` (servicio → hooks → vista, sin librería de gráficos ni dependencias nuevas), sobre `GET /reporting/weekly-office-program-performance` y `/pipeline-runs/latest` por el proxy `/backend`. EUR y USD nunca se suman (`officeTotal` lanza con dos monedas); el centinela `_unassigned` se muestra como «Sin programa asignado»; aviso de datos desactualizados a los 8 días. Reglas en `uis/backoffice/CLAUDE.md` («Reporte semanal»).
 - **Subflows y tests (Parte 3):** el flow `weekly_office_program_performance` llama a 4 subflows (`extract_telemetry_events`, `transform_weekly_kpis`, `load_weekly_office_program_performance`, `snapshot_weekly_performance`); la transformación son 7 tasks que envuelven funciones puras de `data/process/weekly_performance.py` (`compute_*` por KPI, caché de 1 h solo en ellas). `EventBatch` (`pipeline.py`) evita que Prefect guarde los eventos como parámetro del subflow (tope de 512 KiB y sin `event_id`/`order_id` en su servidor): depende de `Flow.serialize_parameters` de Prefect 3.9 y lo vigila `data/pipelines/tests/test_event_batch.py`. Límite conocido de tiempo con volúmenes grandes en `PIPELINE_DESIGN.md` §4.6. Tests de las tasks por KPI en `tests/pipelines/test_pipeline.py` (pytest, solo dependencia de desarrollo de `data/pipelines`: grupo `dev` de `pyproject.toml` y `requirements-dev.txt` con hashes; no entra en la imagen).
 
-### Job nocturno de telemetría (DEV-53, 2026-11-16, rama `feature/nightly-telemetry-export`)
+### Job nocturno de telemetría (DEV-53, 2026-11-16, rama `feature/nightly-telemetry-export`; integrado en `main` con la PR #36, merge `5901486`; fix del timeout en la PR #37, merge `cc9df5b`)
 
 Decisiones M1–M19 y su porqué en [`docs/telemetry/nightly-export-analysis.md`](../docs/telemetry/nightly-export-analysis.md); cómo reproducir los casos en [`docs/telemetry/nightly-export-review.md`](../docs/telemetry/nightly-export-review.md). Puntos técnicos permanentes:
 
@@ -352,7 +363,7 @@ Decisiones M1–M19 y su porqué en [`docs/telemetry/nightly-export-analysis.md`
 - **Prefect:** el cron `weekly` se retiró de `serve.py` (M5); queda `manual`. `RunTrigger.SCHEDULE` sigue en `nexova_shared` (nadie lo usa ya para disparar).
 - **`data/Dockerfile`:** etapas `base`, `scheduler` y `pipeline` (la última, por defecto). El scheduler recibe `scripts` y `services` como contextos adicionales y copia solo `nightly_export.py` y los `.py` de `job_runner`.
 
-### Plan de telemetría (diseño, ticket del 2026-11-01/02, rama `docs/telemetry-plan`)
+### Plan de telemetría (diseño, ticket del 2026-11-01/02, rama `docs/telemetry-plan`; integrado en `main` con la PR #28, merge `8a23d17`, 2026-11-02)
 
 Diseño sin código: [`docs/telemetry/telemetry-plan.md`](../docs/telemetry/telemetry-plan.md) y [`docs/telemetry/event-schemas.json`](../docs/telemetry/event-schemas.json). El BRIEFING está en `docs/proyectos-de-telemetria-plan-captura-almacenamiento-reporte.md`. Las decisiones D1–D14 son del usuario; el detalle está en el plan y no se duplica aquí.
 
@@ -360,7 +371,7 @@ Diseño sin código: [`docs/telemetry/telemetry-plan.md`](../docs/telemetry/tele
 - **Esquemas:** JSON Schema draft-07. La comprobación permanente es `python scripts/validate_event_schemas.py` (librería estándar, subconjunto cerrado de palabras clave y coherencia con el plan). `ajv-cli@5.0.0` se ejecutó una vez con `npx`, sin tocar ningún `package.json`.
 - **Hallazgo técnico (F0):** `PUT`/`PATCH`/`DELETE` sobre `/inventory/products{,/{id}}` dan 405 **antes** de autenticar, porque Starlette no ejecuta las dependencias del router. Además, `Allow` solo lista `GET` en la colección.
 
-### Reporte técnico de telemetría (2026-11-05, rama `feature/telemetry-report`)
+### Reporte técnico de telemetría (2026-11-05, rama `feature/telemetry-report`; integrado en `main` con la PR #31, merge `fc190f5`, 2026-11-06)
 
 Decisiones en `docs/telemetry/report-analysis.md`; revisión en `docs/telemetry/report-review.md`; contrato en `services/api/SPECS.md` Parte H (§48). Solo lo permanente:
 
@@ -370,7 +381,7 @@ Decisiones en `docs/telemetry/report-analysis.md`; revisión en `docs/telemetry/
 - **`test_architecture.py` solo mira `app/`:** las reglas de `analysis.py` están en `tests/test_telemetry_analysis.py`.
 - **Dashboard `/telemetry` en `uis/backoffice`:** sin librería de gráficos ni dependencias. La página y `/telemetry/report` no están en los enums del contrato, así que no constan en la telemetría (versión `1.0.0`). Reglas en `uis/backoffice/CLAUDE.md`.
 
-### Almacenamiento de telemetría (ticket de almacenamiento, 2026-11-04, rama `feature/telemetry-storage`)
+### Almacenamiento de telemetría (ticket de almacenamiento, 2026-11-04, rama `feature/telemetry-storage`; integrado en `main` con la PR #30, merge `fed0e39`, 2026-11-05)
 
 Decisiones en `docs/telemetry/storage-analysis.md`; revisión en `docs/telemetry/storage-review.md`; contrato en `services/api/SPECS.md` Parte H. Solo lo permanente:
 
@@ -380,7 +391,7 @@ Decisiones en `docs/telemetry/storage-analysis.md`; revisión en `docs/telemetry
 - **`allowlists.py`:** copia de 15 eventos del JSON, comprobada por la suite. Con Pydantic, porque `test_architecture.py` prohíbe `re`; solo 15, porque los 52 chocan con el vocabulario del gestor.
 - **El throttle (`EventRateLimiter`)** vive en memoria: exige `--workers 1`, como la caché.
 
-### Captura de telemetría (ticket de captura, 2026-11-03, rama `feature/telemetry-capture`)
+### Captura de telemetría (ticket de captura, 2026-11-03, rama `feature/telemetry-capture`; integrado en `main` con la PR #29, merge `8461f34`, 2026-11-03)
 
 Decisiones del usuario en `docs/telemetry/capture-analysis.md` y en el plan, §1.5; revisión en `docs/telemetry/capture-review.md`; contrato en `services/api/SPECS.md` Partes F y H; reglas del frontend en `uis/backoffice/CLAUDE.md` («Telemetría»). No se duplica aquí, solo lo permanente:
 
