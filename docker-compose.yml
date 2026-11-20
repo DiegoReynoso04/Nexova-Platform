@@ -64,6 +64,10 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    # DEV-55: la API encola en Redis (REDIS_URL le llega por el env_file).
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - nexova
 
@@ -93,6 +97,104 @@ services:
       - "3001:3001"
     depends_on:
       api:
+        condition: service_healthy
+    networks:
+      - nexova
+
+  # Cola de tareas asíncronas (DEV-55; decisiones A6 y A7 de docs/async-tasks/analysis.md).
+  # Arrancan con `docker compose up`, como la API. Broker y result backend de Celery.
+  redis:
+    # Imagen oficial fijada por versión y digest (Redis 8.10.3, publicada el 2026-11-11).
+    image: redis:8.10.3-alpine3.23@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
+    # Directamente como el usuario `redis` de la imagen: con `sh -c`, su entrypoint no
+    # bajaría de root. La contraseña va a un archivo de configuración dentro del
+    # contenedor, no a los argumentos del proceso. noeviction con tope de 128 MB: Redis
+    # rechaza escrituras antes que borrar mensajes de la cola. AOF en el volumen: la cola
+    # sobrevive a un reinicio de Redis, no solo a la caída del worker.
+    user: redis
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?falta REDIS_PASSWORD en el .env de la raíz (ver .env.example)}
+    command:
+      - sh
+      - -c
+      - >-
+        umask 077 && printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /tmp/redis-auth.conf &&
+        exec redis-server /tmp/redis-auth.conf --maxmemory 128mb --maxmemory-policy noeviction
+        --appendonly yes --appendfsync everysec
+    volumes:
+      - redis-data:/data
+    # El 6379 solo en localhost del host (tests de integración); entre contenedores, redis:6379.
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      # REDISCLI_AUTH: la contraseña no va en la línea de comandos de redis-cli.
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - nexova
+
+  # Worker de Celery: proceso aparte de FastAPI (misma imagen que la API, otro comando).
+  # Sin env_file: lista blanca. Ni JWT_SECRET_KEY, ni RESEND_API_KEY, ni
+  # TELEMETRY_SUPPLIER_KEY; tampoco DATABASE_URL mientras ninguna tarea la necesite
+  # (llega en la parada 2, con la DLQ). Sin puertos. No recarga solo: tras un cambio,
+  # `docker compose restart worker`.
+  worker:
+    build: &task-queue-build
+      context: ./services
+      additional_contexts:
+        packages: ./packages
+        pipelines: ./data/pipelines
+      target: api
+    user: nexova
+    environment:
+      REDIS_URL: ${REDIS_URL:?falta REDIS_URL en el .env de la raíz (ver .env.example)}
+      TZ: UTC
+    command: [celery, -A, task_queue.celery_app, worker, --loglevel=INFO, "--hostname=worker@%h"]
+    volumes:
+      # Solo el paquete de la cola, en solo lectura, sobre la copia de la imagen.
+      - ./services/task_queue:/app/api/task_queue:ro
+    init: true
+    restart: unless-stopped
+    # Mayor que task_time_limit (150 s): la parada en caliente deja terminar la tarea en curso.
+    stop_grace_period: 160s
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A task_queue.celery_app inspect ping --destination \"worker@$$HOSTNAME\" --timeout 5 | grep -q pong"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - nexova
+
+  # Flower (solo desarrollo): http://localhost:5555, con usuario y contraseña de
+  # FLOWER_BASIC_AUTH. Lista blanca: sin DATABASE_URL.
+  flower:
+    build:
+      <<: *task-queue-build
+      target: flower
+    user: nexova
+    environment:
+      REDIS_URL: ${REDIS_URL:?falta REDIS_URL en el .env de la raíz (ver .env.example)}
+      FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:?falta FLOWER_BASIC_AUTH en el .env de la raíz (ver .env.example)}
+      TZ: UTC
+    volumes:
+      - ./services/task_queue:/app/api/task_queue:ro
+    ports:
+      - "127.0.0.1:5555:5555"
+    healthcheck:
+      # /healthcheck de Flower no pide autenticación ni devuelve datos.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5555/healthcheck', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      redis:
         condition: service_healthy
     networks:
       - nexova
@@ -213,6 +315,8 @@ networks:
     name: nexova-net
 
 volumes:
+  # AOF de Redis (DEV-55): la cola sobrevive a `docker compose restart redis`.
+  redis-data:
   prefect-data:
   pipeline-raw:
   pipeline-eval:

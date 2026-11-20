@@ -344,6 +344,14 @@ La tarea **completada** de la captura es un reporte normal; la **fallida**, la d
 
 > **Estado: decidida por el usuario el 2026-11-20.** Autorizadas `celery[redis]>=5.7,<5.8`, `redis` (el rango que admita `kombu` 5.7) y `flower>=2.2,<2.3` en su grupo propio, con `uv lock` (nunca `uv sync`) y requirements con hashes. Si alguna no funciona con Python 3.14.6, se para y se informa: ni se cambia la versión de Python ni se busca otra solución sin el OK del usuario.
 
+> **Resultado en la parada 1 (2026-11-20).** Las tres, y sus transitivas `kombu`, `billiard`, `tornado` y `redis`, declaran Python 3.14 en PyPI y funcionan en la imagen (`python:3.14.6-slim`): worker y Flower arrancan y `task_queue.ping` termina en `SUCCESS`. Rangos finales: `celery[redis]>=5.7,<5.8`, `redis>=6.4,<9` (lo que exige `kombu[redis]` 5.7.0: `redis<9.0.0,>=6.4.0`) y `flower>=2.2,<2.3`. Versiones de `uv.lock`: celery 5.7.0, kombu 5.7.0, redis 8.1.0, flower 2.2.0.
+>
+> **`python-dateutil` baja de 4.0.0 a 2.9.0.post0** (aceptado por el usuario el 2026-11-20). Lo fuerza **celery 5.7.0, que en sus metadatos fija `python-dateutil==2.9.0.post0`**. No hay ninguna 5.7.x estable que acepte la 4: solo la prerelease `5.7.0a1` (`>=2.8.2`); `5.7.0b1`, `5.7.0rc1` y `5.7.0` fijan la 2.9.0.post0. `kombu` 5.7.0 no pide dateutil. Es la misma bajada que evitó D1 de [`docs/reporting/implementation-analysis.md`](../reporting/implementation-analysis.md) al dejar Prefect fuera de `services/api`. Allí se dejó fuera por arquitectura: la dependencia es transitiva de Pandas, no una versión que fijemos nosotros. Aquí Celery tiene que estar en el entorno de la API (A5 se mantiene). Comprobaciones:
+>
+> - Ningún `.py` del repositorio importa ni menciona `dateutil`: solo lo usa Pandas por dentro. Pandas 3.1 pide `python-dateutil>=2.9.0`.
+> - En `uv.lock` solo cambia `python-dateutil` (4.0.0 → 2.9.0.post0). Entran amqp 5.4.2, async-timeout 5.0.1, billiard 4.3.2, celery 5.7.0, click-didyoumean 0.3.1, click-plugins 1.1.1.2, click-repl 0.4.1, flower 2.2.0, humanize 4.17.0, kombu 5.7.0, prometheus-client 0.26.0, prompt-toolkit 3.0.53, pytz 2026.6, redis 8.1.0, tornado 6.6.1, tzlocal 5.4.5, vine 5.1.0 y wcwidth 0.9.4. No sale nada. Flower, humanize, prometheus-client, pytz y tornado van solo en `requirements-flower.txt`.
+> - La suite completa de `services/api` en la imagen con dateutil 2.9.0.post0 pasa: `unittest` 724 OK y `pytest` 927 passed; `test_telemetry_analysis` y `test_telemetry_report` dan 88 passed.
+
 | Paquete | Rango propuesto | Dónde | Por qué |
 |---|---|---|---|
 | `celery[redis]` | `>=5.7,<5.8` | `services/api/pyproject.toml`, dependencias principales | La API envía y lee estados; el worker ejecuta. Trae `kombu` y `billiard` |

@@ -66,7 +66,7 @@ Documentación interactiva de FastAPI en `http://localhost:8000/docs` con el ser
 
 ## Requisitos
 
-Python 3.11 o superior (verificado con 3.14.6). Dependencias (`pyproject.toml`), acotadas a las versiones probadas (versiones exactas en [`uv.lock`](./uv.lock), versionado): `fastapi>=0.141,<0.142`, `python-multipart>=0.0.32,<0.1`, `uvicorn>=0.53,<0.54`, `tinydb>=4.9,<4.10`, `libpass[bcrypt]>=1.9.3,<1.10` y `python-jose[cryptography]>=3.5,<3.6` (AUTH-01), `sqlmodel>=0.0.48,<0.0.49` (instala SQLAlchemy 2.1) y `psycopg2-binary>=2.9.13,<2.10` (Hito 5, inventario) y, para tests, `httpx>=0.28,<0.29` (extra `dev`, para pip) más `pytest>=9.1,<9.2` y `pytest-cov>=7.1,<7.2` (grupo `dev` de uv, AUTH-088; repite httpx). Sin librerías de configuración.
+Python 3.11 o superior (verificado con 3.14.6). Dependencias (`pyproject.toml`), acotadas a las versiones probadas (versiones exactas en [`uv.lock`](./uv.lock), versionado): `fastapi>=0.141,<0.142`, `python-multipart>=0.0.32,<0.1`, `uvicorn>=0.53,<0.54`, `tinydb>=4.9,<4.10`, `libpass[bcrypt]>=1.9.3,<1.10` y `python-jose[cryptography]>=3.5,<3.6` (AUTH-01), `sqlmodel>=0.0.48,<0.0.49` (instala SQLAlchemy 2.1) y `psycopg2-binary>=2.9.13,<2.10` (Hito 5, inventario), `celery[redis]>=5.7,<5.8` y `redis>=6.4,<9` (DEV-55, cola de tareas: la API encola y el worker de [`services/task_queue`](../task_queue/README.es.md) ejecuta; celery 5.7.0 fija `python-dateutil==2.9.0.post0`, ver `docs/async-tasks/analysis.md` A14), `flower>=2.2,<2.3` en su propio grupo de uv (`flower`, solo desarrollo, fuera de la imagen de la API) y, para tests, `httpx>=0.28,<0.29` (extra `dev`, para pip) más `pytest>=9.1,<9.2` y `pytest-cov>=7.1,<7.2` (grupo `dev` de uv, AUTH-088; repite httpx). Sin librerías de configuración.
 
 ## Instalación del venv (para los tests, desde la raíz del monorepo)
 
@@ -109,6 +109,13 @@ uv export --frozen --no-dev --no-emit-project --format requirements-txt -o requi
 - `--frozen`: no toca `uv.lock`; `--no-dev`: sin pytest ni pytest-cov; `--no-emit-project`: sin la propia API.
 - **No aparecen `nexova-shared` ni `nexova-incident-analyzer`**, porque no están en `uv.lock`: `pyproject.toml` no los declara a propósito (no están publicados y declararlos invitaría a buscarlos en PyPI). En la imagen entran por `PYTHONPATH`.
 - Lleva los hashes de cada paquete (`--require-hashes`). `tests/test_requirements_lock.py` falla si deja de coincidir con `uv.lock` o con `pyproject.toml`, y su mensaje dice este mismo comando.
+- **Flower (DEV-55):** el target `flower` de `services/Dockerfile` instala además `requirements-flower.txt` (las dependencias principales más el grupo `flower`), que se regenera a la vez, también desde `services/api`:
+
+  ```bash
+  uv export --frozen --no-dev --group flower --no-emit-project --format requirements-txt -o requirements-flower.txt
+  ```
+
+  `tests/test_requirements_lock.py` comprueba que sigue a `uv.lock`, que contiene `requirements.txt` con las mismas versiones y que Flower nunca entra en `requirements.txt`.
 - Después: `docker compose up -d --build`.
 
 ### Configuración

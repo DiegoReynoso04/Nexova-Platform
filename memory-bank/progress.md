@@ -4,6 +4,33 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-20 — DEV-55, cola de tareas: F1, parada 1 (Redis, worker y Flower con una tarea trivial)
+
+**Estado: parada 1 hecha, verificada y aprobada por el usuario (2026-11-20); commit local sin push.** Rama `feature/async-task-queue`, sobre el commit de F0 `dd2f82b`.
+
+- **Dependencias (A14):**
+  - `celery[redis]>=5.7,<5.8` y `redis>=6.4,<9` en `services/api`, y `flower>=2.2,<2.3` en el grupo `flower`, con `uv lock` (nunca `uv sync`);
+  - `requirements.txt` regenerado y `requirements-flower.txt` nuevo, los dos con hashes;
+  - **python-dateutil 4.0.0 → 2.9.0.post0**, porque celery 5.7.0 fija `==2.9.0.post0` y ninguna 5.7.x estable acepta la 4. Lo aceptó el usuario, con las comprobaciones en `analysis.md` A14: nada nuestro importa dateutil, no cambia ningún otro paquete y la suite pasa con la 2.9.
+- **Código:** `services/task_queue/` (`config.py` con `REDIS_URL` y A7, `celery_app.py`, `tasks.py` con `task_queue.ping`), 24 tests y `README.md`/`README.es.md`.
+- **Infraestructura:**
+  - `services/Dockerfile` con targets `runtime`, `flower` y `api`, la copia de `task_queue/` y el usuario `nexova`;
+  - `docker-compose.yml` con `redis` (digest fijado, `127.0.0.1:6379`, contraseña, AOF, 128 MB `noeviction`), `worker` y `flower` (`127.0.0.1:5555`, autenticación básica), por defecto, y `api` → `redis` `healthy`;
+  - `.env.example` con `REDIS_PASSWORD`, `REDIS_URL` y `FLOWER_BASIC_AUTH`. **En el `.env` del usuario se añadieron esas tres claves** con valores aleatorios (al final del archivo, sin tocar las demás).
+- **Tests adaptados:** `services/api/tests/test_requirements_lock.py`. Los 6 tests de siempre no cambian (solo `read_requirements` acepta una ruta y la comprobación de hashes pasa a una función compartida); hay 5 nuevos para `requirements-flower.txt`.
+- **Verificado:**
+  - `docker compose config --quiet`; `up -d --build` con salida 0 y los cinco servicios en marcha (`api`, `redis`, `worker` y `flower` `healthy`);
+  - el worker conectado a `redis://:**@redis:6379/0`, sin avisos; `celery call task_queue.ping` → `SUCCESS` en el backend, en el log y en Flower (401 sin credenciales);
+  - aislamiento: `REDIS_URL` en `api`, `worker` y `flower` y no en `ui`; ningún secreto de la API en `worker`, `flower` ni `ui`; worker y Flower como `nexova`; Redis con `NOAUTH`, `noeviction`, 128 MB y AOF, y la contraseña fuera de los argumentos del proceso;
+  - imágenes sin `.env`, tests, `.venv`, `data/` ni `__pycache__`, y sin secretos en `docker history`;
+  - suites en la imagen: `task_queue` 24 OK; `services/api` con dateutil 2.9 `unittest` 724 OK y `pytest` 927 passed.
+- **Pendiente:**
+  - el venv del host de `services/api` no tiene Celery (no se ha actualizado);
+  - las filas de `AGENTS.md` §4 y `docs/local-development.md` van en la parada 5;
+  - en la parada 3, `services/job_runner/tests/test_architecture.py` (`test_the_api_has_no_scheduler_inside_its_process`) prohíbe `celery` en `services/api/app/`.
+
+---
+
 ## 2026-11-18 — DEV-55, cola de tareas asíncronas (Redis + Celery): F0, análisis y decisiones
 
 **Estado: F0 hecha; decisiones A1–A16 tomadas por el usuario el 2026-11-20; commit de F0 en la rama (sin push).** Rama `feature/async-task-queue`, desde `main` en `5be61d3` (PR #38). Ticket #DEV-55, con el enunciado solo local en `contexts/dev-55/ticket-dev-55.md` (ignorado por git, comprobado con `git check-ignore -v`). Sin impacto técnico en `techContext.md`: solo documentación; ni código, ni dependencias, ni `docker-compose.yml`.
