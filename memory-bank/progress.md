@@ -4,6 +4,28 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-18 — DEV-55, cola de tareas asíncronas (Redis + Celery): F0, análisis y decisiones
+
+**Estado: F0 hecha; decisiones A1–A16 tomadas por el usuario el 2026-11-20; commit de F0 en la rama (sin push).** Rama `feature/async-task-queue`, desde `main` en `5be61d3` (PR #38). Ticket #DEV-55, con el enunciado solo local en `contexts/dev-55/ticket-dev-55.md` (ignorado por git, comprobado con `git check-ignore -v`). Sin impacto técnico en `techContext.md`: solo documentación; ni código, ni dependencias, ni `docker-compose.yml`.
+
+- **Entregable:** [`docs/async-tasks/analysis.md`](../docs/async-tasks/analysis.md): hallazgos H1–H16, medición, elección de la operación, decisiones A1–A16, suposiciones S1–S6, plan de F1 en 5 paradas y tabla de criterios.
+- **Medido contra un Postgres efímero y una API de medición aislados** (red propia, sin puertos en el host; el stack del usuario y la demo, sin tocar). `GET /telemetry/report` sin caché: 0,24 s con 10 k eventos, 1,7 s con 100 k y 8,3 s con 500 k. Con 4 en paralelo, ~30 s cada uno y picos de 3,2 s en `/auth/me`. `GET /inventory/orders`: 894 ms con 30 k órdenes (8,7 MB). `POST /api/incidents/analyze`: 81 ms con el CSV máximo de 1 MiB. `POST /reporting/pipeline-runs`: 35–84 ms y ya asíncrono con Prefect.
+- **Recomendación:** convertir `GET /telemetry/report`, en un paquete `services/task_queue/` (no `services/celery_app.py` suelto) y con la DLQ en `ops.task_dead_letters`.
+- **Decisiones (usuario, 2026-11-20; detalle en §5 del análisis):**
+  - A1/A2: `GET /telemetry/report` → `202` + `Location`; A3 confirmada; A4 deduplicación por usuario 60 s; A5 paquete `services/task_queue/`;
+  - A6: `redis`, `worker` y `flower` por defecto, con digest, `127.0.0.1`, contraseña, AOF, 128 MB `noeviction`, lista blanca y `REDIS_URL` nunca en `ui`; A7 valores recomendados;
+  - A8: backoff propio nunca inmediato y `max_retries=3` literal (4 ejecuciones; la DLQ guarda `attempt` y `retries`);
+  - A9: `ops.task_dead_letters`, solo registro; migración en la demo solo con confirmación, y hasta entonces el fallo definitivo va al log;
+  - A10: propietario o admin, 404 si no, `RETRY` → `started`, y la clave de metadatos no puede caducar con la tarea en cola o en curso (cómo, en la parada 3);
+  - A11 `503 task_queue_unavailable`; A12 `job_runner.redact` + filtro en las trazas de Celery; A13 lock + `statement_timeout`; A16 sondeo «En cola»/«Calculando»;
+  - A14: autorizadas `celery[redis]>=5.7,<5.8`, `redis` (rango de `kombu` 5.7) y `flower>=2.2,<2.3` en grupo propio; si algo no va con Python 3.14.6, parar y avisar;
+  - A15: además `services/task_queue/README.md` y `README.es.md`, y todo archivo con `.es.md` se actualiza en los dos idiomas;
+  - la captura de Flower va solo en la PR; los tests del contrato síncrono de `/telemetry/report` (API y backoffice) se adaptan, nunca se borran, y cada parada dice cuáles cambian.
+- **Pendiente fuera de este ticket (H14):** `scripts/seed_volume.py inventory` falla desde que `unit_cost` es obligatorio (`InboundOrderCreate`: `ValidationError: unit_cost Field required`). Hay que arreglarlo en una tarea aparte.
+- **Limpieza:** se borraron los contenedores, la red y el volumen del efímero. Quedan 19 volúmenes anónimos huérfanos de sesiones anteriores (2026-10-24 a 2026-11-16), sin tocar.
+
+---
+
 ## 2026-11-18 — Memory-bank: sincronización tras las PRs #25–#37
 
 **Estado: hecho.** Sin impacto técnico (solo `memory-bank/`; ni código, ni tests, ni `docs/`). Las PRs #25–#27 se revisaron solo para corregir entradas antiguas; el resto de la lista es lo nuevo desde `390d3aa`. `origin/main` está en **`cc9df5b`** (merge de la PR #37, 2026-11-16), verificado con `git fetch` y `git log --merges 390d3aa..origin/main`: nada posterior. Rama `chore/memory-bank-post-dev53`.
