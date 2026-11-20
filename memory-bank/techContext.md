@@ -371,14 +371,23 @@ Decisiones M1–M19 y su porqué en [`docs/telemetry/nightly-export-analysis.md`
   - principales: `celery[redis]>=5.7,<5.8` y `redis>=6.4,<9`;
   - grupo de uv `flower`: `flower>=2.2,<2.3`, exportado a `requirements-flower.txt` (principales + `flower`, con hashes) para el target `flower` del `services/Dockerfile`.
   - **celery 5.7.0 fija `python-dateutil==2.9.0.post0`**, así que la transitiva de Pandas baja de 4.0.0 a 2.9.0.post0 en la API. Lo aceptó el usuario; es el precedente D1 de `docs/reporting/implementation-analysis.md`, que dejó Prefect fuera de la API por la misma bajada. La suite completa pasa con la 2.9 en la imagen.
-  - El venv del host **no** se ha actualizado: sigue sin Celery y con dateutil 4.0.0. Nunca con `uv sync`.
+  - El venv del host de `services/api` se actualizó el 2026-11-20 con `uv pip install --require-hashes -r services/api/requirements.txt`: entraron celery 5.7.0, kombu, redis, etc., y dateutil bajó a 2.9.0.post0. Nunca con `uv sync`. El Control de aplicaciones no lo bloqueó.
+- **Parada 2 (reintentos, DLQ y migración):**
+  - todas las tareas heredan de `task_queue.base.ReliableTask` (`task_cls`): se reintentan solo los errores transitorios de SQLAlchemy, con el backoff propio `2·2^n + U(0, 2)` s (nunca inmediato; el `full_jitter` de Celery puede dar 0 s);
+  - con `max_retries=3` (4 ejecuciones), o con un error no reintentable o un límite de tiempo, va a la DLQ `ops.task_dead_letters` (`attempt = retries + 1`, `task_id` único, migración `python -m task_queue.migrate`, compatible en cualquier orden con `job_runner.migrate`);
+  - si la base no responde o falta la tabla, línea `status=dead_letter_not_stored` con todos los campos;
+  - el límite duro lo registra `DeadLetterRequest.on_timeout` en el proceso principal;
+  - errores redactados con `job_runner.redact` (la imagen copia `job_runner/`) y relanzados como `TaskFailedError`;
+  - el worker recibe `DATABASE_URL` (la demo, como la API). La demo **no** tiene `ops.task_dead_letters` ni `ops`; migrarla, solo con confirmación;
+  - el `PYTHONPATH` de la imagen incluye `/app/api`, porque Celery solo añade el directorio actual mientras importa la app;
+  - tests de integración con `TASK_QUEUE_TEST_DATABASE_URL` y `TASK_QUEUE_TEST_REDIS_URL` locales (worker `prefork` real, en la imagen).
 - **Docker:** `services/Dockerfile` en targets `runtime`, `flower` y `api` (el último, el de por defecto); la imagen copia `task_queue/` y crea el usuario `nexova` (uid 10001). Compose añade, por defecto (sin perfil):
   - `redis`: `redis:8.10.3-alpine3.23@sha256:7958cfbb…`, usuario `redis`, contraseña en un archivo de configuración dentro del contenedor, 128 MB `noeviction`, AOF en el volumen `redis-data` y `127.0.0.1:6379`;
-  - `worker`: target `api`, usuario `nexova`, lista blanca `REDIS_URL` y `TZ`, sin puertos, `init`, `stop_grace_period` de 160 s y healthcheck `inspect ping`;
+  - `worker`: target `api`, usuario `nexova`, lista blanca `REDIS_URL`, `DATABASE_URL` (desde la parada 2) y `TZ`, sin puertos, `init`, `stop_grace_period` de 160 s y healthcheck `inspect ping`;
   - `flower`: `127.0.0.1:5555` con `FLOWER_BASIC_AUTH`;
   - `api` depende de `redis` `healthy`.
 - **`.env`:** `REDIS_PASSWORD`, `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0` (Compose interpola dentro del `.env`) y `FLOWER_BASIC_AUTH`. `REDIS_URL` llega a `api` (por `env_file`), a `worker` y a `flower`; nunca a `ui`.
-- **Pendiente para la parada 3:** `test_the_api_has_no_scheduler_inside_its_process` (`services/job_runner/tests/test_architecture.py`) prohíbe la palabra `celery` en `services/api/app/`. La API tendrá que encolar a través de `task_queue`, o habrá que adaptar ese test (nunca borrarlo).
+- **Decidido para la parada 3 (usuario, 2026-11-20):** la API encola a través de una función de `task_queue` (p. ej. `task_queue.client`), sin importar `celery` dentro de `services/api/app`. `test_the_api_has_no_scheduler_inside_its_process` (`services/job_runner/tests/test_architecture.py`), que prohíbe esa palabra en `app/`, **no se modifica**.
 
 ### Plan de telemetría (diseño, ticket del 2026-11-01/02, rama `docs/telemetry-plan`; integrado en `main` con la PR #28, merge `8a23d17`, 2026-11-02)
 

@@ -137,9 +137,14 @@ services:
 
   # Worker de Celery: proceso aparte de FastAPI (misma imagen que la API, otro comando).
   # Sin env_file: lista blanca. Ni JWT_SECRET_KEY, ni RESEND_API_KEY, ni
-  # TELEMETRY_SUPPLIER_KEY; tampoco DATABASE_URL mientras ninguna tarea la necesite
-  # (llega en la parada 2, con la DLQ). Sin puertos. No recarga solo: tras un cambio,
+  # TELEMETRY_SUPPLIER_KEY. Sin puertos. No recarga solo: tras un cambio,
   # `docker compose restart worker`.
+  #
+  # DATABASE_URL sale del .env de la raíz: **la demo**, igual que la API. El worker solo
+  # escribe en ops.task_dead_letters, que no existe en la demo hasta que el usuario la
+  # migre (`python -m task_queue.migrate --allow-demo`, solo con su confirmación); hasta
+  # entonces, un fallo definitivo queda solo en el log (`status=dead_letter_not_stored`).
+  # Para probar contra otra base, un override que no se versiona.
   worker:
     build: &task-queue-build
       context: ./services
@@ -150,11 +155,13 @@ services:
     user: nexova
     environment:
       REDIS_URL: ${REDIS_URL:?falta REDIS_URL en el .env de la raíz (ver .env.example)}
+      DATABASE_URL: ${DATABASE_URL:?falta DATABASE_URL en el .env de la raíz (ver .env.example)}
       TZ: UTC
     command: [celery, -A, task_queue.celery_app, worker, --loglevel=INFO, "--hostname=worker@%h"]
     volumes:
-      # Solo el paquete de la cola, en solo lectura, sobre la copia de la imagen.
+      # Solo los paquetes que usa, en solo lectura, sobre la copia de la imagen.
       - ./services/task_queue:/app/api/task_queue:ro
+      - ./services/job_runner:/app/api/job_runner:ro
     init: true
     restart: unless-stopped
     # Mayor que task_time_limit (150 s): la parada en caliente deja terminar la tarea en curso.
@@ -184,6 +191,7 @@ services:
       TZ: UTC
     volumes:
       - ./services/task_queue:/app/api/task_queue:ro
+      - ./services/job_runner:/app/api/job_runner:ro
     ports:
       - "127.0.0.1:5555:5555"
     healthcheck:

@@ -229,6 +229,13 @@ Si se prefiere que nada nuevo apunte a la demo sin una decisión explícita, la 
 ### A8 — Reintentos y backoff
 
 > **Estado: decidida por el usuario el 2026-11-20.** Backoff B (propio, nunca inmediato) e intentos A (`max_retries=3` literal: 4 ejecuciones; la DLQ guarda `attempt` y `retries`). La guía de revisión y la PR lo explican en una línea.
+>
+> **Resultado en la parada 2 (2026-11-20):**
+>
+> - **S3, verificada** con la Celery instalada (5.7.0): `celery.utils.time.get_exponential_backoff_interval` hace `countdown = random.randrange(countdown + 1)` con `full_jitter`, así que puede dar 0 s; lo fija `test_retries.py`.
+> - El backoff propio (`task_queue/retries.py`) da 2–4, 4–6 y 8–10 s.
+> - En la integración con un worker real (`prefork`), las marcas de tiempo del log dan entre intentos **3,24 s, 5,37 s y 8,52 s**, frente a mínimos de 2, 4 y 8 s, y cada espera es mayor o igual que su `countdown_s`. La DLQ queda con `attempt=4`, `retries=3` y `max_retries=3`.
+> - Se reintentan `OperationalError`, `InterfaceError` y `TimeoutError` de SQLAlchemy. `SoftTimeLimitExceeded` y el resto de errores van directos a la DLQ (`time_limit`, `non_retryable`).
 
 - **Qué se reintenta:** solo errores transitorios. Los de la base que hoy dan `503 storage_unavailable` (`OperationalError`, `InterfaceError`, `TimeoutError` de SQLAlchemy, que incluyen la cancelación por `statement_timeout`). **No se reintenta** un error de programación o de datos (`ProgrammingError` por tabla sin migrar, `ValueError`, `KeyError`…) ni `SoftTimeLimitExceeded` (volvería a pasar), que van **directos a la DLQ** con su motivo (A9).
 - **Backoff:**
@@ -251,6 +258,14 @@ Si se prefiere que nada nuevo apunte a la demo sin una decisión explícita, la 
 ### A9 — Dead Letter Queue
 
 > **Estado: decidida por el usuario el 2026-11-20.** Opción A: `ops.task_dead_letters`, solo registro, sin cola de Celery. La migración en la demo, solo con la confirmación del usuario; hasta entonces, el fallo definitivo va al log.
+>
+> **Resultado en la parada 2 (2026-11-20):**
+>
+> - **Tabla:** `ops.task_dead_letters`, con `id`, `task_id` (UUID único), `task_name`, `attempt`, `retries`, `max_retries`, `reason`, `error_class`, `error_message` (≤ 2000), `task_kwargs` (JSONB), `queue`, `worker` y `failed_at`. Un `CHECK` exige `attempt = retries + 1`.
+> - **Migración:** `python -m task_queue.migrate [--dry-run] [--allow-demo]` (`--dry-run`, aplicar, «Nada que migrar» y RLS sin privilegios para `PUBLIC`). Funciona con `job_runner.migrate` **en los dos órdenes** sobre el mismo `ops`, comprobado con los tests contra PostgreSQL y con las dos CLI en el efímero.
+> - **Fallos al registrar:** con la tabla sin migrar, `status=dead_letter_not_stored cause=ProgrammingError`, sin esperar; con la base caída, un reintento a 1 s y después `cause=OperationalError`. Las dos líneas llevan todos los campos. Se vio con un worker real y desde el contenedor `worker` de Compose apuntando al efímero.
+> - **Límite duro de tiempo:** mata al proceso hijo, así que lo registra `DeadLetterRequest.on_timeout` desde el proceso principal del worker, que conoce los reintentos del mensaje.
+> - **Sin la demo:** no se hizo ninguna migración ni escritura en la demo.
 
 | Opción | Dónde | A favor | En contra |
 |---|---|---|---|
@@ -315,6 +330,13 @@ Si se prefiere que nada nuevo apunte a la demo sin una decisión explícita, la 
 ### A12 — Logs y redacción
 
 > **Estado: decidida por el usuario el 2026-11-20.** A y A: la redacción de `job_runner.redact` y un filtro en las trazas de Celery.
+>
+> **Resultado en la parada 2 (2026-11-20):**
+>
+> - **Redacción:** `task_queue/redaction.py` usa `job_runner.redact.redact` sin modificar `job_runner`. Añade como secretos extra `REDIS_URL`, `REDIS_PASSWORD` y `FLOWER_BASIC_AUTH` (y sus contraseñas). La imagen copia `job_runner/`.
+> - **Filtro:** va en los loggers `celery.app.trace`, `celery.worker.request` y `task_queue`. No se pone en todos para que la línea «Connected to `redis://:**@redis:6379/0`» de Celery siga siendo legible.
+> - **Fallo visible desde fuera:** el definitivo se relanza como `TaskFailedError(clase, mensaje redactado)`, que es lo único que guardan el result backend y Flower. Celery lo registra como «raised expected», sin traza.
+> - **`PYTHONPATH` de la imagen:** se añadió `/app/api`. Celery solo pone el directorio actual en `sys.path` mientras importa la app (`cwd_in_path`), y la clase base de las tareas, que importa `job_runner`, se resuelve después.
 
 - **Línea por ejecución** (señales de Celery: `task_prerun`, `task_postrun`, `task_retry`, `task_failure`), en el logger `task_queue`: `task_id=… task=… attempt=2/4 status=retry duration_ms=… error=OperationalError: …`. Estados: `started`, `success`, `retry`, `failure`, `dead_letter`.
 - **«Mensaje de error completo» frente a la redacción:**
@@ -401,7 +423,10 @@ Cada parada se verifica por separado y espera tu OK antes de la siguiente. Todo 
 
 1. **Redis, worker y Flower con una tarea trivial.** Dependencias (si se autorizan, A14), `services/task_queue/` con `celery_app.py`, configuración de A7 y una tarea `task_queue.ping`; `redis`, `worker` y `flower` en Compose; `.env.example`. **Verificación:** `docker compose config --quiet`; `docker compose up -d --build` con todo `healthy`; el log del worker conectado a `redis://redis:6379/0` (sin contraseña en el log); `celery call task_queue.ping` → `SUCCESS` visible en Flower (`127.0.0.1:5555`); `REDIS_URL` ausente en `ui`; `test_requirements_lock.py`; suite de `services/api` en la imagen si Windows bloquea el venv.
 2. **Reintentos, DLQ y migración.** Backoff de A8, `ops.task_dead_letters`, `task_queue.migrate`, repositorio, logs y redacción (A12). **Verificación:** unitarios sin Redis (función de backoff, clasificación de excepciones, manejador del fallo definitivo con una base SQLite, redacción, mapeo de estados); migración en el efímero (`--dry-run`, aplicar, segunda vez «nada que migrar», RLS y `REVOKE`, orden indiferente con `job_runner.migrate`); integración con Redis efímero y un worker real (`-P solo`): una tarea de prueba que falla registra 4 intentos con cuentas atrás crecientes (marcas de tiempo del log) y una fila en la DLQ; base caída al registrar → línea de log.
-3. **La operación, el 202 y `/tasks`.** Tarea `task_queue.telemetry_report`, `GET /telemetry/report` → 202, `GET /tasks/{id}`, A4, A10 y A11, `SPECS.md`. **Verificación:** tests de contrato (202 sin tocar la base, 422 sin tarea, 401, 404 de un id ajeno o inventado, mapeo de estados, 503 con Redis caído); con el stack aislado contra el efímero (500 k eventos): **202 en < 200 ms** medido con ráfagas y con `api.timing`, ciclo `pending → started → success` sondeado; A13 → log con los reintentos y fila en la DLQ (**fragmento de log para la PR**); con mensajes en cola, `docker compose stop api` no para el worker y los mensajes se procesan; con el worker parado, se encolan N, se reinicia Redis (AOF) y al arrancar el worker se procesan los N; `kill -9` del proceso hijo a mitad de tarea → el mensaje vuelve y termina.
+   **Receta de la integración (parada 2, 2026-11-20).** Contenedores de un solo uso y sin puertos en el host: `nexova-dev55-pg` (`postgres:17.6-alpine3.22`, rol `nexova_app` sin superusuario y base `nexova_test`) y `nexova-dev55-redis` (la imagen fijada de Redis, con `--network container:nexova-dev55-pg` y `--bind 127.0.0.1`), para que los dos sean `127.0.0.1`. Los tests, en la imagen de la API, con el repositorio en solo lectura:
+   `docker run --rm --network container:nexova-dev55-pg -v "<repo>:/repo:ro" -w /repo -e PYTHONPATH=/repo/services -e TASK_QUEUE_TEST_DATABASE_URL=postgresql://nexova_app:<pw>@127.0.0.1:5432/nexova_test -e TASK_QUEUE_TEST_REDIS_URL=redis://:<pw>@127.0.0.1:6379/10 --entrypoint python nexova-api:latest -m unittest discover -s services/task_queue/tests -t services`.
+   Para el `worker` de Compose, un override no versionado que solo cambia su `DATABASE_URL` al efímero, conectado a `nexova-net`; al terminar se vuelve a `docker compose up -d` sin el override.
+3. **La operación, el 202 y `/tasks`.** **La API encola a través de una función de `task_queue` (p. ej. `task_queue.client`), sin importar `celery` dentro de `services/api/app`: el test de planificadores de `job_runner` (`test_the_api_has_no_scheduler_inside_its_process`) no se modifica** (indicación del usuario, 2026-11-20). Tarea `task_queue.telemetry_report`, `GET /telemetry/report` → 202, `GET /tasks/{id}`, A4, A10 y A11, `SPECS.md`. **Verificación:** tests de contrato (202 sin tocar la base, 422 sin tarea, 401, 404 de un id ajeno o inventado, mapeo de estados, 503 con Redis caído); con el stack aislado contra el efímero (500 k eventos): **202 en < 200 ms** medido con ráfagas y con `api.timing`, ciclo `pending → started → success` sondeado; A13 → log con los reintentos y fila en la DLQ (**fragmento de log para la PR**); con mensajes en cola, `docker compose stop api` no para el worker y los mensajes se procesan; con el worker parado, se encolan N, se reinicia Redis (AOF) y al arrancar el worker se procesan los N; `kill -9` del proceso hijo a mitad de tarea → el mensaje vuelve y termina.
 4. **Frontend `/telemetry`** (A16). **Verificación:** la fila de `uis/backoffice` (`typegen`, `tsc`, `lint`, `build`, `node:test`, Jest) y el navegador contra el stack aislado: carga, «En cola»/«Calculando», resultado, fallo (A13), API parada, salir a mitad (sin sondeos colgados) y 375 px sin scroll horizontal.
 5. **Documentación y verificación final.** A15, la guía de revisión con la tabla de §9, la **captura de Flower** con una tarea completada y otra fallida (y la fila de la DLQ), todas las filas de validación que toca el cambio, el banco de memoria y el commit con tu OK. La etiqueta `async-tasks` se crea y se añade a la PR solo con tu confirmación (H13).
 

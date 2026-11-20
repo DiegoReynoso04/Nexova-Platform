@@ -34,6 +34,19 @@ WORKER_CONCURRENCY = 2
 WORKER_MAX_TASKS_PER_CHILD = 50
 CONNECT_TIMEOUT_SECONDS = 2
 
+# A8 (decididos por el usuario el 2026-11-20): `max_retries=3` literal, es decir,
+# 4 ejecuciones antes de la DLQ; cuenta atrás base·2^n + uniforme(0, base), nunca
+# por debajo de base·2^n (n = reintentos ya hechos).
+MAX_RETRIES = 3
+BACKOFF_BASE_SECONDS = 2
+BACKOFF_MAX_SECONDS = 60
+
+# A9 y A12: la DLQ y el texto del error.
+ERROR_MESSAGE_MAX_CHARS = 2000
+DEAD_LETTER_STATEMENT_TIMEOUT_MS = 5000
+DEAD_LETTER_RETRY_DELAY_SECONDS = 1.0
+DATABASE_CONNECT_TIMEOUT_SECONDS = 5
+
 
 class ConfigError(Exception):
     """Configuración inválida. El mensaje nombra la variable, nunca su valor."""

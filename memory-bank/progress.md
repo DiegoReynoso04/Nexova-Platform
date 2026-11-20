@@ -4,6 +4,33 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-20 — DEV-55, cola de tareas: F1, parada 2 (reintentos, DLQ y migración)
+
+**Estado: parada 2 hecha, verificada contra un Postgres y un Redis efímeros y aprobada por el usuario (2026-11-20); commit local sin push.** Rama `feature/async-task-queue`, sobre el commit de la parada 1 `d9e585b`. Ninguna migración ni escritura en la demo.
+
+- **Venv del host de `services/api`:** actualizado con `uv pip install --require-hashes -r services/api/requirements.txt` (nunca `uv sync`): celery 5.7.0, kombu, redis 8.1.0 y dateutil 2.9.0.post0. El Control de aplicaciones no lo bloqueó. Con ese venv: `pytest` 927 passed; `unittest` dio 724 con **1 error en la primera ejecución, no reproducido en las dos siguientes (OK)**. Solo se guardó la línea final, así que no se sabe qué test fue.
+- **Código (`services/task_queue/`):**
+  - `base.py` (`ReliableTask` como `task_cls`, más `DeadLetterRequest` para el límite duro);
+  - `retries.py`, `dead_letters.py`, `migrate.py`, `redaction.py`, `database.py`, `logs.py` y `errors.py`;
+  - en `config.py`, las constantes de A8/A9.
+- **Infraestructura:**
+  - `services/Dockerfile` copia `job_runner/` y añade `/app/api` al `PYTHONPATH`. Sin esto, el worker no arrancaba (`ModuleNotFoundError: job_runner`), porque Celery solo pone el directorio actual en `sys.path` al importar la app;
+  - en `docker-compose.yml`, el `worker` recibe `DATABASE_URL` (la demo) y monta `job_runner` en solo lectura, y Flower también lo monta;
+  - en `.env.example`, la nota de la `DATABASE_URL` del worker.
+- **Tests nuevos** (`services/task_queue/tests/`): `test_retries`, `test_redaction`, `test_dead_letters`, `test_reliable_task`, `test_migrate`, `test_postgres_integration` y `test_worker_integration`, más `support.py` e `integration_app.py` (solo tests; no entran en la imagen). **Ningún test existente cambia**: los de `/telemetry/report` y los de `job_runner` no se han tocado.
+- **Verificado (efímeros `nexova-dev55-pg` y `nexova-dev55-redis` en la misma red, sin puertos):**
+  - `task_queue` **83 OK, 0 omitidos**, en la imagen y con las dos variables de integración;
+  - S3 leído en la Celery instalada; backoff medido en el log de un worker real: 3,24, 5,37 y 8,52 s frente a mínimos de 2, 4 y 8;
+  - DLQ con `attempt=4`, `retries=3`, `max_retries=3`; `non_retryable`, `time_limit` blando y duro;
+  - tabla sin migrar → `dead_letter_not_stored cause=ProgrammingError`;
+  - las dos migraciones en los dos órdenes, también con las CLI;
+  - el `worker` de Compose con un override no versionado apuntando al efímero: tabla sin migrar → log, migración, registro guardado y base caída → `cause=OperationalError`; después, el stack normal reconstruido y el ping `SUCCESS`;
+  - regresiones: `test_reporting_architecture` + `test_requirements_lock` 20 OK, y `job_runner` (`test_architecture` 8 y `test_migrate` 13) OK sin cambios en su código.
+- **Para la parada 3 (decidido por el usuario):** la API encola a través de una función de `task_queue` (p. ej. `task_queue.client`), sin `celery` en `services/api/app`. El test de planificadores de `job_runner` no se modifica.
+- **Limpieza pendiente al cerrar la parada 3:** `nexova-dev55-pg` y `nexova-dev55-redis` siguen en marcha (sin puertos ni datos de la demo), para reutilizarlos.
+
+---
+
 ## 2026-11-20 — DEV-55, cola de tareas: F1, parada 1 (Redis, worker y Flower con una tarea trivial)
 
 **Estado: parada 1 hecha, verificada y aprobada por el usuario (2026-11-20); commit local sin push.** Rama `feature/async-task-queue`, sobre el commit de F0 `dd2f82b`.
@@ -25,7 +52,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - imágenes sin `.env`, tests, `.venv`, `data/` ni `__pycache__`, y sin secretos en `docker history`;
   - suites en la imagen: `task_queue` 24 OK; `services/api` con dateutil 2.9 `unittest` 724 OK y `pytest` 927 passed.
 - **Pendiente:**
-  - el venv del host de `services/api` no tiene Celery (no se ha actualizado);
+  - ~~el venv del host de `services/api` no tiene Celery~~ (*corregido el 2026-11-20: actualizado en la parada 2, ver la entrada de arriba*);
   - las filas de `AGENTS.md` §4 y `docs/local-development.md` van en la parada 5;
   - en la parada 3, `services/job_runner/tests/test_architecture.py` (`test_the_api_has_no_scheduler_inside_its_process`) prohíbe `celery` en `services/api/app/`.
 

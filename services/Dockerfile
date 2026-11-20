@@ -39,7 +39,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     # Paquetes del monorepo por ruta, sin instalarlos: instalarlos pediría
     # setuptools a PyPI (la imagen no lo trae) y, en desarrollo, una copia
     # instalada taparía el bind mount de packages/ (F4).
-    PYTHONPATH=/packages/shared:/packages/incident-analyzer:/pipelines
+    # /app/api (DEV-55): Celery solo añade el directorio actual a sys.path mientras
+    # importa la app (`celery.utils.imports.cwd_in_path`); la clase base de las tareas
+    # y sus importaciones (job_runner, telemetry) se resuelven después, sin él.
+    PYTHONPATH=/app/api:/packages/shared:/packages/incident-analyzer:/pipelines
 
 WORKDIR /app/api
 
@@ -65,6 +68,9 @@ COPY reporting ./reporting
 # Cola de tareas (DEV-55, A5): la API la importa para encolar y el worker la ejecuta
 # (`celery -A task_queue.celery_app worker`). Se importa como `task_queue`.
 COPY task_queue ./task_queue
+# job_runner (DEV-53): task_queue reutiliza su redacción de errores (A12) y las reglas
+# de DATABASE_URL y del esquema ops. Solo SQLAlchemy y la librería estándar.
+COPY job_runner ./job_runner
 
 # Usuario sin privilegios para el worker y Flower (`user: nexova` en Compose). La API
 # sigue como root: escribe en el bind mount de TinyDB (services/api/data) del host.
