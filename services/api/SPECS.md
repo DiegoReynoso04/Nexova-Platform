@@ -1072,5 +1072,4 @@ Ticket #DEV-55 (enunciado solo local en `contexts/dev-55/`). Análisis y decisio
 
 - **Configuración:** `REDIS_URL` (§7). En Compose, `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0` en el `.env`; el worker recibe además `DATABASE_URL`.
 - **Tests:** `tests/test_telemetry_report.py` (el contrato de §48 adaptado al 202: el resultado se lee de `/tasks`) y `tests/test_tasks_api.py`, con el cliente real de `task_queue` y dobles en memoria (`task_queue.memory`); los de la cola, en `services/task_queue/tests/`.
-- **Pendiente:** el backoffice (`/telemetry`) aún espera el 200 síncrono: lo adapta la parada 4 (A16).
-
+- **Frontend:** el backoffice (`/telemetry`) encola y sondea `GET /tasks/{id}` desde la parada 4 (A16; reglas en `uis/backoffice/CLAUDE.md`, «Reporte técnico»).

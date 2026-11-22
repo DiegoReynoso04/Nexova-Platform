@@ -396,7 +396,12 @@ Decisiones M1–M19 y su porqué en [`docs/telemetry/nightly-export-analysis.md`
   - **Pandas:** `errors.root_error` desenvuelve el `pandas.errors.DatabaseError` de `read_sql`, que tapaba el `OperationalError`.
   - **Compose:** la API monta `task_queue` y `job_runner`. Sin eso, su `--reload` cargó el `app/` nuevo contra la copia vieja de la imagen y la API del usuario quedó `unhealthy` hasta reconstruir. El worker monta además `services/telemetry` y `services/api/app` (modelo de la tabla).
   - **Contrato:** SPECS Parte J (§54–§58) y §4, §7, §41 y §48.
-  - **Backoffice:** `/telemetry` sigue esperando el 200 síncrono hasta la parada 4.
+  - **Backoffice:** ~~`/telemetry` sigue esperando el 200 síncrono hasta la parada 4~~ (*corregido el 2026-11-22: ya encola y sondea, ver la parada 4*).
+- **Parada 4 (frontend `/telemetry` y calentamiento):**
+  - **Backoffice:** `services/telemetry-report.service.ts` encola (`requestTelemetryReport`, 202) y lee la tarea (`getTelemetryReportTask`). La sesión de `hooks/use-telemetry-report.ts` sondea con esperas de 1/2/3 s y un tope de 10 min, y cancela al salir. La vista muestra «En cola», «Calculando», el resultado o un error con «Reintentar». Hay errores nuevos (`queue_unavailable`, `task_failed`, `task_expired`, `polling_timeout`), con sus textos en `lib/telemetry-report-format.ts`, y normalizadores nuevos (`normalizeTaskAccepted`, `normalizeTelemetryReportTask`). Sin dependencias nuevas.
+  - **API:** sin cambios en la parada 4. Se probó un calentamiento de conexiones en el lifespan y se retiró: efecto medido dentro del ruido. El calentamiento que sí se queda son las importaciones perezosas de Celery, en `TaskQueueClient.from_redis_url` (parada 3).
+  - **Compose:** `redis` tiene `restart: unless-stopped`, como el worker; antes, tras reiniciar Docker, el worker volvía `unhealthy` sin broker.
+  - **`next dev` y `127.0.0.1`:** bloquea sus recursos de desarrollo pedidos desde `127.0.0.1` (`allowedDevOrigins`). Para probar en el navegador hay que entrar por `localhost`.
 
 ### Plan de telemetría (diseño, ticket del 2026-11-01/02, rama `docs/telemetry-plan`; integrado en `main` con la PR #28, merge `8a23d17`, 2026-11-02)
 

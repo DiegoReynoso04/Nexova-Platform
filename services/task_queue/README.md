@@ -2,7 +2,7 @@
 
 Asynchronous task queue for Nexova (ticket DEV-55): Celery, with Redis as both broker and result backend. It is a **library**, like `services/job_runner` and `services/telemetry`: the API imports it to enqueue tasks and read their state, and the `worker` Compose service runs it as a separate process (`celery -A task_queue.celery_app worker`). It never imports FastAPI, the API's `app` package or Prefect (`tests/test_architecture.py`). It reuses `job_runner` for error redaction and the `DATABASE_URL` rules. Analysis and decisions A1–A16: [`docs/async-tasks/analysis.md`](../../docs/async-tasks/analysis.md).
 
-> **Status (F1, stop 3):** `GET /telemetry/report` enqueues `task_queue.telemetry_report` and answers `202`; `GET /tasks/{task_id}` gives its state and result (`services/api/SPECS.md` Part J). Every task gets retries with backoff, the dead letter queue and one log line per execution. The backoffice's `/telemetry` page is adapted in stop 4.
+> **Status (F1, stop 4):** `GET /telemetry/report` enqueues `task_queue.telemetry_report` and answers `202`; `GET /tasks/{task_id}` gives its state and result (`services/api/SPECS.md` Part J). Every task gets retries with backoff, the dead letter queue and one log line per execution. The backoffice's `/telemetry` page enqueues and polls since stop 4.
 
 | Module | What it does |
 |---|---|

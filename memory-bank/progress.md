@@ -4,9 +4,44 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-22 — DEV-55, cola de tareas: F1, parada 4 (frontend `/telemetry`), más el análisis de los picos del 202
+
+**Estado: parada 4 hecha, verificada en el navegador contra el stack aislado `nexova-dev55` y aprobada por el usuario (2026-11-22); commit local sin push.** Rama `feature/async-task-queue`, sobre `fc84b59` (parada 3). Nada contra la demo.
+
+- **Picos del 202 (petición del usuario):**
+  - **«4,8 s»:** era la primera petición de aplicación del proceso en el segundo reinicio, con la máquina lenta (en `sondeo-exito.txt`). Ahora está anotado en `mediciones-202.txt`.
+  - **Máximo de 295 ms:** no se reproduce. Con instrumentación temporal (fuera del repo), el único pico es una pausa del GC de generación 2 (59 ms); TinyDB y Redis nunca pasan de 15 ms. Mitigación posible sin aplicar: `gc.freeze()`.
+  - **Calentamiento en el lifespan:** se implementó y se midió: la primera petición tras recrear la API tardó 100, 60 y 71 ms con calentamiento y 71, 91 y 59 ms sin él (dentro del ruido). La ráfaga de 200 dio un p95 de 10,3 ms. **Retirado con sus 5 tests por decisión del usuario (2026-11-22):** no se mantiene código sin efecto medible. `gc.freeze()` también se descarta, sin aplicarlo.
+  - **A13 repetido:** sin SQL ni parámetros en el log, el result backend ni Flower.
+- **Frontend (`uis/backoffice` → `/telemetry`, A16):**
+  - servicio con encolado (202) y lectura de la tarea; el sondeo y la cancelación en la sesión del hook; vista con «En cola», «Calculando», resultado y error con «Reintentar»;
+  - textos de error movidos a `lib/telemetry-report-format.ts`; normalizadores nuevos; `CLAUDE.md` del backoffice actualizado;
+  - sin dependencias nuevas.
+- **Tests que cambian:**
+  - `tests/telemetry-report.test.mjs`: los 6 del normalizador del reporte no cambian. Los 8 del servicio pasan a `requestTelemetryReport` (el 200 síncrono ya no es el contrato; el 503 es `queue_unavailable`) y hay 6 nuevos de `getTelemetryReportTask`. Los del reducer pasan a «en cola / calculando / datos / error», más uno de recarga. Los de la sesión pasan a encolar y sondear, con esperas y reloj falsos: tope, `dispose` durante la espera, 404, `failure` y 503;
+  - `__tests__/utils/telemetry-report-format.test.ts`: 4 nuevos (textos);
+  - ~~en la API, `test_tasks_api.py`: 2 nuevos; en `task_queue`, `test_client.py`: 3 nuevos (calentamiento)~~ (*corregido el 2026-11-22: retirados con el calentamiento*).
+- **Verificado:**
+  - backoffice: `next typegen`, `tsc`, `lint`, `build`, `node:test` 675/675 y Jest 281/281;
+  - navegador (Edge headless por CDP, capturas y registro en `contexts/dev-55/evidencias/`):
+    - «En cola» → «Calculando» → resultado;
+    - fallo real A13;
+    - 503 al encolar y «Reintentar» tras el 503;
+    - 404 de una tarea caducada;
+    - API parada en pleno sondeo;
+    - 0 sondeos tras salir (recargando y navegando dentro de la app);
+    - 375 px sin scroll horizontal.
+  - No verificado en el navegador: el tope de 10 min (test con reloj falso).
+- **Otros cambios:**
+  - `redis` con `restart: unless-stopped`: tras un reinicio de Docker el worker volvía solo y quedaba `unhealthy`;
+  - se volvió a migrar `ops` en el efímero (la suite de integración lo deja borrado).
+- **Pendiente para la parada 5:** documentación (`docs/local-development.md`, `AGENTS.md` §4, docs de telemetría, guía de revisión), la captura de Flower y la limpieza del stack aislado y de los efímeros. El stack normal del usuario sigue parado desde el reinicio de Docker; no se ha tocado.
+
+---
+
 ## 2026-11-20 — DEV-55, cola de tareas: F1, parada 3 (la operación, el 202 y `/tasks`)
 
-**Estado: parada 3 hecha, verificada contra el stack aislado `nexova-dev55` (Postgres efímero con 500 049 eventos) y aprobada por el usuario (2026-11-22); commit local sin push.** Rama `feature/async-task-queue`, sobre `e624074` (parada 2). Nada contra la demo.
+**Estado: parada 3 hecha, verificada contra el stack aislado `nexova-dev55` (Postgres efímero con 500 049 eventos) y aprobada por el usuario (2026-11-22); commit local `fc84b59` sin push.** Rama `feature/async-task-queue`, sobre `e624074` (parada 2). Nada contra la demo.
 
 - **Código:**
   - `task_queue`:

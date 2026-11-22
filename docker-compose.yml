@@ -117,6 +117,9 @@ services:
     # rechaza escrituras antes que borrar mensajes de la cola. AOF en el volumen: la cola
     # sobrevive a un reinicio de Redis, no solo a la caída del worker.
     user: redis
+    # Como el worker: tras reiniciar Docker, el broker vuelve solo (sin esto, el worker
+    # volvía y quedaba `unhealthy` esperando a un Redis parado; visto el 2026-11-22).
+    restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?falta REDIS_PASSWORD en el .env de la raíz (ver .env.example)}
     command:

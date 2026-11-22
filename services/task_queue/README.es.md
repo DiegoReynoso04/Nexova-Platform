@@ -2,7 +2,7 @@
 
 Cola de tareas asíncronas de Nexova (ticket DEV-55): Celery, con Redis como broker y como result backend. Es una **biblioteca**, como `services/job_runner` y `services/telemetry`: la API la importa para encolar tareas y leer su estado, y el servicio `worker` de Compose la ejecuta como un proceso aparte (`celery -A task_queue.celery_app worker`). Nunca importa FastAPI, el paquete `app` de la API ni Prefect (`tests/test_architecture.py`). Reutiliza `job_runner` para la redacción de errores y las reglas de `DATABASE_URL`. Análisis y decisiones A1–A16: [`docs/async-tasks/analysis.md`](../../docs/async-tasks/analysis.md).
 
-> **Estado (F1, parada 3):** `GET /telemetry/report` encola `task_queue.telemetry_report` y responde `202`; `GET /tasks/{task_id}` da su estado y su resultado (`services/api/SPECS.md` Parte J). Toda tarea tiene reintentos con backoff, la dead letter queue y una línea de log por ejecución. La página `/telemetry` del backoffice se adapta en la parada 4.
+> **Estado (F1, parada 4):** `GET /telemetry/report` encola `task_queue.telemetry_report` y responde `202`; `GET /tasks/{task_id}` da su estado y su resultado (`services/api/SPECS.md` Parte J). Toda tarea tiene reintentos con backoff, la dead letter queue y una línea de log por ejecución. La página `/telemetry` del backoffice encola y sondea desde la parada 4.
 
 | Módulo | Qué hace |
 |---|---|

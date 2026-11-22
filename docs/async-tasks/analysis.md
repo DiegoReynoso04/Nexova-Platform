@@ -421,6 +421,30 @@ La tarea **completada** de la captura es un reporte normal; la **fallida**, la d
 ### A16 — Frontend (`uis/backoffice` → `/telemetry`)
 
 > **Estado: decidida por el usuario el 2026-11-20.** Opción A: sondeo con los estados «En cola» y «Calculando».
+>
+> **Resultado en la parada 4 (2026-11-22):**
+>
+> - **Código:** `/telemetry` encola y sondea `GET /tasks/{id}` (servicio → hook → vista; `unknown` solo en `normalizers.ts`, sin dependencias nuevas). Esperas de 1, 2 y 3 s, tope de 10 min, cancelación al salir y errores propios (503 al encolar, 404 de una tarea caducada, `failure` y el tope).
+> - **Navegador:** contra el stack aislado (Edge headless por CDP; capturas y registro en `contexts/dev-55/evidencias/`):
+>   - «En cola» → «Calculando» → resultado;
+>   - fallo real A13;
+>   - 503 con Redis parado y «Reintentar» al volver;
+>   - 404 de una tarea caducada;
+>   - API parada en pleno sondeo («Error del servidor»: el rewrite de `next dev` responde 500);
+>   - 0 sondeos tras salir de la página, recargando y navegando dentro de la app;
+>   - 375 px sin scroll horizontal en los estados medidos.
+> - **No verificado en el navegador:** el tope de 10 min (lo cubre un test con reloj falso).
+>
+> **Además, en la parada 4 (petición del usuario):**
+>
+> - **Calentamiento en el lifespan: medido y descartado** (decidido por el usuario el 2026-11-22). Se probó abrir, en un hilo y sin bloquear el arranque, la conexión con Redis, una del pool del broker y otra del backend.
+>   - **Primera petición del proceso tras recrear la API** (token generado en el contenedor, así que el 202 era de verdad la primera): 100, 60 y 71 ms con calentamiento; 71, 91 y 59 ms sin él. La diferencia queda dentro del ruido.
+>   - El peso en frío eran las importaciones perezosas de Celery, que `TaskQueueClient.from_redis_url` hace al crear el cliente desde la parada 3. Eso sí se queda.
+>   - El código y sus 5 tests se retiraron: no se mantiene código sin efecto medible.
+> - **`gc.freeze()`: descartado sin aplicarlo.**
+>   - **Qué causa el pico de 295 ms del 2026-11-20:** no se reprodujo. Con instrumentación temporal, en 800 peticiones el único pico apreciable fue una pausa del GC de generación 2 (59,4 ms), dentro de la publicación al broker. TinyDB y Redis nunca pasaron de 15 ms. Las ráfagas dieron p95 de 7,9–8,6 ms, y de 13,2 ms con dos reportes en curso.
+>   - **Por qué no se aplica:** un pico ocasional muy por debajo del criterio de 200 ms no justifica cambiar el comportamiento del recolector en todo el proceso de la API.
+> - **Confirmación de A13:** tras el arreglo de Pandas, ni el log, ni el result backend, ni Flower muestran SQL ni parámetros.
 
 | Opción | Qué |
 |---|---|
