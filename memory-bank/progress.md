@@ -6,7 +6,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-22 — DEV-55, cola de tareas: F1, parada 5 (documentación, Flower, verificación final y limpieza)
 
-**Estado: parada 5 hecha; F1 completa (paradas 1–5) en la rama `feature/async-task-queue`, sin commit de la parada 5, sin push ni PR hasta el OK del usuario.** Sobre `8678323` (parada 4). Nada contra la demo; el stack normal del usuario no se arrancó.
+**Estado: parada 5 hecha; F1 completa (paradas 1–5) en la rama `feature/async-task-queue`; commit de la parada 5 `4de13de`, en la PR #39 (abierta, etiqueta `async-tasks`).** *Corregido el 2026-11-22: antes decía «sin commit de la parada 5, sin push ni PR hasta el OK del usuario».* Sobre `8678323` (parada 4). Nada contra la demo; el stack normal del usuario no se arrancó.
 
 - **Documentación (A15):**
   - `docs/local-development.md`: variables de `.env` (`REDIS_PASSWORD`, `FLOWER_BASIC_AUTH`, `REDIS_URL`), §3.1 «El worker de la cola de tareas» (arrancar, parar, logs, reiniciar, `task_queue.ping`, Flower, qué pasa sin worker o sin Redis), filas de `redis`/`worker`/`flower` y problemas conocidos;
@@ -27,13 +27,13 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
   - migrar `ops.task_dead_letters` en la demo (`python -m task_queue.migrate --allow-demo`), **solo con la confirmación del usuario**; hasta entonces, un fallo definitivo queda solo en el log (`status=dead_letter_not_stored`);
   - `scripts/seed_volume.py inventory` roto desde que `unit_cost` es obligatorio (H14), en una tarea aparte;
   - el error intermitente de `unittest` de `services/api` visto en una parada anterior no se ha reproducido (749 OK en todas las corridas posteriores);
-  - push, PR y etiqueta `async-tasks`, con el OK del usuario.
+  - ~~push, PR y etiqueta `async-tasks`, con el OK del usuario.~~ *Corregido el 2026-11-22: hecho, PR #39 (abierta, etiqueta `async-tasks`).*
 
 ---
 
 ## 2026-11-22 — DEV-55, cola de tareas: F1, parada 4 (frontend `/telemetry`), más el análisis de los picos del 202
 
-**Estado: parada 4 hecha, verificada en el navegador contra el stack aislado `nexova-dev55` y aprobada por el usuario (2026-11-22); commit local sin push.** Rama `feature/async-task-queue`, sobre `fc84b59` (parada 3). Nada contra la demo.
+**Estado: parada 4 hecha, verificada en el navegador contra el stack aislado `nexova-dev55` y aprobada por el usuario (2026-11-22); commit `8678323`, en la PR #39 (abierta, etiqueta `async-tasks`).** *Corregido el 2026-11-22: antes decía «commit local sin push».* Rama `feature/async-task-queue`, sobre `fc84b59` (parada 3). Nada contra la demo.
 
 - **Picos del 202 (petición del usuario):**
   - **«4,8 s»:** era la primera petición de aplicación del proceso en el segundo reinicio, con la máquina lenta (en `sondeo-exito.txt`). Ahora está anotado en `mediciones-202.txt`.
@@ -68,7 +68,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-20 — DEV-55, cola de tareas: F1, parada 3 (la operación, el 202 y `/tasks`)
 
-**Estado: parada 3 hecha, verificada contra el stack aislado `nexova-dev55` (Postgres efímero con 500 049 eventos) y aprobada por el usuario (2026-11-22); commit local `fc84b59` sin push.** Rama `feature/async-task-queue`, sobre `e624074` (parada 2). Nada contra la demo.
+**Estado: parada 3 hecha, verificada contra el stack aislado `nexova-dev55` (Postgres efímero con 500 049 eventos) y aprobada por el usuario (2026-11-22); commit `fc84b59`, en la PR #39 (abierta, etiqueta `async-tasks`).** *Corregido el 2026-11-22: antes decía «commit local `fc84b59` sin push».* Rama `feature/async-task-queue`, sobre `e624074` (parada 2). Nada contra la demo.
 
 - **Código:**
   - `task_queue`:
@@ -115,7 +115,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-20 — DEV-55, cola de tareas: F1, parada 2 (reintentos, DLQ y migración)
 
-**Estado: parada 2 hecha, verificada contra un Postgres y un Redis efímeros y aprobada por el usuario (2026-11-20); commit local `e624074` sin push.** Rama `feature/async-task-queue`, sobre el commit de la parada 1 `d9e585b`. Ninguna migración ni escritura en la demo.
+**Estado: parada 2 hecha, verificada contra un Postgres y un Redis efímeros y aprobada por el usuario (2026-11-20); commit `e624074`, en la PR #39 (abierta, etiqueta `async-tasks`).** *Corregido el 2026-11-22: antes decía «commit local `e624074` sin push».* Rama `feature/async-task-queue`, sobre el commit de la parada 1 `d9e585b`. Ninguna migración ni escritura en la demo.
 
 - **Venv del host de `services/api`:** actualizado con `uv pip install --require-hashes -r services/api/requirements.txt` (nunca `uv sync`): celery 5.7.0, kombu, redis 8.1.0 y dateutil 2.9.0.post0. El Control de aplicaciones no lo bloqueó. Con ese venv: `pytest` 927 passed; `unittest` dio 724 con **1 error en la primera ejecución, no reproducido en las dos siguientes (OK)**. Solo se guardó la línea final, así que no se sabe qué test fue.
 - **Código (`services/task_queue/`):**
@@ -142,7 +142,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-20 — DEV-55, cola de tareas: F1, parada 1 (Redis, worker y Flower con una tarea trivial)
 
-**Estado: parada 1 hecha, verificada y aprobada por el usuario (2026-11-20); commit local sin push.** Rama `feature/async-task-queue`, sobre el commit de F0 `dd2f82b`.
+**Estado: parada 1 hecha, verificada y aprobada por el usuario (2026-11-20); commit `d9e585b`, en la PR #39 (abierta, etiqueta `async-tasks`).** *Corregido el 2026-11-22: antes decía «commit local sin push».* Rama `feature/async-task-queue`, sobre el commit de F0 `dd2f82b`.
 
 - **Dependencias (A14):**
   - `celery[redis]>=5.7,<5.8` y `redis>=6.4,<9` en `services/api`, y `flower>=2.2,<2.3` en el grupo `flower`, con `uv lock` (nunca `uv sync`);
@@ -169,7 +169,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ## 2026-11-18 — DEV-55, cola de tareas asíncronas (Redis + Celery): F0, análisis y decisiones
 
-**Estado: F0 hecha; decisiones A1–A16 tomadas por el usuario el 2026-11-20; commit de F0 en la rama (sin push).** Rama `feature/async-task-queue`, desde `main` en `5be61d3` (PR #38). Ticket #DEV-55, con el enunciado solo local en `contexts/dev-55/ticket-dev-55.md` (ignorado por git, comprobado con `git check-ignore -v`). Sin impacto técnico en `techContext.md`: solo documentación; ni código, ni dependencias, ni `docker-compose.yml`.
+**Estado: F0 hecha; decisiones A1–A16 tomadas por el usuario el 2026-11-20; commit de F0 `dd2f82b`, en la PR #39 (abierta, etiqueta `async-tasks`).** *Corregido el 2026-11-22: antes decía «commit de F0 en la rama (sin push)».* Rama `feature/async-task-queue`, desde `main` en `5be61d3` (PR #38). Ticket #DEV-55, con el enunciado solo local en `contexts/dev-55/ticket-dev-55.md` (ignorado por git, comprobado con `git check-ignore -v`). Sin impacto técnico en `techContext.md`: solo documentación; ni código, ni dependencias, ni `docker-compose.yml`.
 
 - **Entregable:** [`docs/async-tasks/analysis.md`](../docs/async-tasks/analysis.md): hallazgos H1–H16, medición, elección de la operación, decisiones A1–A16, suposiciones S1–S6, plan de F1 en 5 paradas y tabla de criterios.
 - **Medido contra un Postgres efímero y una API de medición aislados** (red propia, sin puertos en el host; el stack del usuario y la demo, sin tocar). `GET /telemetry/report` sin caché: 0,24 s con 10 k eventos, 1,7 s con 100 k y 8,3 s con 500 k. Con 4 en paralelo, ~30 s cada uno y picos de 3,2 s en `/auth/me`. `GET /inventory/orders`: 894 ms con 30 k órdenes (8,7 MB). `POST /api/incidents/analyze`: 81 ms con el CSV máximo de 1 MiB. `POST /reporting/pipeline-runs`: 35–84 ms y ya asíncrono con Prefect.
