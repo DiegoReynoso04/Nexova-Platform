@@ -24,6 +24,7 @@ from job_runner.redact import redact
 from sqlalchemy.exc import SQLAlchemyError
 
 from .config import ERROR_MESSAGE_MAX_CHARS
+from .errors import root_error
 
 QUEUE_SECRET_VARIABLES = ("REDIS_URL", "REDIS_PASSWORD", "FLOWER_BASIC_AUTH")
 REDACTED_LOGGERS = ("celery.app.trace", "celery.worker.request", "task_queue")
@@ -57,7 +58,12 @@ def redact_text(text: str, environ: Mapping[str, str] | None = None) -> str:
 
 
 def describe_failure(error: BaseException, environ: Mapping[str, str] | None = None) -> tuple[str, str]:
-    """`(clase, mensaje)` del fallo, listos para el log, la DLQ y el result backend."""
+    """`(clase, mensaje)` del fallo, listos para el log, la DLQ y el result backend.
+
+    Un error de SQLAlchemy envuelto (p. ej. por `pandas.read_sql`) se describe por el
+    original: solo sus clases, nunca la SQL ni los parámetros del envoltorio.
+    """
+    error = root_error(error)
     error_class = type(error).__name__
     if isinstance(error, SQLAlchemyError):
         origin = getattr(error, "orig", None)

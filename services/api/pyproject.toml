@@ -73,7 +73,7 @@ flower = [
 ]
 
 [tool.setuptools]
-packages = ["app", "app.auth", "app.core", "app.modules", "app.modules.incident_manager", "app.modules.incidents", "app.modules.inventory", "app.routes"]
+packages = ["app", "app.auth", "app.core", "app.modules", "app.modules.incident_manager", "app.modules.incidents", "app.modules.inventory", "app.modules.tasks", "app.routes"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

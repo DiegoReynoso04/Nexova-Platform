@@ -13,32 +13,43 @@ Límites: 50 eventos procesados por lote, 120 por minuto (`EventRateLimiter`) y
 
 El reporte sí exige token: expone actividad y errores, y su llamada es un `fetch`
 normal. Por eso la dependencia va en la ruta, y no al registrar este router.
+
+**Desde DEV-55 el reporte es asíncrono (A1–A4, A11):** la ruta valida y resuelve el
+periodo (422 como siempre, sin crear tarea), **encola** `task_queue.telemetry_report`
+con solo `start` y `end` y responde `202 {"task_id"}` con `Location: /tasks/<id>`. El
+cálculo con Pandas lo hace el worker, fuera de este proceso; el resultado, con la
+forma de siempre, llega por `GET /tasks/{id}`. La ruta no toca la base: el 202 no
+espera a Supabase. La caché de 60 s en memoria la sustituye la deduplicación por
+usuario de `task_queue` (A4): la misma combinación del mismo usuario en 60 s devuelve
+la misma tarea.
 """
 
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlmodel import Session
-from telemetry.analysis import all_metrics
+from task_queue.client import TaskQueueUnavailableError as QueueDownError
+from task_queue.names import TELEMETRY_REPORT_TASK
 
 from app.auth.dependencies import get_current_user
+from app.auth.models import UserInDB
 from app.auth.security import TokenClaims, read_token_claims
-from app.core.cache import CacheDep
+from app.core.errors import TaskQueueUnavailableError
 from app.modules.inventory.database import get_db
+from app.modules.tasks.dependencies import task_queue_client
+from app.modules.tasks.schemas import TaskAccepted
 from app.modules.telemetry.collector import EventRateLimiter, collect
-from app.modules.telemetry.report import ReportPeriod, cache_key, iso_utc, resolve_period
-from app.modules.telemetry.schemas import ReportMetrics, ReportPeriodRead, TelemetryBatch, TelemetryBatchResult, TelemetryReport
+from app.modules.telemetry.report import cache_key, iso_utc, resolve_period
+from app.modules.telemetry.schemas import TelemetryBatch, TelemetryBatchResult
 
 router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 
 # Plan §2.4: tope del body del colector, por debajo del límite general.
 TELEMETRY_MAX_BODY_BYTES = 64 * 1024
 TELEMETRY_EVENTS_PATH = "/telemetry/events"
-# Ticket del reporte: dentro de este TTL, la misma combinación no se recalcula.
-# Nada lo invalida: el colector escribe a menudo y limpiar anularía la caché.
-CACHE_NAMESPACE = "telemetry_report"
-CACHE_TTL_SECONDS = 60
+TASKS_PATH = "/tasks/{task_id}"
+NO_STORE = "no-store"
 
 
 def _claims(request: Request) -> TokenClaims | None:
@@ -65,33 +76,48 @@ def receive_events(
     return collect(batch.events, session=session, limiter=limiter, claims=_claims(request))
 
 
-def _build_report(session: Session, period: ReportPeriod) -> TelemetryReport:
-    # `session.connection()`, aquí dentro: un acierto de caché no abre conexión,
-    # y Pandas solo acepta una conexión de SQLAlchemy, no una `Session`.
-    metrics = all_metrics(session.connection(), period.start, period.end)
-    return TelemetryReport(
-        period=ReportPeriodRead(from_=iso_utc(period.start), to=iso_utc(period.end)),
-        metrics=ReportMetrics.model_validate(metrics),
-    )
+def dedupe_scope(start_date: datetime | None, end_date: datetime | None) -> str:
+    """Lo que pidió el cliente, en UTC (la antigua clave de caché): la ventana por defecto es `-|-`."""
+    start, end = cache_key(start_date, end_date)  # type: ignore[misc]
+    return f"{'-' if start is None else iso_utc(start)}|{'-' if end is None else iso_utc(end)}"
 
 
 @router.get(
     "/report",
-    response_model=TelemetryReport,
-    dependencies=[Depends(get_current_user)],
+    status_code=202,
+    response_model=TaskAccepted,
     responses={
+        202: {
+            "description": "Tarea encolada. Su estado y el reporte, en `GET /tasks/{task_id}`.",
+            "headers": {
+                "Location": {"description": "`/tasks/<task_id>`", "schema": {"type": "string"}},
+                "Cache-Control": {"description": NO_STORE, "schema": {"type": "string"}},
+            },
+        },
         401: {"description": "Sin token o con uno no válido."},
         422: {"description": "Fechas no válidas, `start_date` ≥ `end_date` o más de 90 días (`validation_error`)."},
-        503: {"description": "La base no responde (`storage_unavailable`)."},
+        503: {"description": "La cola no está configurada o Redis no responde (`task_queue_unavailable`)."},
     },
 )
 def read_report(
-    session: Annotated[Session, Depends(get_db)],
-    cache: CacheDep,
+    request: Request,
+    response: Response,
+    user: Annotated[UserInDB, Depends(get_current_user)],
     start_date: datetime | None = None,
     end_date: datetime | None = None,
-) -> TelemetryReport:
+) -> TaskAccepted:
     period = resolve_period(start_date, end_date, datetime.now(UTC))
-    return cache.get_or_set(
-        CACHE_NAMESPACE, cache_key(start_date, end_date), CACHE_TTL_SECONDS, lambda: _build_report(session, period)
-    )
+    client = task_queue_client(request)
+    try:
+        submission = client.submit(
+            TELEMETRY_REPORT_TASK,
+            # El mensaje solo lleva las dos fechas (C8): el worker lee la tabla.
+            {"start": iso_utc(period.start), "end": iso_utc(period.end)},
+            owner_id=str(user.id),
+            dedupe_scope=dedupe_scope(start_date, end_date),
+        )
+    except QueueDownError:
+        raise TaskQueueUnavailableError() from None
+    response.headers["Location"] = TASKS_PATH.format(task_id=submission.task_id)
+    response.headers["Cache-Control"] = NO_STORE
+    return TaskAccepted(task_id=submission.task_id)

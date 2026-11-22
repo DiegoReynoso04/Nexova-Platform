@@ -302,6 +302,15 @@ Si se prefiere que nada nuevo apunte a la demo sin una decisión explícita, la 
 ### A10 — `GET /tasks/{task_id}`
 
 > **Estado: decidida por el usuario el 2026-11-20.** Como se propone (propietario o admin, 404 en otro caso, `RETRY` → `started`), **con un añadido:** la clave de metadatos no puede caducar mientras la tarea siga en cola o en curso; con el worker caído más de 1 h, `/tasks/{id}` no debe dar 404 de una tarea viva. Cómo (renovarla al empezar o al terminar, o un TTL mayor que el del resultado) se propone en la parada 3.
+>
+> **Propuesta e implementación de la parada 3 (2026-11-20): un TTL de seguridad mientras la tarea vive y el del resultado al terminar.** Al encolar, la clave `nexova:task:<id>` lleva **7 días**; cuando la tarea termina (éxito, DLQ o límite duro), el worker lo baja a **3600 s**, el mismo `result_expires` con el que Celery guarda el resultado. Un reintento no la toca.
+>
+> - **Por qué no «renovarla al empezar»:** no protege la tarea que sigue **en cola** con el worker parado, que es justo el caso pedido. Nadie la toca hasta que un worker la coge, y con 1 h habría caducado.
+> - **Por qué no «un TTL mayor que el del resultado» a secas:** si es corto, el problema es el mismo con otra cifra; si es largo y fijo, la clave sobrevive horas o días al resultado y `/tasks/{id}` respondería «pendiente» a una tarea que ya terminó y cuyo resultado caducó.
+> - **Con lo implementado:** viva mientras exista el mensaje; caduca junto al resultado al terminar. Los 7 días solo acotan una clave huérfana (un mensaje perdido, muy improbable con `acks_late` + AOF).
+> - **Límite:** un worker parado más de 7 días con tareas en cola las vería pasar a 404.
+>
+> Comprobado en el stack aislado: TTL de 604 763 s con la tarea en cola y el worker parado, y de 3587 s tras terminar.
 
 - **Autenticación:** Bearer, cualquier rol (`get_current_user`). `Cache-Control: no-store`.
 - **Propiedad:** al encolar, la API guarda en Redis `nexova:task:<task_id>` → `{owner_id, task_name, enqueued_at}` con la misma caducidad que el resultado (3600 s). Solo el propietario o un `admin` ven la tarea; **a cualquier otro, 404** (no 403: así no se confirma que el id existe).
@@ -324,6 +333,14 @@ Si se prefiere que nada nuevo apunte a la demo sin una decisión explícita, la 
 ### A11 — Respuesta del endpoint al encolar
 
 > **Estado: decidida por el usuario el 2026-11-20.** Opción A: `202` con `Location`; `503 task_queue_unavailable` si Redis no responde.
+>
+> **Resultado en la parada 3 (2026-11-20, stack aislado con 500 049 eventos):**
+>
+> - **Ráfaga:** 50 peticiones, cada una con una tarea real y con dos reportes en curso en el worker. p50 16,4 ms y **p95 32,9 ms** en cliente; p50 12,8 ms y **p95 30,0 ms** en `api.timing`; máximo 295 ms.
+> - **Primera petición tras reiniciar:** 48–61 ms con la app ya calentada por otra petición, y 151 ms o 4,8 s cuando es la primera del proceso, justo tras el healthcheck. Ese coste es el arranque en frío del proceso (FastAPI y JWT perezosos, código en un bind mount de Windows), no la cola.
+> - **Calentamiento:** Celery cargaba su transporte, su backend y la clase del resultado al primer uso. `TaskQueueClient.from_redis_url` los carga ya al crear el cliente, sin conectar (un test lo comprueba sin red).
+> - **503 con el servicio `redis` parado:** tarda ~4 s, el tiempo en que el DNS de Docker deja de resolver `redis` (`getaddrinfo` medido en 4,04 y 3,88 s). redis-py 8.1 no reintenta por defecto.
+> - **Contexto de la máquina:** durante parte de la medición iba más lenta que en F0 (bucle de CPU en 1,94 s; el reporte de 500 k tardó 25–54 s, frente a 8–11 s cuando se recuperó).
 
 `202 {"task_id": "<uuid>"}` con `Location: /tasks/<uuid>` (recomendado: es lo habitual con 202 y no cambia el cuerpo que pide el ticket). Si Redis no responde: **503 `task_queue_unavailable`**, `detail` fijo y sin la URL. Se añaden a `SPECS.md` §4.
 
@@ -353,6 +370,10 @@ Si se prefiere que nada nuevo apunte a la demo sin una decisión explícita, la 
 ### A13 — Fallos controlados para la demostración
 
 > **Estado: decidida por el usuario el 2026-11-20.** Opción A: lock + `statement_timeout` en el efímero, sin interruptor en el código.
+>
+> **Resultado en la parada 3 (2026-11-20):** con `LOCK TABLE telemetry_events IN ACCESS EXCLUSIVE MODE` y `TASK_QUEUE_STATEMENT_TIMEOUT_MS=5000` solo en el stack aislado, la tarea hace 4 ejecuciones con `QueryCanceled`. Entre intentos pasan 2,19, 5,12 y 9,35 s (mínimos 2, 4 y 8) y la tarea termina en `failure` con su fila en la DLQ (`attempt=4`, `retries=3`). El sondeo ve `pending → started → failure`.
+>
+> **Hallazgo que corrigió el primer intento:** `pandas.read_sql` envuelve el error de SQLAlchemy en `pandas.errors.DatabaseError`, con la SQL y los parámetros en el mensaje. La cancelación salió como `non_retryable` y esa SQL llegó a la DLQ del efímero. Ahora `errors.root_error` sigue la cadena `__cause__`: se reintenta y se describe solo por las clases (`OperationalError (QueryCanceled)`). Lo cubren dos tests de regresión.
 
 | Opción | Cómo | En producción |
 |---|---|---|

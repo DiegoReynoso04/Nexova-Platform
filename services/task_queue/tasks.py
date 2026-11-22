@@ -1,18 +1,30 @@
-"""Tareas de la cola. Parada 1 de F1: solo `task_queue.ping`, para comprobar que el
-worker está conectado al broker antes de convertir ningún endpoint.
+"""Tareas del worker. Los nombres son explícitos (`names.py`): la API las envía por
+nombre (`client.TaskQueueClient`), sin importar este módulo.
 
-Los nombres son explícitos (`name=`): la API envía las tareas por nombre
-(`send_task`), sin importar este módulo.
+Cada mensaje lleva solo referencias (C8): `task_queue.telemetry_report` recibe
+`start` y `end` (dos fechas ISO); el worker lee `telemetry_events` él mismo.
 """
 
 from __future__ import annotations
 
-from .celery_app import app
+from typing import Any
 
-PING_TASK = "task_queue.ping"
+from .celery_app import app
+from .database import get_engine
+from .names import PING_TASK, TELEMETRY_REPORT_TASK
+
+__all__ = ["PING_TASK", "TELEMETRY_REPORT_TASK", "ping", "telemetry_report"]
 
 
 @app.task(name=PING_TASK)
 def ping() -> str:
     """Tarea trivial: responde `pong`. Sin argumentos, sin base de datos."""
     return "pong"
+
+
+@app.task(name=TELEMETRY_REPORT_TASK)
+def telemetry_report(start: str, end: str) -> dict[str, Any]:
+    """`GET /telemetry/report` (A1): las 5 métricas técnicas del periodo `[start, end)`."""
+    from .reports import build_telemetry_report
+
+    return build_telemetry_report(get_engine(), start, end)

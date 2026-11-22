@@ -4,7 +4,7 @@
 
 1. línea `status=started` con el intento (`attempt=n/4`);
 2. si la tarea termina: línea `status=success` con la duración;
-3. si falla con un error transitorio (`errors.RETRYABLE_EXCEPTIONS`) y quedan
+3. si falla con un error transitorio (`errors.is_retryable`, también envuelto) y quedan
    reintentos: línea `status=retry` con la cuenta atrás de `retries.backoff_countdown`
    y `self.retry(...)` con una excepción ya redactada (`TaskFailedError`);
 4. si no: fallo definitivo. Línea `status=dead_letter` (ERROR) con el error
@@ -17,6 +17,9 @@
 El **límite duro** (`task_time_limit`) mata el proceso hijo, así que no pasa por
 `__call__`: lo registra `DeadLetterRequest.on_timeout` en el proceso principal del
 worker, que sí conoce los reintentos del mensaje.
+
+Al terminar (éxito, DLQ o límite duro), los metadatos de la tarea (A10,
+`metadata.py`) pasan a caducar con su resultado. Un reintento no los toca.
 """
 
 from __future__ import annotations
@@ -33,8 +36,9 @@ from celery.worker.request import Request
 
 from .config import MAX_RETRIES
 from .dead_letters import DeadLetter, record_dead_letter
-from .errors import RETRYABLE_EXCEPTIONS, DeadLetterReason, TaskFailedError
+from .errors import DeadLetterReason, TaskFailedError, is_retryable
 from .logs import log_task
+from .metadata import finish_metadata
 from .redaction import describe_failure, install_redacting_filter
 from .retries import backoff_countdown
 
@@ -87,6 +91,7 @@ class DeadLetterRequest(Request):
             error=message,
         )
         record_dead_letter(letter)
+        finish_metadata(self.id)
 
 
 class ReliableTask(Task):
@@ -94,8 +99,9 @@ class ReliableTask(Task):
     Request = "task_queue.base:DeadLetterRequest"
     # Fallos esperados: Celery los registra sin traza; el detalle está en nuestra línea.
     throws = (TaskFailedError,)
-    #: Inyectable en los tests (SQLite o un registro en memoria).
+    #: Inyectables en los tests (SQLite o un registro en memoria).
     dead_letter_recorder = staticmethod(record_dead_letter)
+    metadata_finisher = staticmethod(finish_metadata)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         request = self.request
@@ -110,7 +116,7 @@ class ReliableTask(Task):
             raise
         except Exception as error:
             error_class, message = describe_failure(error)
-            if isinstance(error, RETRYABLE_EXCEPTIONS) and retries < self.max_retries:
+            if is_retryable(error) and retries < self.max_retries:
                 countdown = backoff_countdown(retries)
                 log_task(
                     logging.WARNING,
@@ -149,13 +155,15 @@ class ReliableTask(Task):
                     worker=request.hostname,
                 )
             )
+            self.metadata_finisher(request.id)
             raise TaskFailedError(error_class, message) from None
         log_task(logging.INFO, **common, status="success", duration_ms=_ms(started))
+        self.metadata_finisher(request.id)
         return result
 
     def _reason(self, error: BaseException) -> DeadLetterReason:
         if isinstance(error, SoftTimeLimitExceeded):
             return DeadLetterReason.TIME_LIMIT
-        if isinstance(error, RETRYABLE_EXCEPTIONS):
+        if is_retryable(error):
             return DeadLetterReason.RETRIES_EXHAUSTED
         return DeadLetterReason.NON_RETRYABLE

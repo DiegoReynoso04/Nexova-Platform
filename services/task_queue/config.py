@@ -47,6 +47,28 @@ DEAD_LETTER_STATEMENT_TIMEOUT_MS = 5000
 DEAD_LETTER_RETRY_DELAY_SECONDS = 1.0
 DATABASE_CONNECT_TIMEOUT_SECONDS = 5
 
+# A7 y A13: `statement_timeout` de las consultas de las tareas, por debajo del límite
+# blando (120 s). Se puede bajar con TASK_QUEUE_STATEMENT_TIMEOUT_MS (en la demostración
+# de A13, contra el efímero, a pocos segundos); nunca subir por encima del límite blando.
+STATEMENT_TIMEOUT_VARIABLE = "TASK_QUEUE_STATEMENT_TIMEOUT_MS"
+DEFAULT_STATEMENT_TIMEOUT_MS = 110_000
+
+# A4 y A10: deduplicación por usuario y metadatos de propiedad de cada tarea.
+DEDUPE_TTL_SECONDS = 60
+# Mientras la tarea está en cola o en curso, sus metadatos llevan este TTL de seguridad
+# (7 días); al terminar, el worker lo baja a RESULT_EXPIRES_SECONDS, el mismo del resultado.
+METADATA_SAFETY_TTL_SECONDS = 7 * 24 * 3600
+
+
+def statement_timeout_ms(environ: Mapping[str, str] | None = None) -> int:
+    environ = os.environ if environ is None else environ
+    value = (environ.get(STATEMENT_TIMEOUT_VARIABLE) or "").strip()
+    if not value:
+        return DEFAULT_STATEMENT_TIMEOUT_MS
+    if not value.isdigit() or not 1 <= int(value) <= SOFT_TIME_LIMIT_SECONDS * 1000:
+        raise ConfigError(f"{STATEMENT_TIMEOUT_VARIABLE} must be an integer between 1 and {SOFT_TIME_LIMIT_SECONDS * 1000}")
+    return int(value)
+
 
 class ConfigError(Exception):
     """Configuración inválida. El mensaje nombra la variable, nunca su valor."""

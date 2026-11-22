@@ -4,9 +4,56 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-20 — DEV-55, cola de tareas: F1, parada 3 (la operación, el 202 y `/tasks`)
+
+**Estado: parada 3 hecha, verificada contra el stack aislado `nexova-dev55` (Postgres efímero con 500 049 eventos) y aprobada por el usuario (2026-11-22); commit local sin push.** Rama `feature/async-task-queue`, sobre `e624074` (parada 2). Nada contra la demo.
+
+- **Código:**
+  - `task_queue`:
+    - módulos nuevos: `client.py` (productor), `metadata.py` (A10), `names.py`, `factory.py`, `reports.py` (la tarea) y `memory.py` (dobles para tests);
+    - `tasks.telemetry_report(start, end)`;
+    - cierre de metadatos al terminar, en `base.py`;
+    - `errors.root_error` (desenvuelve el `DatabaseError` de Pandas).
+  - API:
+    - `app/modules/tasks/` (`GET /tasks/{task_id}`, esquemas y dependencia);
+    - `GET /telemetry/report` → 202;
+    - `REDIS_URL` opcional en `Settings`;
+    - errores `task_queue_unavailable` y `task_not_found`;
+    - la caché `telemetry_report` se retira.
+  - Compose: la API monta `task_queue` y `job_runner`; el worker monta `services/telemetry` y `services/api/app`.
+- **A10 (elegido):** 7 días de TTL de seguridad mientras la tarea está en cola o en curso, y 3600 s (los del resultado) al terminar. Comprobado: 604 763 s en cola con el worker parado y 3587 s tras terminar.
+- **Tests que cambian:**
+  - `test_telemetry_report.py` se adapta al 202, y ninguno se borra sin sustituto: el resultado se lee de `/tasks`, las 7 de caché pasan a deduplicación, «un fallo no se cachea» pasa a «una tarea fallida no se reutiliza» y «un 422 no deja caché» pasa a «un 422 no crea tarea»;
+  - `test_serialization.py` pasa de 37 a 38 endpoints;
+  - en `task_queue`, `test_reliable_task.py` intercepta el cierre de metadatos y se separa en una base común.
+- **Tests nuevos:** `test_tasks_api.py`; en `task_queue`, `test_client.py` y `test_reports.py`, más los tests de regresión del envoltorio de Pandas.
+- **Verificado:**
+  - `task_queue`: 113 OK y 0 omitidos en la imagen, con integración;
+  - `services/api`: `unittest -v` 749 OK dos veces, **sin el error intermitente** (`contexts/dev-55/evidencias/api-unittest-v.txt`); `pytest` 952 passed; el test de planificadores de `job_runner` pasa sin cambios;
+  - en el stack aislado:
+    - el 202 con p95 de 32,9 ms (cliente) y 30,0 ms (`api.timing`) en una ráfaga de 50, con dos reportes en curso;
+    - los ciclos `pending → started → success` y `pending → started → failure` (A13), este con 4 ejecuciones, esperas de 2,19, 5,12 y 9,35 s y la fila en la DLQ;
+    - 404 para un id ajeno, inventado o mal formado;
+    - 503 con Redis parado (~4 s, el DNS de Docker);
+    - `LRANGE` con solo `start` y `end` (1 117 bytes);
+    - Redis reiniciado con AOF: la cola se conserva (5 → 5);
+    - `docker compose stop api` con 5 en cola: el worker los termina todos;
+    - `kill -9` de un hijo: `WorkerLostError`, el mensaje se reentrega y la tarea acaba en `success`.
+  - Evidencias en `contexts/dev-55/evidencias/` (ignorada).
+- **Hallazgos y arreglos de esta parada:**
+  1. `pandas.read_sql` envuelve el `OperationalError`: no se reintentaba y la SQL llegaba a la DLQ del efímero. Arreglado con `root_error`.
+  2. Celery cargaba módulos perezosos en el primer 202: ahora se cargan al crear el cliente, sin red.
+  3. La API del stack normal del usuario quedó `unhealthy` un rato (su `--reload` cargó `app/` nuevo sin `task_queue.client`). Arreglado montando `task_queue` y `job_runner` en la API y con `docker compose up -d --build`; vuelve a estar `healthy`.
+- **Pendiente:**
+  - **`/telemetry` del backoffice espera aún el 200 síncrono:** lo adapta la parada 4 (A16). Mientras tanto, abrirlo en el stack normal encola un reporte que el worker calcula contra la demo (solo `SELECT`, como hacía la API);
+  - documentación de telemetría (`docs/telemetry/report-*`), `AGENTS.md` §4 y `docs/local-development.md` en la parada 5;
+  - el stack aislado `nexova-dev55` y los efímeros siguen en marcha para la parada 4.
+
+---
+
 ## 2026-11-20 — DEV-55, cola de tareas: F1, parada 2 (reintentos, DLQ y migración)
 
-**Estado: parada 2 hecha, verificada contra un Postgres y un Redis efímeros y aprobada por el usuario (2026-11-20); commit local sin push.** Rama `feature/async-task-queue`, sobre el commit de la parada 1 `d9e585b`. Ninguna migración ni escritura en la demo.
+**Estado: parada 2 hecha, verificada contra un Postgres y un Redis efímeros y aprobada por el usuario (2026-11-20); commit local `e624074` sin push.** Rama `feature/async-task-queue`, sobre el commit de la parada 1 `d9e585b`. Ninguna migración ni escritura en la demo.
 
 - **Venv del host de `services/api`:** actualizado con `uv pip install --require-hashes -r services/api/requirements.txt` (nunca `uv sync`): celery 5.7.0, kombu, redis 8.1.0 y dateutil 2.9.0.post0. El Control de aplicaciones no lo bloqueó. Con ese venv: `pytest` 927 passed; `unittest` dio 724 con **1 error en la primera ejecución, no reproducido en las dos siguientes (OK)**. Solo se guardó la línea final, así que no se sabe qué test fue.
 - **Código (`services/task_queue/`):**

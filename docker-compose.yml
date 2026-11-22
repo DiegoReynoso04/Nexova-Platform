@@ -46,6 +46,11 @@ services:
       - ./services/api/app:/app/api/app
       - ./services/telemetry:/app/api/telemetry
       - ./services/reporting:/app/api/reporting
+      # Cola de tareas (DEV-55): la API importa task_queue.client, que usa job_runner.
+      # Montados como el resto: sin ellos, --reload cargaría app/ nuevo contra la copia
+      # de la imagen.
+      - ./services/task_queue:/app/api/task_queue
+      - ./services/job_runner:/app/api/job_runner
       # Solo los dos archivos del disparo, como en la imagen.
       - ./data/pipelines/business_performance/__init__.py:/pipelines/business_performance/__init__.py
       - ./data/pipelines/business_performance/trigger.py:/pipelines/business_performance/trigger.py
@@ -159,9 +164,12 @@ services:
       TZ: UTC
     command: [celery, -A, task_queue.celery_app, worker, --loglevel=INFO, "--hostname=worker@%h"]
     volumes:
-      # Solo los paquetes que usa, en solo lectura, sobre la copia de la imagen.
+      # Solo los paquetes que usa, en solo lectura, sobre la copia de la imagen. El
+      # reporte (parada 3) usa services/telemetry y el modelo de la tabla de app/.
       - ./services/task_queue:/app/api/task_queue:ro
       - ./services/job_runner:/app/api/job_runner:ro
+      - ./services/telemetry:/app/api/telemetry:ro
+      - ./services/api/app:/app/api/app:ro
     init: true
     restart: unless-stopped
     # Mayor que task_time_limit (150 s): la parada en caliente deja terminar la tarea en curso.

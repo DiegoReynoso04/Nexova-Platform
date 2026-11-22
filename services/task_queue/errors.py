@@ -13,10 +13,32 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import InterfaceError, OperationalError, SQLAlchemyError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (OperationalError, InterfaceError, PoolTimeoutError)
+
+
+def root_error(error: BaseException) -> BaseException:
+    """El error de SQLAlchemy que hay debajo de `error`, si lo hay; si no, `error`.
+
+    `pandas.read_sql` envuelve los errores de SQLAlchemy en su `pandas.errors.DatabaseError`
+    (`raise DatabaseError(f"Execution failed on sql '...': {exc}") from exc`), con la SQL y
+    sus parámetros en el mensaje. Sin desenvolverlo, una cancelación por `statement_timeout`
+    no se reintentaría y la SQL llegaría al log y a la DLQ (hallazgo de la parada 3).
+    """
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        if isinstance(current, SQLAlchemyError):
+            return current
+        seen.add(id(current))
+        current = current.__cause__
+    return error
+
+
+def is_retryable(error: BaseException) -> bool:
+    return isinstance(root_error(error), RETRYABLE_EXCEPTIONS)
 
 
 class DeadLetterReason(StrEnum):

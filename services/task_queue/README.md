@@ -2,12 +2,18 @@
 
 Asynchronous task queue for Nexova (ticket DEV-55): Celery, with Redis as both broker and result backend. It is a **library**, like `services/job_runner` and `services/telemetry`: the API imports it to enqueue tasks and read their state, and the `worker` Compose service runs it as a separate process (`celery -A task_queue.celery_app worker`). It never imports FastAPI, the API's `app` package or Prefect (`tests/test_architecture.py`). It reuses `job_runner` for error redaction and the `DATABASE_URL` rules. Analysis and decisions A1–A16: [`docs/async-tasks/analysis.md`](../../docs/async-tasks/analysis.md).
 
-> **Status (F1, stop 2):** Redis, worker and Flower run in Docker; every task gets retries with backoff, the dead letter queue and one log line per execution. The converted endpoint (`GET /telemetry/report`) comes in stop 3.
+> **Status (F1, stop 3):** `GET /telemetry/report` enqueues `task_queue.telemetry_report` and answers `202`; `GET /tasks/{task_id}` gives its state and result (`services/api/SPECS.md` Part J). Every task gets retries with backoff, the dead letter queue and one log line per execution. The backoffice's `/telemetry` page is adapted in stop 4.
 
 | Module | What it does |
 |---|---|
 | `config.py` | `REDIS_URL` (broker on its database, results on the next one; never repeated in an error or `repr`), the Celery settings of A7 and the constants of A8/A9 |
-| `celery_app.py` | `create_app(settings)` (no I/O) and the module-level `app` used by the worker and Flower. `task_cls` is `base.ReliableTask` |
+| `factory.py` | `create_app(settings)` (no I/O, `task_cls` = `base.ReliableTask`) |
+| `celery_app.py` | The module-level `app` of the worker and Flower (reads `REDIS_URL` on import). The API never imports it |
+| `client.py` | **The API's only door to the queue** (producer): `TaskQueueClient.submit` (dedupe per user for 60 s, metadata saved before publishing, a message with only the given references) and `status` (owner or admin, else `None`; Celery's 6 states mapped to `pending`/`started`/`success`/`failure`, `RETRY` → `started`). Redis or broker down → `TaskQueueUnavailableError`. `from_redis_url` loads Celery's lazy modules without connecting |
+| `metadata.py` | `nexova:task:<id>` (owner, task, time) and `nexova:dedupe:…` in Redis. Metadata keep a 7-day safety TTL while queued or running; when the task ends, the worker lowers it to the result's 3600 s (A10) |
+| `names.py` | Task names shared by the API and the worker |
+| `reports.py` | `build_telemetry_report(engine, start, end)`: the 5 metrics of `services/telemetry/analysis.py` for `[start, end)`, in a transaction with `SET LOCAL statement_timeout` (`TASK_QUEUE_STATEMENT_TIMEOUT_MS`, default 110 000) |
+| `memory.py` | In-memory doubles for tests (`MemoryStore`, `EagerBackend`); not used in production |
 | `base.py` | `ReliableTask`: logs `started`; on a transient error (`errors.RETRYABLE_EXCEPTIONS`: SQLAlchemy `OperationalError`, `InterfaceError`, `TimeoutError`) retries with `retries.backoff_countdown`; otherwise, or after `max_retries=3` (4 executions), logs `dead_letter`, records the row and raises `TaskFailedError` (redacted). `DeadLetterRequest` records hard time limits from the worker's main process |
 | `retries.py` | `base · 2^n + uniform(0, base)`, base 2 s: 2–4, 4–6 and 8–10 s. Never below `base · 2^n` (Celery's own full jitter can return 0 s) |
 | `dead_letters.py` | `ops.task_dead_letters` (`attempt` = `retries` + 1, unique `task_id`), `DeadLetterRepository` and `record_dead_letter`: one short retry, then an `ERROR` line with every field (`status=dead_letter_not_stored`) if the database is down or the table is missing |
@@ -15,7 +21,8 @@ Asynchronous task queue for Nexova (ticket DEV-55): Celery, with Redis as both b
 | `database.py` | `DATABASE_URL` from the environment only, one `NullPool` engine per process, `SET LOCAL statement_timeout` per transaction |
 | `logs.py` | `task_id=… task=… attempt=2/4 status=retry duration_ms=… countdown_s=… error="…"` |
 | `migrate.py` | `python -m task_queue.migrate [--dry-run] [--allow-demo]` (from `services/`) |
-| `tasks.py` | Tasks, registered with explicit names. Today only `task_queue.ping` → `"pong"` |
+| `tasks.py` | Tasks, registered with explicit names: `task_queue.ping` → `"pong"` and `task_queue.telemetry_report(start, end)` → `{"period", "metrics"}` |
+| `errors.py` | Retryable errors (also when wrapped, e.g. by `pandas.read_sql`), `TaskFailedError` and the dead letter reasons |
 
 ## Running it
 

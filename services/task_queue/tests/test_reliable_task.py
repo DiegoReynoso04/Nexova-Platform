@@ -26,14 +26,19 @@ def transient():
     return OperationalError("SELECT 1", {}, Exception(f"could not connect to {SECRET_URL}"))
 
 
-class ReliableTaskTests(unittest.TestCase):
+class ReliableTaskCase(unittest.TestCase):
     def setUp(self):
         self.app = create_app(TaskQueueSettings.from_redis_url("redis://localhost:6399/0"), include=())
         self.app.conf.task_store_eager_result = False
         self.letters = []
         self.countdowns = []
         self.executions = []
+        self.finished = []
         patcher = mock.patch.object(base.ReliableTask, "dead_letter_recorder", staticmethod(self.letters.append))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # Parada 3 (A10): al terminar, la tarea alinea el TTL de sus metadatos; aquí, sin Redis.
+        patcher = mock.patch.object(base.ReliableTask, "metadata_finisher", staticmethod(self.finished.append))
         patcher.start()
         self.addCleanup(patcher.stop)
         real = base.backoff_countdown
@@ -62,6 +67,8 @@ class ReliableTaskTests(unittest.TestCase):
             result = task.apply(kwargs=kwargs, task_id="5c2d0f0e-2c55-4f53-9a43-6f0d9b1c7e10")
         return result, [line.split(":", 2)[2] for line in logs.output]
 
+
+class ReliableTaskTests(ReliableTaskCase):
     def test_every_task_is_reliable(self):
         task = self.task(lambda self: "ok")
         self.assertIsInstance(task._get_current_object(), base.ReliableTask)
@@ -95,6 +102,24 @@ class ReliableTaskTests(unittest.TestCase):
         self.assertEqual(statuses, ["started", "retry", "started", "retry", "started", "retry", "started", "dead_letter"])
         self.assertIn("attempt=4/4 status=dead_letter", lines[-1])
         self.assertIn("countdown_s=", lines[1])
+
+    def test_a_transient_error_wrapped_by_pandas_is_retried_and_described_without_sql(self):
+        """Parada 3 (A13 real): `pandas.read_sql` envuelve la cancelación por `statement_timeout`."""
+        from pandas.errors import DatabaseError
+
+        def body(self):
+            try:
+                raise transient()
+            except OperationalError as exc:
+                raise DatabaseError(f"Execution failed on sql 'SELECT * FROM telemetry_events': {exc}") from exc
+
+        _, lines = self.run_task(self.task(body))
+        self.assertEqual(self.executions, [0, 1, 2, 3])
+        [letter] = self.letters
+        self.assertEqual((letter.attempt, str(letter.reason), letter.error_class), (4, "retries_exhausted", "OperationalError"))
+        self.assertEqual(letter.error_message, "OperationalError (Exception)")
+        for line in lines:
+            self.assertNotIn("SELECT", line)
 
     def test_transient_then_success_does_not_reach_the_dlq(self):
         def body(self):
@@ -143,6 +168,31 @@ class ReliableTaskTests(unittest.TestCase):
         result, _ = self.run_task(self.task(lambda self: (_ for _ in ()).throw(transient())))
         self.assertIsInstance(result.result, TaskFailedError)
         self.assertEqual(result.result.args, ("OperationalError", "OperationalError (Exception)"))
+
+
+class MetadataFinishTests(ReliableTaskCase):
+    """A10: los metadatos caducan con el resultado solo cuando la tarea termina, nunca en un reintento."""
+
+    def test_success_finishes_once(self):
+        self.run_task(self.task(lambda self: "ok"))
+        self.assertEqual(self.finished, ["5c2d0f0e-2c55-4f53-9a43-6f0d9b1c7e10"])
+
+    def test_retries_do_not_finish_and_the_dead_letter_does(self):
+        def body(self):
+            raise transient()
+
+        self.run_task(self.task(body))
+        self.assertEqual(len(self.executions), 4)
+        self.assertEqual(len(self.finished), 1)
+
+    def test_transient_then_success_finishes_only_at_the_end(self):
+        def body(self):
+            if self.request.retries < 1:
+                raise transient()
+            return "ok"
+
+        self.run_task(self.task(body))
+        self.assertEqual(len(self.finished), 1)
 
 
 class TaskKwargsTests(unittest.TestCase):

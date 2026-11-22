@@ -56,7 +56,8 @@ Columna *Auth*: 🔓 pública · 🔒 JWT válido · 👤 propio usuario o admin
 | `POST` | `/inventory/orders/outbound` | 🔒 | Registra una asignación o un consumo (201); 400 `insufficient_stock` si supera el stock |
 | `GET` | `/inventory/orders` | 🔒 | Entradas y salidas con el activo embebido, de la más reciente a la más antigua |
 | `POST` | `/telemetry/events` | 🔓 | Colector de telemetría: valida cada evento por separado, guarda los válidos en `telemetry_events` con un solo insert y responde `200 {"received", "stored", "rejected"}` (`SPECS.md` Parte H) |
-| `GET` | `/telemetry/report` | 🔒 | Métricas técnicas de la telemetría (Pandas), con `start_date` y `end_date` opcionales; 7 días por defecto y caché de 60 s (`SPECS.md` §48) |
+| `GET` | `/telemetry/report` | 🔒 | Métricas técnicas de la telemetría (Pandas), con `start_date` y `end_date` opcionales; 7 días por defecto. **Asíncrono desde DEV-55:** encola la tarea y responde `202 {"task_id"}` con `Location`; el reporte llega por `/tasks/{task_id}` (`SPECS.md` §48 y Parte J) |
+| `GET` | `/tasks/{task_id}` | 🔒 | Estado (`pending`, `started`, `success`, `failure`) y resultado de una tarea de la cola; solo el propietario o un admin, 404 si no (`SPECS.md` Parte J) |
 
 Sin token válido → **401**; token válido sobre un recurso ajeno o una acción de admin → **403** (`SPECS.md` §21). Ninguna respuesta incluye `password` ni `hashed_password`.
 
@@ -135,6 +136,7 @@ Variables de entorno (la API **no** carga archivos `.env` por sí sola, no usa `
 | `EMAIL_FROM` | — (con `RESEND_API_KEY`) | Remitente, p. ej. `Nexova <onboarding@resend.dev>` (remitente de pruebas de Resend: solo entrega a la dirección de tu cuenta de Resend) |
 | `PASSWORD_RESET_URL` | — (con `RESEND_API_KEY`) | URL absoluta de la página de restablecimiento del frontend; el enlace añade `?token=…`. Con Docker: `http://localhost:3001/reset-password` |
 | `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` | `30` | Vigencia del enlace, entre 15 y 60 minutos |
+| `REDIS_URL` | — (opcional) | Redis de la cola de tareas (DEV-55, [`services/task_queue`](../task_queue/README.es.md)): la API encola en él y lee el estado de las tareas. Con Docker, `redis://:${REDIS_PASSWORD}@redis:6379/0` (en el `.env` de la raíz). Lleva la contraseña: nunca en el código ni en git. Sin ella, `GET /telemetry/report` y `GET /tasks/{id}` responden 503 `task_queue_unavailable` |
 | `REQUEST_TIMING_LOG` | `true` | Middleware de timing: una línea por petición en el log (`api.timing`) con método, path, status y ms, sin query string ni `GET /health`. `false` lo apaga. Ver `SPECS.md` §44 |
 | `MAX_UPLOAD_BYTES` | `1048576` (1 MiB) | Límite técnico del **body HTTP completo** (CSV + cabeceras y delimitadores multipart), **no del CSV**: el CSV máximo es algo menor. Decisión de la API, no requisito del cliente. Detalle en `SPECS.md` §3.1 |
 

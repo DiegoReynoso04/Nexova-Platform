@@ -1,30 +1,15 @@
-"""Instancia de Celery: `celery -A task_queue.celery_app worker` (y `flower`).
+"""Instancia de Celery del worker y de Flower: `celery -A task_queue.celery_app worker`.
 
-`create_app` no hace E/S (Celery conecta con Redis al primer uso), así que los tests
-la construyen con una configuración propia. La instancia del módulo, `app`, lee
-`REDIS_URL` del entorno al importarse: sin ella, el worker no arranca (ConfigError,
-sin la URL en el mensaje).
-
-Todas las tareas heredan de `base.ReliableTask` (`task_cls`): reintentos con
-backoff, DLQ y una línea de log por ejecución (A8, A9, A12).
+Lee `REDIS_URL` del entorno al importarse: sin ella, el worker no arranca
+(ConfigError, sin la URL en el mensaje). La API **no** importa este módulo: crea su
+propia instancia con `factory.create_app` desde sus `Settings` (`client.py`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from .config import TaskQueueSettings
+from .factory import TASK_CLASS, TASK_MODULES, create_app
 
-from celery import Celery
-
-from .config import TaskQueueSettings, celery_config
-
-TASK_MODULES = ("task_queue.tasks",)
-TASK_CLASS = "task_queue.base:ReliableTask"
-
-
-def create_app(settings: TaskQueueSettings, *, include: Sequence[str] = TASK_MODULES) -> Celery:
-    celery = Celery("task_queue", include=list(include), task_cls=TASK_CLASS)
-    celery.conf.update(celery_config(settings))
-    return celery
-
+__all__ = ["TASK_CLASS", "TASK_MODULES", "app", "create_app"]
 
 app = create_app(TaskQueueSettings.from_env())

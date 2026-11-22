@@ -186,6 +186,20 @@ class UnsupportedFileTypeError(ApiError):
         super().__init__(415, "unsupported_file_type", "only .csv files are accepted")
 
 
+class TaskQueueUnavailableError(ApiError):
+    """La cola de tareas (Redis) no está configurada o no responde (DEV-55, A11). Nunca la URL."""
+
+    def __init__(self) -> None:
+        super().__init__(503, "task_queue_unavailable", "the task queue is not available")
+
+
+class TaskNotFoundError(ApiError):
+    """`GET /tasks/{id}`: el id no existe, caducó o es de otro usuario (A10). Mismo 404 en los tres casos."""
+
+    def __init__(self) -> None:
+        super().__init__(404, "task_not_found", "task not found")
+
+
 class StorageUnavailableError(ApiError):
     """Un archivo TinyDB no se puede abrir, leer o escribir, o no es una base válida.
 

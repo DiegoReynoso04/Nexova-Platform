@@ -387,7 +387,16 @@ Decisiones M1–M19 y su porqué en [`docs/telemetry/nightly-export-analysis.md`
   - `flower`: `127.0.0.1:5555` con `FLOWER_BASIC_AUTH`;
   - `api` depende de `redis` `healthy`.
 - **`.env`:** `REDIS_PASSWORD`, `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0` (Compose interpola dentro del `.env`) y `FLOWER_BASIC_AUTH`. `REDIS_URL` llega a `api` (por `env_file`), a `worker` y a `flower`; nunca a `ui`.
-- **Decidido para la parada 3 (usuario, 2026-11-20):** la API encola a través de una función de `task_queue` (p. ej. `task_queue.client`), sin importar `celery` dentro de `services/api/app`. `test_the_api_has_no_scheduler_inside_its_process` (`services/job_runner/tests/test_architecture.py`), que prohíbe esa palabra en `app/`, **no se modifica**.
+- **Parada 3 (la operación, el 202 y `/tasks`):**
+  - **Productor:** la API solo usa `task_queue.client` y `task_queue.names`, y en `services/api/app` no aparece la palabra `celery`. `test_the_api_has_no_scheduler_inside_its_process` pasa sin modificarse.
+  - **Rutas:** `GET /telemetry/report` responde 202 + `Location` y encola `task_queue.telemetry_report(start, end)`. `GET /tasks/{task_id}` está en `app/modules/tasks/`.
+  - **Configuración:** `REDIS_URL` es opcional en `Settings`; sin ella, 503 `task_queue_unavailable`. Hay 404 `task_not_found` para ids ajenos, inventados o caducados.
+  - **Caché y metadatos:** la caché `telemetry_report` de `ResponseCache` se retiró y la sustituye la deduplicación por usuario de 60 s en Redis. Los metadatos llevan un TTL de 7 días mientras la tarea vive y 3600 s al terminar (A10).
+  - **Calentamiento:** `TaskQueueClient.from_redis_url` carga los módulos perezosos de Celery sin conectar.
+  - **Pandas:** `errors.root_error` desenvuelve el `pandas.errors.DatabaseError` de `read_sql`, que tapaba el `OperationalError`.
+  - **Compose:** la API monta `task_queue` y `job_runner`. Sin eso, su `--reload` cargó el `app/` nuevo contra la copia vieja de la imagen y la API del usuario quedó `unhealthy` hasta reconstruir. El worker monta además `services/telemetry` y `services/api/app` (modelo de la tabla).
+  - **Contrato:** SPECS Parte J (§54–§58) y §4, §7, §41 y §48.
+  - **Backoffice:** `/telemetry` sigue esperando el 200 síncrono hasta la parada 4.
 
 ### Plan de telemetría (diseño, ticket del 2026-11-01/02, rama `docs/telemetry-plan`; integrado en `main` con la PR #28, merge `8a23d17`, 2026-11-02)
 

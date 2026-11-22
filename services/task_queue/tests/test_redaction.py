@@ -28,6 +28,21 @@ class DescribeFailureTests(unittest.TestCase):
         error_class, message = describe_failure(error, ENV)
         self.assertEqual((error_class, message), ("OperationalError", "OperationalError (ValueError)"))
 
+    def test_a_sqlalchemy_error_wrapped_by_pandas_is_described_by_the_original(self):
+        """Parada 3: `pandas.read_sql` lo envuelve en `DatabaseError` con la SQL y los parámetros."""
+        from pandas.errors import DatabaseError
+
+        original = OperationalError("SELECT telemetry_events.timestamp FROM telemetry_events WHERE x = %(p)s", {"p": "2026-11-13"}, ValueError("canceling statement due to statement timeout"))
+        try:
+            try:
+                raise original
+            except OperationalError as exc:
+                raise DatabaseError(f"Execution failed on sql 'SELECT telemetry_events.timestamp': {exc}") from exc
+        except DatabaseError as wrapped:
+            error_class, message = describe_failure(wrapped, ENV)
+        self.assertEqual((error_class, message), ("OperationalError", "OperationalError (ValueError)"))
+        self.assertNotIn("SELECT", message)
+
     def test_other_errors_keep_the_message_redacted(self):
         error = RuntimeError(f"broker {ENV['REDIS_URL']} refused; password redis-Secret-456; auth {ENV['FLOWER_BASIC_AUTH']}")
         error_class, message = describe_failure(error, ENV)
