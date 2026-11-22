@@ -4,6 +4,33 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-22 — DEV-55, cola de tareas: F1, parada 5 (documentación, Flower, verificación final y limpieza)
+
+**Estado: parada 5 hecha; F1 completa (paradas 1–5) en la rama `feature/async-task-queue`, sin commit de la parada 5, sin push ni PR hasta el OK del usuario.** Sobre `8678323` (parada 4). Nada contra la demo; el stack normal del usuario no se arrancó.
+
+- **Documentación (A15):**
+  - `docs/local-development.md`: variables de `.env` (`REDIS_PASSWORD`, `FLOWER_BASIC_AUTH`, `REDIS_URL`), §3.1 «El worker de la cola de tareas» (arrancar, parar, logs, reiniciar, `task_queue.ping`, Flower, qué pasa sin worker o sin Redis), filas de `redis`/`worker`/`flower` y problemas conocidos;
+  - `AGENTS.md` §4: fila `services/task_queue/`, fila Docker con `requirements-flower.txt`, aislamiento de `REDIS_URL` en el bloque «Docker» y bloque «Cola de tareas asíncronas (DEV-55)»;
+  - `docs/async-tasks/review.md` (nueva): receta del stack aislado, tabla de criterios con sus evidencias, fragmento del log, lo no verificado, limpieza y pendientes;
+  - `docs/telemetry/report-review.md`: nota de que desde DEV-55 el endpoint responde 202.
+  - No hay versiones `.es.md` de estos archivos.
+- **Flower (stack aislado):** capturas con una tarea SUCCESS y la FAILURE de A13, y su fila en `ops.task_dead_letters` (`attempt` 4, `retries` 3, `retries_exhausted`, sin SQL) en `contexts/dev-55/evidencias/` (sin versionar; el usuario la sube a la PR).
+- **Verificación final (evidencias en `contexts/dev-55/evidencias/`):**
+  - `services/api`: `unittest` 749 OK y `pytest` 952 passed;
+  - `services/task_queue`: 113 OK en la imagen con `TASK_QUEUE_TEST_DATABASE_URL` y `TASK_QUEUE_TEST_REDIS_URL`, 0 omitidos;
+  - `services/job_runner`: 191 OK con `JOB_RUNNER_TEST_DATABASE_URL`, 0 omitidos;
+  - `uis/backoffice`: `typegen`, `tsc`, `lint`, `build`, `node:test` 675/675 (0 omitidos) y Jest 281/281;
+  - `validate_event_schemas.py` OK;
+  - Docker: `docker compose config --quiet` OK; en el stack aislado, `api`/`redis`/`worker`/`flower` `healthy`; `ui` solo con `API_INTERNAL_URL`, `NEXT_PUBLIC_*` y `WATCHPACK_POLLING`; `REDIS_URL` ausente en `ui`; ningún secreto de la API en `worker`, `flower` ni `ui`; `redis-server` sin la contraseña en sus argumentos; `docker history` sin secretos; imágenes sin `.env*`, `tests`, `.venv` ni `__pycache__`.
+- **Limpieza:** stack aislado `nexova-dev55` (contenedores, red y volúmenes), Postgres y Redis efímeros.
+- **Pendiente:**
+  - migrar `ops.task_dead_letters` en la demo (`python -m task_queue.migrate --allow-demo`), **solo con la confirmación del usuario**; hasta entonces, un fallo definitivo queda solo en el log (`status=dead_letter_not_stored`);
+  - `scripts/seed_volume.py inventory` roto desde que `unit_cost` es obligatorio (H14), en una tarea aparte;
+  - el error intermitente de `unittest` de `services/api` visto en una parada anterior no se ha reproducido (749 OK en todas las corridas posteriores);
+  - push, PR y etiqueta `async-tasks`, con el OK del usuario.
+
+---
+
 ## 2026-11-22 — DEV-55, cola de tareas: F1, parada 4 (frontend `/telemetry`), más el análisis de los picos del 202
 
 **Estado: parada 4 hecha, verificada en el navegador contra el stack aislado `nexova-dev55` y aprobada por el usuario (2026-11-22); commit local sin push.** Rama `feature/async-task-queue`, sobre `fc84b59` (parada 3). Nada contra la demo.
@@ -35,7 +62,7 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 - **Otros cambios:**
   - `redis` con `restart: unless-stopped`: tras un reinicio de Docker el worker volvía solo y quedaba `unhealthy`;
   - se volvió a migrar `ops` en el efímero (la suite de integración lo deja borrado).
-- **Pendiente para la parada 5:** documentación (`docs/local-development.md`, `AGENTS.md` §4, docs de telemetría, guía de revisión), la captura de Flower y la limpieza del stack aislado y de los efímeros. El stack normal del usuario sigue parado desde el reinicio de Docker; no se ha tocado.
+- ~~**Pendiente para la parada 5:** documentación, la captura de Flower y la limpieza del stack aislado y de los efímeros~~ (*corregido el 2026-11-22: hecho en la parada 5*). El stack normal del usuario sigue parado desde el reinicio de Docker; no se ha tocado.
 
 ---
 

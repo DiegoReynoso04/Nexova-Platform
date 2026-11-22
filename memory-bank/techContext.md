@@ -363,7 +363,7 @@ Decisiones M1–M19 y su porqué en [`docs/telemetry/nightly-export-analysis.md`
 - **Prefect:** el cron `weekly` se retiró de `serve.py` (M5); queda `manual`. `RunTrigger.SCHEDULE` sigue en `nexova_shared` (nadie lo usa ya para disparar).
 - **`data/Dockerfile`:** etapas `base`, `scheduler` y `pipeline` (la última, por defecto). El scheduler recibe `scripts` y `services` como contextos adicionales y copia solo `nightly_export.py` y los `.py` de `job_runner`.
 
-### Cola de tareas asíncronas (DEV-55, 2026-11-20, rama `feature/async-task-queue`; F1 en curso, sin merge)
+### Cola de tareas asíncronas (DEV-55, 2026-11-20, rama `feature/async-task-queue`; F1 hecha el 2026-11-22, sin merge)
 
 - **Decisiones:** A1–A16 en [`docs/async-tasks/analysis.md`](../docs/async-tasks/analysis.md), tomadas por el usuario el 2026-11-20. La operación que se convierte es `GET /telemetry/report` (202 + `GET /tasks/{id}`), a partir de la parada 3.
 - **Paquete `services/task_queue/`:** biblioteca, como `job_runner`. Contiene la app de Celery (`celery -A task_queue.celery_app worker`) y la configuración de A7: JSON, `acks_late`, `reject_on_worker_lost`, visibilidad de 600 s, límites de 120/150 s, prefetch 1, `result_expires` de 3600 s, `task_track_started`, eventos para Flower y cola `nexova.tasks`. No importa FastAPI, `app` ni Prefect. Tests: `python -m unittest discover -s services/task_queue/tests -t services`, con el entorno de `services/api` o en la imagen.
@@ -402,6 +402,7 @@ Decisiones M1–M19 y su porqué en [`docs/telemetry/nightly-export-analysis.md`
   - **API:** sin cambios en la parada 4. Se probó un calentamiento de conexiones en el lifespan y se retiró: efecto medido dentro del ruido. El calentamiento que sí se queda son las importaciones perezosas de Celery, en `TaskQueueClient.from_redis_url` (parada 3).
   - **Compose:** `redis` tiene `restart: unless-stopped`, como el worker; antes, tras reiniciar Docker, el worker volvía `unhealthy` sin broker.
   - **`next dev` y `127.0.0.1`:** bloquea sus recursos de desarrollo pedidos desde `127.0.0.1` (`allowedDevOrigins`). Para probar en el navegador hay que entrar por `localhost`.
+- **Parada 5 (documentación):** arranque, parada, logs y reinicio del worker en `docs/local-development.md` §3.1; reglas de validación en `AGENTS.md` §4; guía de revisión en `docs/async-tasks/review.md`. **La demo sigue sin `ops`:** hasta migrarla (con confirmación), el worker contra la demo no guarda la DLQ.
 
 ### Plan de telemetría (diseño, ticket del 2026-11-01/02, rama `docs/telemetry-plan`; integrado en `main` con la PR #28, merge `8a23d17`, 2026-11-02)
 

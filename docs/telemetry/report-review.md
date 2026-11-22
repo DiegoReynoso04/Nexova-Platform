@@ -2,6 +2,8 @@
 
 Rama `feature/telemetry-report`. Decisiones en [`report-analysis.md`](./report-analysis.md) (F0). Contrato: `services/api/SPECS.md`, Parte H (§48).
 
+> **Actualización (DEV-55, 2026-11-22):** desde la cola de tareas, `GET /telemetry/report` ya no responde 200 con el reporte. Encola la tarea y responde **202 `{task_id}`**; el reporte (la misma forma) es el `result` de `GET /tasks/{task_id}`, y la caché de 60 s la sustituye una deduplicación por usuario. Los recorridos de esta guía que esperan el 200 son del ticket del reporte. El recorrido vigente está en [`docs/async-tasks/review.md`](../async-tasks/review.md) y el contrato en `services/api/SPECS.md` §48 y Parte J.
+
 ## 1. Qué se ha hecho, frente a lo que se evalúa
 
 | Criterio del enunciado | Dónde | Estado |

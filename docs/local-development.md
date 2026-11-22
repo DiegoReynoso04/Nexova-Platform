@@ -18,6 +18,7 @@ En `.env` (raíz del repositorio, ignorado por git):
 
 - **`JWT_SECRET_KEY`:** 32 caracteres o más. Generar una: `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
 - **`DATABASE_URL`:** la URI del Transaction pooler de tu proyecto de Supabase (puerto 6543), con la contraseña.
+- **Cola de tareas (DEV-55):** `REDIS_PASSWORD` (solo letras y números: `python -c "import secrets; print(secrets.token_hex(24))"`) y `FLOWER_BASIC_AUTH` (`usuario:contraseña`). `REDIS_URL` viene ya en la plantilla como `redis://:${REDIS_PASSWORD}@redis:6379/0`: Compose sustituye la contraseña al leer el `.env`. Sin estas tres, `docker compose up` no arranca.
 - El resto viene con valores válidos; cada variable está explicada en [`.env.example`](../.env.example). El trío de Resend (`RESEND_API_KEY`, `EMAIL_FROM`, `PASSWORD_RESET_URL`) va todo o nada: con solo una parte, la API no arranca.
 
 Cuidado con:
@@ -45,7 +46,24 @@ La primera vez construye las dos imágenes (unos 30 s de build más la descarga 
 - `services/api/requirements.txt` (regenerado desde `uv.lock`, ver [`services/api/README.md`](../services/api/README.md#docker));
 - `uis/start.sh`, `uis/serve-website.mjs`, los `Dockerfile` o `docker-compose.yml`.
 
-El código del website, del backoffice, de `services/api/app` y de `packages/` se monta desde el host: un cambio se ve sin reconstruir (website al recargar; backoffice en unos 2 s; la API se reinicia sola).
+El código del website, del backoffice, de `services/api/app` y de `packages/` se monta desde el host: un cambio se ve sin reconstruir (website al recargar; backoffice en unos 2 s; la API se reinicia sola). El worker de la cola **no** se reinicia solo (ver §3.1).
+
+### 3.1 El worker de la cola de tareas (DEV-55)
+
+`docker compose up -d` arranca también `redis` (broker y resultados), `worker` (el proceso de Celery que calcula el reporte técnico de `/telemetry`) y `flower` (el monitor). El worker es un proceso aparte de la API: pararla no lo para, y los mensajes esperan en Redis (con AOF, también si Redis se reinicia). Detalle en [`services/task_queue/README.es.md`](../services/task_queue/README.es.md); contrato en [`services/api/SPECS.md`](../services/api/SPECS.md) Parte J.
+
+```bash
+docker compose up -d worker            # levantar solo el worker (arranca redis si hace falta)
+docker compose logs -f worker          # «Connected to redis://:**@redis:6379/0», «ready» y una línea por tarea
+docker compose restart worker          # tras cambiar services/task_queue, services/telemetry o services/api/app
+docker compose stop worker             # detenerlo: espera a las tareas en curso (hasta 160 s); las de la cola esperan en Redis
+docker compose exec worker celery -A task_queue.celery_app call task_queue.ping   # tarea de prueba
+```
+
+- **Flower:** `http://localhost:5555`, con el usuario y la contraseña de `FLOWER_BASIC_AUTH`. Solo escucha en `127.0.0.1`, como Redis (6379).
+- **Cada línea del log del worker** lleva `task_id`, el intento (`attempt=2/4`), el estado (`started`, `success`, `retry`, `dead_letter`) y la duración. Los errores van redactados: nunca una URL, una contraseña ni la SQL.
+- **Ojo, la base:** el worker usa la misma `DATABASE_URL` que la API (la demo). Solo lee `telemetry_events` y, si una tarea falla del todo, escribe en `ops.task_dead_letters`, que no existe hasta migrarla (`python -m task_queue.migrate`, en la demo con `--allow-demo` y solo con confirmación). Mientras no exista, el fallo queda en el log (`status=dead_letter_not_stored`).
+- **Sin worker,** `/telemetry` se queda en «En cola» (deja de consultar a los 10 minutos); **sin Redis,** muestra «El servicio de cálculo no está disponible».
 
 ## 4. Aplicaciones y puertos
 
@@ -55,6 +73,9 @@ El código del website, del backoffice, de `services/api/app` y de `packages/` s
 | `uis/backoffice` | Panel interno: incidentes, proveedores, gestor de incidencias, inventario y cuenta | `http://localhost:3001` | Sesión obligatoria (salvo `/login`, `/register` y las de contraseña) | [`uis/backoffice/README.md`](../uis/backoffice/README.md) |
 | `services/api` | API FastAPI de Nexova | `http://localhost:8000` (Swagger en `/docs`) | Emite y exige el JWT | [`services/api/README.md`](../services/api/README.md) |
 | `uis/talent-pipeline-tracker` | Gestión de candidaturas contra la API de 4Geeks. **Fuera de Docker** (el ticket no lo incluye) | `http://localhost:3002` | Sesión contra `services/api` | §7 |
+| `redis` | Broker y result backend de la cola de tareas (DEV-55) | `127.0.0.1:6379` (entre contenedores, `redis:6379`) | `REDIS_PASSWORD` | §3.1 |
+| `worker` | Worker de Celery (`services/task_queue`): calcula el reporte técnico fuera de la API | Sin puertos | — | §3.1 |
+| `flower` | Monitor de la cola (solo desarrollo) | `http://localhost:5555` | `FLOWER_BASIC_AUTH` | §3.1 |
 
 **Cómo hablan entre sí:** el navegador solo habla con el backoffice. Las peticiones a la API van a `http://localhost:3001/backend/…` (mismo origen, sin CORS) y el servidor de Next las reenvía a `http://api:8000` por el nombre del servicio en la red de Docker (`API_INTERNAL_URL`, rewrite de `uis/backoffice/next.config.ts`). El puerto 8000 se publica para `/docs`.
 
@@ -102,6 +123,7 @@ Los tests y las comprobaciones de cada subproyecto se ejecutan en el host, no en
 | Subproyecto | Validación |
 |---|---|
 | `services/api` | `unittest` con su venv y pytest (comandos en `AGENTS.md` §4) |
+| `services/task_queue` (DEV-55) | `unittest` con el venv de `services/api`; la integración (Redis y PostgreSQL locales, worker real) en la imagen (comando en `AGENTS.md` §4) |
 | `uis/backoffice` | `npx tsc --noEmit`, `npm run lint`, `npm run build`, tests con Node 24 y Jest |
 | `uis/` (servidor del website) | `node --test "uis/tests/*.test.mjs"` desde la raíz |
 | `uis/talent-pipeline-tracker` | `npx tsc --noEmit`, `npm run lint` y tests con Node 24 |
@@ -119,6 +141,9 @@ Los tests y las comprobaciones de cada subproyecto se ejecutan en el host, no en
 - **La API queda `unhealthy` tras recrear el `.env`:** pasó al volver a copiar `.env.example` encima del `.env` ya rellenado, que dejó `JWT_SECRET_KEY` y `DATABASE_URL` vacías (`docker compose logs api`: `ConfigError: JWT_SECRET_KEY is required…`). El `.env` se crea una sola vez (§2).
 - **Error de hidratación en la consola del navegador** con atributos `bis_*` o similares: lo provocan extensiones del navegador que modifican el HTML, no el código. Probar en una ventana privada sin extensiones.
 - **El backoffice no recarga:** comprobar que `WATCHPACK_POLLING=true` está en el `.env`. El contenedor usa `next dev --webpack`: con Turbopack, el bundler por defecto, el código montado no recarga (comprobado en #infra-40).
+- **La página se queda en «Comprobando la sesión…» entrando por `http://127.0.0.1:3001`:** `next dev` bloquea sus recursos de desarrollo pedidos desde un origen que no es `localhost` (aviso `allowedDevOrigins` en `docker compose logs ui`). Entrar por `http://localhost:3001` (DEV-55, 2026-11-22).
+- **El worker queda `unhealthy` tras reiniciar Docker:** pasaba cuando volvía solo (`restart: unless-stopped`) y Redis no. Desde DEV-55, `redis` tiene la misma política. Si se ve: `docker compose up -d redis` y el worker se reconecta solo.
+- **`/telemetry` se queda «En cola»:** el worker no está en marcha (`docker compose ps worker`; `docker compose up -d worker`).
 
 ## 10. Autenticación (AUTH-01, AUTH-02 y AUTH-03), en resumen
 
