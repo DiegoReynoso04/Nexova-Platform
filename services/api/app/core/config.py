@@ -103,6 +103,11 @@ class Settings:
     # Opcional: sin ella, `POST /reporting/pipeline-runs` responde 503
     # `pipeline_unavailable`; las lecturas de `/reporting` funcionan igual.
     pipeline_prefect_api_url: str = ""
+    # Cola de tareas (DEV-55, A11): Redis, broker y result backend del worker
+    # (`services/task_queue`). Opcional, como PIPELINE_PREFECT_API_URL: sin ella,
+    # `GET /telemetry/report` y `GET /tasks/{id}` responden 503 `task_queue_unavailable`.
+    # Lleva la contraseña de Redis: nunca en un repr/log ni en un mensaje de error.
+    redis_url: str = field(default="", repr=False)
 
     def __post_init__(self) -> None:
         if "*" in self.cors_allowed_origins:
@@ -115,6 +120,9 @@ class Settings:
             raise ConfigError(f"ACCESS_TOKEN_EXPIRE_MINUTES must be between 1 and {MAX_ACCESS_TOKEN_EXPIRE_MINUTES}")
         if self.pipeline_prefect_api_url and not self.pipeline_prefect_api_url.startswith(("http://", "https://")):
             raise ConfigError("PIPELINE_PREFECT_API_URL must start with http:// or https://")
+        # Solo el esquema; el resto lo valida task_queue al crear el cliente. Nunca la URL en el mensaje.
+        if self.redis_url and self.redis_url.partition("://")[0] not in ("redis", "rediss"):
+            raise ConfigError("REDIS_URL must start with redis:// or rediss://")
         if not (
             MIN_PASSWORD_RESET_TOKEN_MINUTES <= self.password_reset_token_minutes <= MAX_PASSWORD_RESET_TOKEN_MINUTES
         ):
@@ -242,4 +250,5 @@ class Settings:
             cost_variance_threshold_pct=cost_variance_threshold_pct,
             cost_variance_window=cost_variance_window,
             pipeline_prefect_api_url=environ.get("PIPELINE_PREFECT_API_URL", "").strip(),
+            redis_url=environ.get("REDIS_URL", "").strip(),
         )

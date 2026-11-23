@@ -88,12 +88,13 @@ class ResponseModelCoverageTests(unittest.TestCase):
             with self.subTest(route=f"{file}:{line}"):
                 self.assertIn("response_model", {keyword.arg for keyword in decorator.keywords})
 
-    def test_the_app_has_the_37_audited_endpoints(self) -> None:
+    def test_the_app_has_the_38_audited_endpoints(self) -> None:
         # 32 de la auditoría de serialización + `POST /telemetry/events` (ticket de captura)
         # + `GET /telemetry/report` (ticket del reporte técnico) + los 3 de `/reporting`
-        # (pipeline de desempeño de negocio, Parte 2).
+        # (pipeline de desempeño de negocio, Parte 2) + `GET /tasks/{task_id}` (DEV-55).
         endpoints = {(method, route.path_format) for route in self.routes for method in route.methods}
-        self.assertEqual(len(endpoints), 37)
+        self.assertEqual(len(endpoints), 38)
+        self.assertIn(("GET", "/tasks/{task_id}"), endpoints)
 
     def test_json_routes_return_pydantic_schemas_never_storage_or_orm_models(self) -> None:
         for route in self.routes:

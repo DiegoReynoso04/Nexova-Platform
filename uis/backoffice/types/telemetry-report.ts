@@ -55,7 +55,29 @@ export interface TelemetryReport {
   };
 }
 
+// --- Cola de tareas (DEV-55, services/api/SPECS.md Parte J) --------------------
+// `GET /telemetry/report` encola y responde 202 `{task_id}`; el reporte llega por
+// `GET /tasks/{task_id}`, que se sondea hasta `success` o `failure`.
+
+export const TASK_STATUSES = ['pending', 'started', 'success', 'failure'] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+/** Lo que interesa de `GET /tasks/{task_id}` para el reporte: el estado y, si terminó bien, el reporte. */
+export type TelemetryReportTask =
+  | { status: 'pending' }
+  | { status: 'started' }
+  | { status: 'success'; report: TelemetryReport }
+  | { status: 'failure' };
+
 export type TelemetryReportUiError =
+  /** 503 al encolar o al sondear: Redis o el worker no están disponibles. */
+  | { kind: 'queue_unavailable' }
+  /** La tarea terminó en `failure` (reintentos agotados o error del cálculo). */
+  | { kind: 'task_failed' }
+  /** 404 de `/tasks/{id}` durante el sondeo: la tarea caducó o ya no existe. */
+  | { kind: 'task_expired' }
+  /** Tope de espera del sondeo (10 min) sin que la tarea termine. */
+  | { kind: 'polling_timeout' }
   | { kind: 'request_invalid' }
   | { kind: 'server_error' }
   | { kind: 'network' }

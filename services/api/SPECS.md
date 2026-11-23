@@ -13,6 +13,7 @@ Una sola aplicación FastAPI (`app/main.py`) con estos dominios:
 - **Parte G (§41–§44): caché de lecturas y timing por petición** — caché en memoria con TTL para `GET /inventory/products`, `/inventory/products/{id}`, `GET /api/incidents` y `/api/incidents/summary`; sin cambios en el contrato de ninguna ruta.
 - **Parte H (§45–§48): telemetría** — `POST /telemetry/events` (colector), `direct_stock_edit_rejected`, la tabla `telemetry_events` y `GET /telemetry/report`.
 - **Parte I (§49–§53): reporte de desempeño de negocio** — `GET /reporting/weekly-office-program-performance`, `GET /reporting/pipeline-runs/latest` y `POST /reporting/pipeline-runs` (`services/reporting`); lee el esquema `reporting` que escribe el pipeline de `data/pipelines` y dispara corridas por la REST de Prefect.
+- **Parte J (§54–§58): cola de tareas asíncronas (DEV-55)** — `GET /telemetry/report` encola y responde `202`; `GET /tasks/{task_id}` da el estado y el resultado. Redis y el worker de `services/task_queue`.
 
 Este documento distingue **dos orígenes** de requisitos. Mezclarlos sería atribuir al cliente decisiones que no tomó.
 
@@ -175,6 +176,8 @@ Formato único: `{"detail": ..., "code": "..."}`.
 | 404 | `week_not_computed` / `pipeline_run_not_found` | reporte de negocio: ninguna corrida completada cubre la semana / el pipeline aún no ha corrido (Parte I, §52) | `no completed pipeline run covers this week` / `the pipeline has not run yet` |
 | 409 | `pipeline_run_in_progress` | `POST /reporting/pipeline-runs` con una corrida en marcha o programada (Parte I) | `a pipeline run is already in progress` |
 | 503 | `pipeline_unavailable` | `POST /reporting/pipeline-runs` sin `PIPELINE_PREFECT_API_URL` o con el servidor de Prefect caído (Parte I) | `the pipeline orchestrator is not available` — nunca la URL |
+| 404 | `task_not_found` | `GET /tasks/{id}` con un id que no existe, caducó, no es un UUID o es de otro usuario (Parte J, §56) | `task not found` |
+| 503 | `task_queue_unavailable` | `GET /telemetry/report` o `GET /tasks/{id}` sin `REDIS_URL` o con Redis o el broker caídos (Parte J) | `the task queue is not available` — nunca la URL |
 | 404 | `not_found` | ruta inexistente | `Not Found` |
 | 405 | `method_not_allowed` | método no soportado; incluye la cabecera `Allow` con los métodos permitidos | `Method Not Allowed` |
 | 413 | `file_too_large` | **body HTTP** mayor que `MAX_UPLOAD_BYTES` (por `Content-Length` o contando bytes en streaming si no hay `Content-Length`) | `request body exceeds the <N> bytes limit` |
@@ -230,6 +233,7 @@ Variables de entorno del proceso (la API no carga archivos `.env` por sí sola; 
 | `TELEMETRY_SUPPLIER_KEY` | vacío | opcional; ≥ 32 caracteres. Clave del HMAC-SHA256 del proveedor (`supplier_key`, P9). Es un secreto: nunca en `repr` ni en un log. Sin ella, `supplier_key` es `null` |
 | `TELEMETRY_COST_VARIANCE_THRESHOLD_PCT` | `10` | número > 0 y ≤ 1000. Umbral de la variación del coste unitario (P10, D3 del plan) |
 | `TELEMETRY_COST_VARIANCE_WINDOW` | `3` | entero de 1 a 100. Entradas anteriores con coste del mismo activo y proveedor con las que se calcula la referencia (P10) |
+| `REDIS_URL` | vacío | opcional; `redis://` o `rediss://` con host, puerto y base 0–14, o la API no arranca (el mensaje nunca repite la URL; `repr(Settings)` no la muestra). Redis de la cola de tareas (Parte J): broker en esa base y resultados y metadatos en la siguiente. Sin ella, `GET /telemetry/report` y `GET /tasks/{id}` responden 503 `task_queue_unavailable` |
 | `PIPELINE_PREFECT_API_URL` | vacío | opcional; `http://` o `https://`, o la API no arranca. API REST del servidor de Prefect del perfil `pipelines` (con Docker, `http://prefect-server:4200/api`). Sin ella, `POST /reporting/pipeline-runs` responde 503 `pipeline_unavailable`; las lecturas de `/reporting` funcionan igual (Parte I) |
 
 ---
@@ -817,7 +821,7 @@ Medición inicial y decisiones D1–D11 (tomadas por el usuario el 2026-10-31): 
 | `GET /inventory/products/{id}` | `inventory` | `("product", id)` | 60 s | las mismas |
 | `GET /api/incidents` | `incidents` | `("list", IncidentFilters)`, los filtros **ya normalizados** por `validate_filters` | 30 s | `POST /api/incidents`, `PATCH /api/incidents/{id}/status` |
 | `GET /api/incidents/summary` | `incidents` | `"summary"` | 30 s | las mismas |
-| `GET /telemetry/report` | `telemetry_report` | `(start, end)` recibidos, en UTC; `(None, None)` en la ventana por defecto | 60 s | Ninguna: solo caduca (§48) |
+| ~~`GET /telemetry/report`~~ | ~~`telemetry_report`~~ | — | — | **Retirada en DEV-55** (Parte J): el reporte lo calcula el worker, que no ve esta caché. La sustituye la deduplicación por usuario de 60 s en Redis (§55) |
 
 - **Implementación:** `app/core/cache.py` (`ResponseCache`), una instancia por app en `app.state.response_cache`. Diccionario en memoria, sin dependencias.
 - **Expulsión:** como máximo 64 entradas por espacio; al pasarse, sale la más antigua.
@@ -952,8 +956,9 @@ Decisiones del ticket del reporte técnico (D1–D14, C1–C17): [`docs/telemetr
 - **`page_load_latency_by_route`:** `duration_ms` de `page_load_recorded`, la espera en el navegador. **No es latencia de la API:** `api_latency_recorded` no se emite.
 - **`auth_failure_rate`:** `form_submitted` con `form = login`. Fallo = `api_rejected`; intento = `success` + `api_rejected`. `login_failed` y `user_logged_in` no se emiten. Solo ve lo que pasa por el navegador.
 - **Sin redondeo:** las tasas salen con todos sus decimales; formatea quien presenta (`test_architecture.py` prohíbe `round` en `app/`).
-- **Caché:** §41. Clave: lo que pidió el cliente, porque con `now` dentro la ventana por defecto nunca acertaría. En esa ventana, `period` puede tener hasta 60 s. El colector no la invalida. Un 422 no llega a la caché y un 503 no se guarda.
-- **Errores:** 401 sin token; 503 `storage_unavailable` si la base no responde.
+- **Asíncrono desde DEV-55 (Parte J):** la ruta valida y resuelve el periodo (las mismas reglas de arriba, 422 sin crear tarea) y responde **`202 {"task_id"}`** con `Location: /tasks/<id>` y `Cache-Control: no-store`. La respuesta de esta tabla (`period` y `metrics`) es el `result` de `GET /tasks/{id}` cuando la tarea termina en `success`. La ruta no toca la base.
+- **Deduplicación (sustituye a la caché de §41):** la misma combinación recibida (en UTC; la ventana por defecto es `-|-`) del mismo usuario en 60 s devuelve la misma tarea, salvo que haya fallado. En la ventana por defecto, `period` puede tener hasta 60 s.
+- **Errores:** 401 sin token; 422 como arriba; 503 `task_queue_unavailable` sin `REDIS_URL` o con Redis caído. Si la base no responde, **la tarea** se reintenta y, al agotar los reintentos, termina en `failure` (§57); el 503 `storage_unavailable` ya no sale de esta ruta.
 
 ---
 
@@ -1022,3 +1027,49 @@ Fuente: [`docs/proyectos-de-data-pipeline-diseno-implementacion-subflows-tests.m
 - **Tablas:** `reporting.weekly_office_program_performance` (DDL del BRIEFING + `run_id` y `CHECK` aditivos) y `reporting.pipeline_runs`, con RLS sin políticas y sin privilegios para `PUBLIC` ni los roles de la Data API de Supabase (§2.7 y §3.3 del diseño). Las crea `python -m business_performance.migrate` (desde `data/pipelines`), nunca la API.
 - **Tests:** `tests/test_reporting_api.py` (contrato y códigos, sobre SQLite con `ATTACH … AS reporting`) y `tests/test_reporting_architecture.py`. La SQL del pipeline contra PostgreSQL la prueba `data/pipelines/tests/test_repository_postgres.py`.
 - **Pendiente:** P1 (clasificación de activos por programa): hasta entonces, todas las filas llevan `programme_id = _unassigned`.
+
+---
+
+# Parte J — Cola de tareas asíncronas (DEV-55)
+
+Ticket #DEV-55 (enunciado solo local en `contexts/dev-55/`). Análisis y decisiones A1–A16: [`docs/async-tasks/analysis.md`](../../docs/async-tasks/analysis.md). Código de la cola: [`services/task_queue/`](../task_queue/README.es.md). La API solo usa `task_queue.client` y `task_queue.names` (productor); el cálculo lo hace el worker, un proceso aparte (servicio `worker` de Compose).
+
+## 54. `GET /telemetry/report` → 202
+
+- Ver §48: mismas validaciones (422) y autenticación; responde `202 {"task_id": "<uuid>"}` con `Location: /tasks/<uuid>` y `Cache-Control: no-store`.
+- **Mensaje:** `task_queue.telemetry_report` con `{"start": "<ISO>", "end": "<ISO>"}` ya resueltos (formato del envelope, `2026-11-05T12:00:00.000Z`). Nunca datos: el worker lee `telemetry_events`.
+- **Sin base:** la ruta no abre ninguna conexión (el 202 no espera a Supabase). Medido en el stack aislado con 500 049 eventos y dos reportes en curso: p95 de 32,9 ms en cliente y 30,0 ms en `api.timing` (`docs/async-tasks/analysis.md`, parada 3).
+
+## 55. Deduplicación y metadatos (A4, A10)
+
+- Al encolar, la API guarda en Redis (base de resultados) `nexova:task:<id>` → `{owner_id, task_name, enqueued_at}` **antes** de publicar (un `GET /tasks/{id}` inmediato nunca da 404) y `nexova:dedupe:<tarea>:<usuario>:<combinación>` → `<id>` con 60 s.
+- **TTL de los metadatos:** 7 días mientras la tarea está en cola o en curso (un worker parado horas no convierte una tarea viva en 404); al terminar (éxito o fallo definitivo), el worker lo baja a 3600 s, el mismo con el que Celery guarda el resultado. Después, 404.
+- Si publicar falla, se borran los metadatos y la deduplicación de esa tarea y la respuesta es 503.
+
+## 56. `GET /tasks/{task_id}`
+
+- Bearer, cualquier rol; `Cache-Control: no-store`.
+- **200:** `{"task_id", "status", "result"}`. Solo el propietario o un `admin`.
+- **404 `task_not_found`:** id inexistente o caducado, id que no es UUID, o tarea de otro usuario (mismo cuerpo: no se confirma que exista). Celery respondería `PENDING` a cualquier id; la clave de metadatos lo evita.
+- **503 `task_queue_unavailable`:** sin `REDIS_URL` o con Redis caído. Con el servicio `redis` de Compose parado, el nombre tarda ~4 s en no resolverse (DNS de Docker), y eso es lo que tarda el 503.
+
+| Estado de Celery | `status` |
+|---|---|
+| `PENDING`, `RECEIVED` | `pending` |
+| `STARTED`, `RETRY` | `started` (monótono: no vuelve a `pending` entre reintentos) |
+| `SUCCESS` | `success` |
+| `FAILURE`, `REVOKED` | `failure` |
+
+- **`result`:** `null` en `pending` y `started`; en `success`, el esquema de la tarea (`TelemetryReport` de §48); en `failure`, `{"code": "task_failed", "detail": "the task failed"}`, sin clase, mensaje ni traza.
+
+## 57. Reintentos, DLQ y logs (A8, A9, A12)
+
+- Se reintentan los errores transitorios de la base (`OperationalError`, `InterfaceError`, `TimeoutError` de SQLAlchemy, **también envueltos** por `pandas.read_sql`), con `max_retries=3` (4 ejecuciones) y cuenta atrás `2·2^n + U(0, 2)` s, nunca inmediata.
+- Fallo definitivo → fila en `ops.task_dead_letters` (`attempt`, `retries`, motivo, clase y mensaje redactado) o, si la base no responde o la tabla no existe, una línea `status=dead_letter_not_stored` con todos los campos. Una línea de log por ejecución con `task_id`, intento, estado y duración.
+- Cada consulta de la tarea lleva `SET LOCAL statement_timeout` (110 s; `TASK_QUEUE_STATEMENT_TIMEOUT_MS` lo baja en la demostración de A13).
+
+## 58. Configuración, tests y pendiente
+
+- **Configuración:** `REDIS_URL` (§7). En Compose, `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0` en el `.env`; el worker recibe además `DATABASE_URL`.
+- **Tests:** `tests/test_telemetry_report.py` (el contrato de §48 adaptado al 202: el resultado se lee de `/tasks`) y `tests/test_tasks_api.py`, con el cliente real de `task_queue` y dobles en memoria (`task_queue.memory`); los de la cola, en `services/task_queue/tests/`.
+- **Frontend:** el backoffice (`/telemetry`) encola y sondea `GET /tasks/{id}` desde la parada 4 (A16; reglas en `uis/backoffice/CLAUDE.md`, «Reporte técnico»).

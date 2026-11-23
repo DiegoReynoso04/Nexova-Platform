@@ -56,7 +56,8 @@ Columna *Auth*: 🔓 pública · 🔒 JWT válido · 👤 propio usuario o admin
 | `POST` | `/inventory/orders/outbound` | 🔒 | Registra una asignación o un consumo (201); 400 `insufficient_stock` si supera el stock |
 | `GET` | `/inventory/orders` | 🔒 | Entradas y salidas con el activo embebido, de la más reciente a la más antigua |
 | `POST` | `/telemetry/events` | 🔓 | Colector de telemetría: valida cada evento por separado, guarda los válidos en `telemetry_events` con un solo insert y responde `200 {"received", "stored", "rejected"}` (`SPECS.md` Parte H) |
-| `GET` | `/telemetry/report` | 🔒 | Métricas técnicas de la telemetría (Pandas), con `start_date` y `end_date` opcionales; 7 días por defecto y caché de 60 s (`SPECS.md` §48) |
+| `GET` | `/telemetry/report` | 🔒 | Métricas técnicas de la telemetría (Pandas), con `start_date` y `end_date` opcionales; 7 días por defecto. **Asíncrono desde DEV-55:** encola la tarea y responde `202 {"task_id"}` con `Location`; el reporte llega por `/tasks/{task_id}` (`SPECS.md` §48 y Parte J) |
+| `GET` | `/tasks/{task_id}` | 🔒 | Estado (`pending`, `started`, `success`, `failure`) y resultado de una tarea de la cola; solo el propietario o un admin, 404 si no (`SPECS.md` Parte J) |
 
 Sin token válido → **401**; token válido sobre un recurso ajeno o una acción de admin → **403** (`SPECS.md` §21). Ninguna respuesta incluye `password` ni `hashed_password`.
 
@@ -66,7 +67,7 @@ Documentación interactiva de FastAPI en `http://localhost:8000/docs` con el ser
 
 ## Requisitos
 
-Python 3.11 o superior (verificado con 3.14.6). Dependencias (`pyproject.toml`), acotadas a las versiones probadas (versiones exactas en [`uv.lock`](./uv.lock), versionado): `fastapi>=0.141,<0.142`, `python-multipart>=0.0.32,<0.1`, `uvicorn>=0.53,<0.54`, `tinydb>=4.9,<4.10`, `libpass[bcrypt]>=1.9.3,<1.10` y `python-jose[cryptography]>=3.5,<3.6` (AUTH-01), `sqlmodel>=0.0.48,<0.0.49` (instala SQLAlchemy 2.1) y `psycopg2-binary>=2.9.13,<2.10` (Hito 5, inventario) y, para tests, `httpx>=0.28,<0.29` (extra `dev`, para pip) más `pytest>=9.1,<9.2` y `pytest-cov>=7.1,<7.2` (grupo `dev` de uv, AUTH-088; repite httpx). Sin librerías de configuración.
+Python 3.11 o superior (verificado con 3.14.6). Dependencias (`pyproject.toml`), acotadas a las versiones probadas (versiones exactas en [`uv.lock`](./uv.lock), versionado): `fastapi>=0.141,<0.142`, `python-multipart>=0.0.32,<0.1`, `uvicorn>=0.53,<0.54`, `tinydb>=4.9,<4.10`, `libpass[bcrypt]>=1.9.3,<1.10` y `python-jose[cryptography]>=3.5,<3.6` (AUTH-01), `sqlmodel>=0.0.48,<0.0.49` (instala SQLAlchemy 2.1) y `psycopg2-binary>=2.9.13,<2.10` (Hito 5, inventario), `celery[redis]>=5.7,<5.8` y `redis>=6.4,<9` (DEV-55, cola de tareas: la API encola y el worker de [`services/task_queue`](../task_queue/README.es.md) ejecuta; celery 5.7.0 fija `python-dateutil==2.9.0.post0`, ver `docs/async-tasks/analysis.md` A14), `flower>=2.2,<2.3` en su propio grupo de uv (`flower`, solo desarrollo, fuera de la imagen de la API) y, para tests, `httpx>=0.28,<0.29` (extra `dev`, para pip) más `pytest>=9.1,<9.2` y `pytest-cov>=7.1,<7.2` (grupo `dev` de uv, AUTH-088; repite httpx). Sin librerías de configuración.
 
 ## Instalación del venv (para los tests, desde la raíz del monorepo)
 
@@ -109,6 +110,13 @@ uv export --frozen --no-dev --no-emit-project --format requirements-txt -o requi
 - `--frozen`: no toca `uv.lock`; `--no-dev`: sin pytest ni pytest-cov; `--no-emit-project`: sin la propia API.
 - **No aparecen `nexova-shared` ni `nexova-incident-analyzer`**, porque no están en `uv.lock`: `pyproject.toml` no los declara a propósito (no están publicados y declararlos invitaría a buscarlos en PyPI). En la imagen entran por `PYTHONPATH`.
 - Lleva los hashes de cada paquete (`--require-hashes`). `tests/test_requirements_lock.py` falla si deja de coincidir con `uv.lock` o con `pyproject.toml`, y su mensaje dice este mismo comando.
+- **Flower (DEV-55):** el target `flower` de `services/Dockerfile` instala además `requirements-flower.txt` (las dependencias principales más el grupo `flower`), que se regenera a la vez, también desde `services/api`:
+
+  ```bash
+  uv export --frozen --no-dev --group flower --no-emit-project --format requirements-txt -o requirements-flower.txt
+  ```
+
+  `tests/test_requirements_lock.py` comprueba que sigue a `uv.lock`, que contiene `requirements.txt` con las mismas versiones y que Flower nunca entra en `requirements.txt`.
 - Después: `docker compose up -d --build`.
 
 ### Configuración
@@ -128,6 +136,7 @@ Variables de entorno (la API **no** carga archivos `.env` por sí sola, no usa `
 | `EMAIL_FROM` | — (con `RESEND_API_KEY`) | Remitente, p. ej. `Nexova <onboarding@resend.dev>` (remitente de pruebas de Resend: solo entrega a la dirección de tu cuenta de Resend) |
 | `PASSWORD_RESET_URL` | — (con `RESEND_API_KEY`) | URL absoluta de la página de restablecimiento del frontend; el enlace añade `?token=…`. Con Docker: `http://localhost:3001/reset-password` |
 | `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` | `30` | Vigencia del enlace, entre 15 y 60 minutos |
+| `REDIS_URL` | — (opcional) | Redis de la cola de tareas (DEV-55, [`services/task_queue`](../task_queue/README.es.md)): la API encola en él y lee el estado de las tareas. Con Docker, `redis://:${REDIS_PASSWORD}@redis:6379/0` (en el `.env` de la raíz). Lleva la contraseña: nunca en el código ni en git. Sin ella, `GET /telemetry/report` y `GET /tasks/{id}` responden 503 `task_queue_unavailable` |
 | `REQUEST_TIMING_LOG` | `true` | Middleware de timing: una línea por petición en el log (`api.timing`) con método, path, status y ms, sin query string ni `GET /health`. `false` lo apaga. Ver `SPECS.md` §44 |
 | `MAX_UPLOAD_BYTES` | `1048576` (1 MiB) | Límite técnico del **body HTTP completo** (CSV + cabeceras y delimitadores multipart), **no del CSV**: el CSV máximo es algo menor. Decisión de la API, no requisito del cliente. Detalle en `SPECS.md` §3.1 |
 

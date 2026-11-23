@@ -331,7 +331,7 @@ Diseño: [`data/pipelines/PIPELINE_DESIGN.md`](../data/pipelines/PIPELINE_DESIGN
 
 - **Ubicación:** ETL y orquestación en `data/pipelines/business_performance/`; `services/reporting/` como librería de la API (lecturas y disparo, sin ETL, comprobado por un test de AST); nombres compartidos en `nexova_shared.reporting`. `data/` no está en el contexto de build de la API.
 - **Prefect** (dependencia autorizada por el ticket, solo en `data/pipelines`): servidor y worker en un perfil `pipelines` de Compose; la API crea flow runs por REST con `urllib`, sin depender de Prefect. Credencial de Supabase en un block `Secret`.
-- **Implementación (Parte 2, mergeada en `main` con la PR #34 el 2026-11-12; decisiones en [`docs/reporting/implementation-analysis.md`](../docs/reporting/implementation-analysis.md)):** Prefect autorizado y **solo** en el entorno propio de `data/pipelines` (`pyproject.toml` virtual de uv, `uv.lock`, `requirements.txt`, venv `data/pipelines/.venv`), nunca en `services/api`: allí bajaría `python-dateutil` 4.0.0 (transitiva de Pandas) a 2.9.0.post0, y además el flow no debe correr bajo el `--reload` de la API. Imagen `nexova-pipeline:dev` desde `data/Dockerfile` (contexto `data/` + `packages`, `PYTHONPATH=/data/pipelines:/data/process:/packages/shared`). Servicio `prefect-server` en el perfil `pipelines` (solo con `--profile pipelines`, sin `env_file`, volumen `prefect-data`, `PREFECT_UI_API_URL=http://localhost:4200/api`). SQLAlchemy de la misma serie 2.1 que la API, con su versión exacta propia.
+- **Implementación (Parte 2, mergeada en `main` con la PR #34 el 2026-11-12; decisiones en [`docs/reporting/implementation-analysis.md`](../docs/reporting/implementation-analysis.md)):** Prefect autorizado y **solo** en el entorno propio de `data/pipelines` (`pyproject.toml` virtual de uv, `uv.lock`, `requirements.txt`, venv `data/pipelines/.venv`), nunca en `services/api`: allí bajaría `python-dateutil` 4.0.0 (transitiva de Pandas) a 2.9.0.post0 (*desde DEV-55, 2026-11-20, la API ya tiene la 2.9.0.post0, que fija celery 5.7.0; ver «Cola de tareas asíncronas»*), y además el flow no debe correr bajo el `--reload` de la API. Imagen `nexova-pipeline:dev` desde `data/Dockerfile` (contexto `data/` + `packages`, `PYTHONPATH=/data/pipelines:/data/process:/packages/shared`). Servicio `prefect-server` en el perfil `pipelines` (solo con `--profile pipelines`, sin `env_file`, volumen `prefect-data`, `PREFECT_UI_API_URL=http://localhost:4200/api`). SQLAlchemy de la misma serie 2.1 que la API, con su versión exacta propia.
 - **Código del pipeline (parada 2):**
   - **Dónde vive cada pieza:** el flow y sus tasks están en `data/pipelines/pipeline.py`, no en `business_performance/flows.py`/`tasks.py`. La transformación pura está en `data/process/weekly_performance.py` (solo librería estándar). La SQL está en `business_performance/repository.py`, con una transacción por método.
   - **Importaciones:** `business_performance/__init__.py` añade `data/process` y `packages/shared` a `sys.path` si no se importan ya.
@@ -362,6 +362,47 @@ Decisiones M1–M19 y su porqué en [`docs/telemetry/nightly-export-analysis.md`
 - **Arranque del Prefect efímero:** `business_performance/_bootstrap.py` fija `PREFECT_SERVER_EPHEMERAL_STARTUP_TIMEOUT_SECONDS=90` con `setdefault` (Prefect 3.9.2 trae 20 s y el arranque tarda 18–21 s en una máquina normal; el job nocturno fallaba al azar). Vale a mano, en el subproceso del job (pasa su lista blanca por el prefijo `PREFECT_`) y en el contenedor; `tests/test_ephemeral_timeout.py` lo vigila.
 - **Prefect:** el cron `weekly` se retiró de `serve.py` (M5); queda `manual`. `RunTrigger.SCHEDULE` sigue en `nexova_shared` (nadie lo usa ya para disparar).
 - **`data/Dockerfile`:** etapas `base`, `scheduler` y `pipeline` (la última, por defecto). El scheduler recibe `scripts` y `services` como contextos adicionales y copia solo `nightly_export.py` y los `.py` de `job_runner`.
+
+### Cola de tareas asíncronas (DEV-55, 2026-11-20, rama `feature/async-task-queue`; F1 hecha el 2026-11-22, sin merge)
+
+- **Decisiones:** A1–A16 en [`docs/async-tasks/analysis.md`](../docs/async-tasks/analysis.md), tomadas por el usuario el 2026-11-20. La operación que se convierte es `GET /telemetry/report` (202 + `GET /tasks/{id}`), a partir de la parada 3.
+- **Paquete `services/task_queue/`:** biblioteca, como `job_runner`. Contiene la app de Celery (`celery -A task_queue.celery_app worker`) y la configuración de A7: JSON, `acks_late`, `reject_on_worker_lost`, visibilidad de 600 s, límites de 120/150 s, prefetch 1, `result_expires` de 3600 s, `task_track_started`, eventos para Flower y cola `nexova.tasks`. No importa FastAPI, `app` ni Prefect. Tests: `python -m unittest discover -s services/task_queue/tests -t services`, con el entorno de `services/api` o en la imagen.
+- **Dependencias en `services/api`** (autorizadas, A14):
+  - principales: `celery[redis]>=5.7,<5.8` y `redis>=6.4,<9`;
+  - grupo de uv `flower`: `flower>=2.2,<2.3`, exportado a `requirements-flower.txt` (principales + `flower`, con hashes) para el target `flower` del `services/Dockerfile`.
+  - **celery 5.7.0 fija `python-dateutil==2.9.0.post0`**, así que la transitiva de Pandas baja de 4.0.0 a 2.9.0.post0 en la API. Lo aceptó el usuario; es el precedente D1 de `docs/reporting/implementation-analysis.md`, que dejó Prefect fuera de la API por la misma bajada. La suite completa pasa con la 2.9 en la imagen.
+  - El venv del host de `services/api` se actualizó el 2026-11-20 con `uv pip install --require-hashes -r services/api/requirements.txt`: entraron celery 5.7.0, kombu, redis, etc., y dateutil bajó a 2.9.0.post0. Nunca con `uv sync`. El Control de aplicaciones no lo bloqueó.
+- **Parada 2 (reintentos, DLQ y migración):**
+  - todas las tareas heredan de `task_queue.base.ReliableTask` (`task_cls`): se reintentan solo los errores transitorios de SQLAlchemy, con el backoff propio `2·2^n + U(0, 2)` s (nunca inmediato; el `full_jitter` de Celery puede dar 0 s);
+  - con `max_retries=3` (4 ejecuciones), o con un error no reintentable o un límite de tiempo, va a la DLQ `ops.task_dead_letters` (`attempt = retries + 1`, `task_id` único, migración `python -m task_queue.migrate`, compatible en cualquier orden con `job_runner.migrate`);
+  - si la base no responde o falta la tabla, línea `status=dead_letter_not_stored` con todos los campos;
+  - el límite duro lo registra `DeadLetterRequest.on_timeout` en el proceso principal;
+  - errores redactados con `job_runner.redact` (la imagen copia `job_runner/`) y relanzados como `TaskFailedError`;
+  - el worker recibe `DATABASE_URL` (la demo, como la API). La demo **no** tiene `ops.task_dead_letters` ni `ops`; migrarla, solo con confirmación;
+  - el `PYTHONPATH` de la imagen incluye `/app/api`, porque Celery solo añade el directorio actual mientras importa la app;
+  - tests de integración con `TASK_QUEUE_TEST_DATABASE_URL` y `TASK_QUEUE_TEST_REDIS_URL` locales (worker `prefork` real, en la imagen).
+- **Docker:** `services/Dockerfile` en targets `runtime`, `flower` y `api` (el último, el de por defecto); la imagen copia `task_queue/` y crea el usuario `nexova` (uid 10001). Compose añade, por defecto (sin perfil):
+  - `redis`: `redis:8.10.3-alpine3.23@sha256:7958cfbb…`, usuario `redis`, contraseña en un archivo de configuración dentro del contenedor, 128 MB `noeviction`, AOF en el volumen `redis-data` y `127.0.0.1:6379`;
+  - `worker`: target `api`, usuario `nexova`, lista blanca `REDIS_URL`, `DATABASE_URL` (desde la parada 2) y `TZ`, sin puertos, `init`, `stop_grace_period` de 160 s y healthcheck `inspect ping`;
+  - `flower`: `127.0.0.1:5555` con `FLOWER_BASIC_AUTH`;
+  - `api` depende de `redis` `healthy`.
+- **`.env`:** `REDIS_PASSWORD`, `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0` (Compose interpola dentro del `.env`) y `FLOWER_BASIC_AUTH`. `REDIS_URL` llega a `api` (por `env_file`), a `worker` y a `flower`; nunca a `ui`.
+- **Parada 3 (la operación, el 202 y `/tasks`):**
+  - **Productor:** la API solo usa `task_queue.client` y `task_queue.names`, y en `services/api/app` no aparece la palabra `celery`. `test_the_api_has_no_scheduler_inside_its_process` pasa sin modificarse.
+  - **Rutas:** `GET /telemetry/report` responde 202 + `Location` y encola `task_queue.telemetry_report(start, end)`. `GET /tasks/{task_id}` está en `app/modules/tasks/`.
+  - **Configuración:** `REDIS_URL` es opcional en `Settings`; sin ella, 503 `task_queue_unavailable`. Hay 404 `task_not_found` para ids ajenos, inventados o caducados.
+  - **Caché y metadatos:** la caché `telemetry_report` de `ResponseCache` se retiró y la sustituye la deduplicación por usuario de 60 s en Redis. Los metadatos llevan un TTL de 7 días mientras la tarea vive y 3600 s al terminar (A10).
+  - **Calentamiento:** `TaskQueueClient.from_redis_url` carga los módulos perezosos de Celery sin conectar.
+  - **Pandas:** `errors.root_error` desenvuelve el `pandas.errors.DatabaseError` de `read_sql`, que tapaba el `OperationalError`.
+  - **Compose:** la API monta `task_queue` y `job_runner`. Sin eso, su `--reload` cargó el `app/` nuevo contra la copia vieja de la imagen y la API del usuario quedó `unhealthy` hasta reconstruir. El worker monta además `services/telemetry` y `services/api/app` (modelo de la tabla).
+  - **Contrato:** SPECS Parte J (§54–§58) y §4, §7, §41 y §48.
+  - **Backoffice:** ~~`/telemetry` sigue esperando el 200 síncrono hasta la parada 4~~ (*corregido el 2026-11-22: ya encola y sondea, ver la parada 4*).
+- **Parada 4 (frontend `/telemetry` y calentamiento):**
+  - **Backoffice:** `services/telemetry-report.service.ts` encola (`requestTelemetryReport`, 202) y lee la tarea (`getTelemetryReportTask`). La sesión de `hooks/use-telemetry-report.ts` sondea con esperas de 1/2/3 s y un tope de 10 min, y cancela al salir. La vista muestra «En cola», «Calculando», el resultado o un error con «Reintentar». Hay errores nuevos (`queue_unavailable`, `task_failed`, `task_expired`, `polling_timeout`), con sus textos en `lib/telemetry-report-format.ts`, y normalizadores nuevos (`normalizeTaskAccepted`, `normalizeTelemetryReportTask`). Sin dependencias nuevas.
+  - **API:** sin cambios en la parada 4. Se probó un calentamiento de conexiones en el lifespan y se retiró: efecto medido dentro del ruido. El calentamiento que sí se queda son las importaciones perezosas de Celery, en `TaskQueueClient.from_redis_url` (parada 3).
+  - **Compose:** `redis` tiene `restart: unless-stopped`, como el worker; antes, tras reiniciar Docker, el worker volvía `unhealthy` sin broker.
+  - **`next dev` y `127.0.0.1`:** bloquea sus recursos de desarrollo pedidos desde `127.0.0.1` (`allowedDevOrigins`). Para probar en el navegador hay que entrar por `localhost`.
+- **Parada 5 (documentación):** arranque, parada, logs y reinicio del worker en `docs/local-development.md` §3.1; reglas de validación en `AGENTS.md` §4; guía de revisión en `docs/async-tasks/review.md`. **La demo sigue sin `ops`:** hasta migrarla (con confirmación), el worker contra la demo no guarda la DLQ.
 
 ### Plan de telemetría (diseño, ticket del 2026-11-01/02, rama `docs/telemetry-plan`; integrado en `main` con la PR #28, merge `8a23d17`, 2026-11-02)
 

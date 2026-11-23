@@ -3,12 +3,15 @@
 
 import {
   ERROR_CLASS_LABELS,
+  TASK_PHASE_COPY,
   dailyVolumes,
   formatMs,
   formatPercent,
   formatPeriodDate,
+  telemetryReportErrorCopy,
   volumeServices,
 } from '@/lib/telemetry-report-format';
+import type { TelemetryReportUiError } from '@/types/telemetry-report';
 
 // `Intl` separa el porcentaje con un espacio de no separación.
 const normalized = (text: string) => text.replace(/\s/g, ' ');
@@ -74,5 +77,46 @@ describe('dailyVolumes', () => {
 describe('ERROR_CLASS_LABELS', () => {
   it('etiqueta las dos clases', () => {
     expect(ERROR_CLASS_LABELS).toEqual({ system: 'Sistema', rejected: 'Rechazado' });
+  });
+});
+
+// DEV-55 (parada 4): textos de las fases de la tarea y de cada error, movidos aquí
+// desde la vista para poder probarlos.
+describe('textos de la cola de tareas', () => {
+  const KINDS: TelemetryReportUiError['kind'][] = [
+    'queue_unavailable',
+    'task_failed',
+    'task_expired',
+    'polling_timeout',
+    'request_invalid',
+    'server_error',
+    'network',
+    'timeout',
+    'unexpected_response',
+    'config',
+    'session_expired',
+  ];
+
+  test('las dos fases se llaman «En cola» y «Calculando»', () => {
+    expect(TASK_PHASE_COPY.queued.title).toBe('En cola');
+    expect(TASK_PHASE_COPY.computing.title).toBe('Calculando');
+  });
+
+  test('cada error tiene un título y un texto propios', () => {
+    const titles = new Set(KINDS.map((kind) => telemetryReportErrorCopy({ kind } as TelemetryReportUiError).title));
+    expect(titles.size).toBe(KINDS.length);
+  });
+
+  test('ningún texto muestra códigos HTTP, nombres de la API ni detalles técnicos', () => {
+    for (const kind of KINDS) {
+      const { title, body } = telemetryReportErrorCopy({ kind } as TelemetryReportUiError);
+      expect(`${title} ${body}`).not.toMatch(/\b[45]\d\d\b|task_|queue_|redis|celery|NEXT_PUBLIC|services\/api|\(.*\)/i);
+    }
+  });
+
+  test('los casos de la cola dicen qué hacer', () => {
+    expect(telemetryReportErrorCopy({ kind: 'queue_unavailable' }).body).toMatch(/Inténtalo de nuevo/);
+    expect(telemetryReportErrorCopy({ kind: 'task_expired' }).body).toMatch(/Pídelo de nuevo/);
+    expect(telemetryReportErrorCopy({ kind: 'polling_timeout' }).body).toMatch(/10 minutos/);
   });
 });

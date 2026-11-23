@@ -48,12 +48,14 @@ import type {
 } from '@/types/incidents';
 import {
   ERROR_CLASSES,
+  TASK_STATUSES,
   type AuthFailureRateRow,
   type DominantEventTypeRow,
   type ErrorRateRow,
   type EventsPerDayRow,
   type PageLoadLatencyRow,
   type TelemetryReport,
+  type TelemetryReportTask,
 } from '@/types/telemetry-report';
 import {
   INCIDENT_BRANCHES,
@@ -779,6 +781,37 @@ export function normalizeTelemetryReport(input: unknown): TelemetryReport {
       auth_failure_rate: readRows(metrics, 'auth_failure_rate', path, authFailureRateRow),
     },
   };
+}
+
+/** `202 {"task_id"}` de `GET /telemetry/report` (SPECS Parte J, §54): el id de la tarea, un UUID v4. */
+export function normalizeTaskAccepted(input: unknown): string {
+  const value = expectObject(input, 'response');
+  const taskId = readString(value, 'task_id', 'response');
+  if (!UUID_V4.test(taskId)) throw new UnexpectedResponseError('response.task_id', 'uuid v4', 'string');
+  return taskId;
+}
+
+/**
+ * `GET /tasks/{task_id}` de una tarea del reporte (SPECS Parte J, §56). Solo se leen el
+ * estado y, en `success`, el reporte (con su normalizador). De un `failure` no se lee
+ * nada más: la API devuelve un objeto fijo y aquí no hay nada que mostrar de él.
+ */
+export function normalizeTelemetryReportTask(input: unknown, expectedTaskId: string): TelemetryReportTask {
+  const value = expectObject(input, 'response');
+  if (readString(value, 'task_id', 'response') !== expectedTaskId) {
+    throw new UnexpectedResponseError('response.task_id', 'the requested task id', 'another id');
+  }
+  const status = readOneOf(value, 'status', 'response', TASK_STATUSES);
+  switch (status) {
+    case 'success':
+      return { status, report: normalizeTelemetryReport(value.result) };
+    case 'failure':
+      return { status };
+    case 'pending':
+    case 'started':
+      if (value.result !== null) throw new UnexpectedResponseError('response.result', 'null', describeType(value.result));
+      return { status };
+  }
 }
 
 // ---------------------------------------------------------------------------

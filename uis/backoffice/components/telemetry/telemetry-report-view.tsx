@@ -3,6 +3,8 @@
 // /telemetry: las métricas técnicas de `GET /telemetry/report`, con el periodo
 // visible. Tablas, y una barra de CSS por día en el volumen: sin librería de
 // gráficos. Los valores de la API se muestran tal cual, en inglés.
+// Desde DEV-55 el reporte se encola: mientras no llega, «En cola» o «Calculando»
+// (el sondeo lo hace el hook), y un fallo, con su texto y «Reintentar».
 
 import type { ReactNode } from 'react';
 
@@ -13,10 +15,12 @@ import { TableScroll } from '@/components/ui/table-scroll';
 import { useTelemetryReport } from '@/hooks/use-telemetry-report';
 import {
   ERROR_CLASS_LABELS,
+  TASK_PHASE_COPY,
   dailyVolumes,
   formatMs,
   formatPercent,
   formatPeriodDate,
+  telemetryReportErrorCopy,
   volumeServices,
 } from '@/lib/telemetry-report-format';
 import type { TelemetryReport, TelemetryReportUiError } from '@/types/telemetry-report';
@@ -30,33 +34,8 @@ const CELL = 'px-3 py-2';
 const NUMBER_CELL = 'px-3 py-2 text-right tabular-nums';
 const CODE_CELL = 'px-3 py-2 font-mono text-xs';
 
-function errorCopy(error: TelemetryReportUiError): { title: string; body: string } {
-  switch (error.kind) {
-    case 'network':
-      return {
-        title: 'No se pudo conectar con el servidor',
-        body: 'Comprueba tu conexión e inténtalo de nuevo. Si el problema continúa, avisa al equipo técnico.',
-      };
-    case 'timeout':
-      return { title: 'La operación tardó demasiado', body: 'El servidor no respondió a tiempo. Inténtalo de nuevo.' };
-    case 'server_error':
-      return { title: 'Error del servidor', body: 'No se pudo calcular el reporte. Inténtalo de nuevo en unos minutos.' };
-    case 'request_invalid':
-      return { title: 'La solicitud no es válida', body: 'Inténtalo de nuevo. Si el problema continúa, avisa al equipo técnico.' };
-    case 'unexpected_response':
-      return {
-        title: 'Respuesta inesperada del servidor',
-        body: 'La respuesta no tiene el formato esperado, así que no se muestra ningún dato.',
-      };
-    case 'config':
-      return { title: 'La aplicación no está bien configurada', body: 'Avisa al equipo técnico para que la revise.' };
-    case 'session_expired':
-      return { title: 'La sesión ha caducado', body: 'Vuelve a iniciar sesión para continuar.' };
-  }
-}
-
 function ReportError({ error, onRetry }: { error: TelemetryReportUiError; onRetry: () => void }) {
-  const { title, body } = errorCopy(error);
+  const { title, body } = telemetryReportErrorCopy(error);
   return (
     <div className="flex flex-col gap-2">
       <Alert variant="error" title={title}>
@@ -66,6 +45,20 @@ function ReportError({ error, onRetry }: { error: TelemetryReportUiError; onRetr
         <Button variant="secondary" onClick={onRetry}>
           Reintentar
         </Button>
+      </div>
+    </div>
+  );
+}
+
+/** «En cola» o «Calculando» mientras no hay reporte (DEV-55, A16). Mismo hueco en las dos fases. */
+function TaskPhase({ phase }: { phase: 'queued' | 'computing' }) {
+  const { title, body } = TASK_PHASE_COPY[phase];
+  return (
+    <div role="status" className="flex items-start gap-3 rounded-lg border border-dashed border-border bg-surface p-6">
+      <LoadingSpinner />
+      <div className="flex flex-col gap-1">
+        <span className="text-sm font-semibold text-ink">{title}</span>
+        <span className="text-sm text-ink-muted">{body}</span>
       </div>
     </div>
   );
@@ -269,11 +262,13 @@ export function TelemetryReportView() {
 
   return (
     <div className="flex flex-col gap-6">
-      {view === 'loading' && (
-        <div className="flex items-center gap-3 rounded-lg border border-dashed border-border bg-surface p-6">
+      {(view === 'queued' || view === 'computing') && <TaskPhase phase={view} />}
+
+      {report !== null && (load.status === 'queued' || load.status === 'computing') && (
+        <p role="status" className="flex items-center gap-2 text-sm text-ink-muted">
           <LoadingSpinner />
-          <span className="text-sm text-ink-muted">Calculando el reporte…</span>
-        </div>
+          {TASK_PHASE_COPY[load.status === 'queued' ? 'queued' : 'computing'].title}: se está preparando un reporte nuevo.
+        </p>
       )}
 
       {load.status === 'error' && <ReportError error={load.error} onRetry={reload} />}

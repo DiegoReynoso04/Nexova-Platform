@@ -1,8 +1,14 @@
-"""`GET /telemetry/report`: forma, periodo, autenticación y caché (ticket del reporte técnico).
+"""`GET /telemetry/report`: 202, forma del resultado, periodo, autenticación y deduplicación.
 
-App real con SQLite en memoria. Las métricas se prueban en `test_telemetry_analysis.py`;
-aquí, lo que las rodea. Las consultas se cuentan con `before_cursor_execute`: un
-acierto no ejecuta ninguna.
+Desde DEV-55 la ruta encola `task_queue.telemetry_report` y responde `202 {"task_id"}`;
+el reporte, con la forma de siempre, llega por `GET /tasks/{id}` (SPECS §48 y Parte J).
+App real con SQLite en memoria y la cola en memoria (`task_queue_support`): el
+cliente real de `task_queue` con metadatos y deduplicación de verdad, y un backend
+que ejecuta en el acto el mismo cálculo que el worker. Las métricas se prueban en
+`test_telemetry_analysis.py`; `/tasks` en sí, en `test_tasks_api.py`.
+
+Las consultas se cuentan con `before_cursor_execute`: encolar no ejecuta ninguna, y
+una petición deduplicada tampoco.
 """
 
 import json
@@ -12,17 +18,21 @@ from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
 
+from kombu.exceptions import OperationalError as BrokerDown
 from sqlalchemy import event
 from sqlalchemy.exc import OperationalError
 from sqlmodel import Session
+from task_queue.config import DEDUPE_TTL_SECONDS
+from task_queue.metadata import DEDUPE_PREFIX
+from task_queue.names import TELEMETRY_REPORT_TASK
 
 from app.auth.models import UserRole
-from app.core.cache import ResponseCache
 from app.modules.telemetry.models import TelemetryEventRecord
 from app.modules.telemetry.report import DEFAULT_WINDOW, MAX_WINDOW, cache_key, iso_utc, resolve_period, to_utc
-from app.modules.telemetry.router import CACHE_NAMESPACE, CACHE_TTL_SECONDS
+from app.modules.telemetry.router import dedupe_scope
 
 from .support import authorize
+from .task_queue_support import install_task_queue
 from .telemetry_support import storage_client
 
 URL = "/telemetry/report"
@@ -39,14 +49,15 @@ class Clock:
 
 
 class ReportCase(unittest.TestCase):
+    hold = False
+
     def setUp(self) -> None:
         self.client = storage_client(authenticated=True)
         self.addCleanup(self.client.auth_dir.cleanup)  # type: ignore[attr-defined]
         self.app = self.client.app
         self.engine = self.app.state.inventory_engine  # type: ignore[attr-defined]
         self.clock = Clock()
-        self.cache = ResponseCache(clock=self.clock)
-        self.app.state.response_cache = self.cache  # type: ignore[attr-defined]
+        self.queue, self.store, self.backend = install_task_queue(self.app, self.engine, clock=self.clock, hold=self.hold)  # type: ignore[arg-type]
 
     def add(self, event_type: str, moment: datetime, tags: dict[str, Any] | None = None, service: str = "backoffice") -> None:
         with Session(self.engine) as session:
@@ -64,13 +75,26 @@ class ReportCase(unittest.TestCase):
             )
             session.commit()
 
-    def report(self, **params: str) -> dict[str, Any]:
+    def enqueue(self, **params: str) -> str:
         response = self.client.get(URL, params=params)
+        self.assertEqual(response.status_code, 202, response.text)
+        task_id: str = response.json()["task_id"]
+        return task_id
+
+    def task(self, task_id: str) -> dict[str, Any]:
+        response = self.client.get(f"/tasks/{task_id}")
         self.assertEqual(response.status_code, 200, response.text)
         body: dict[str, Any] = response.json()
         return body
 
-    def queries(self, **params: str) -> int:
+    def report(self, **params: str) -> dict[str, Any]:
+        """Lo que antes respondía la ruta: 202 → `GET /tasks/{id}` → `result`."""
+        body = self.task(self.enqueue(**params))
+        self.assertEqual(body["status"], "success", body)
+        result: dict[str, Any] = body["result"]
+        return result
+
+    def queries(self, call: Any = None, **params: str) -> int:
         statements: list[str] = []
 
         def record(conn: Any, cursor: Any, statement: str, *args: Any) -> None:
@@ -78,10 +102,58 @@ class ReportCase(unittest.TestCase):
 
         event.listen(self.engine, "before_cursor_execute", record)
         try:
-            self.report(**params)
+            (call or self.report)(**params)
         finally:
             event.remove(self.engine, "before_cursor_execute", record)
         return len([statement for statement in statements if "telemetry_events" in statement])
+
+
+class AcceptedTests(ReportCase):
+    """El contrato nuevo (DEV-55): 202 inmediato, sin tocar la base y con solo dos fechas en el mensaje."""
+
+    hold = True
+
+    def test_202_with_only_the_task_id(self) -> None:
+        response = self.client.get(URL)
+        self.assertEqual(response.status_code, 202)
+        body = response.json()
+        self.assertEqual(set(body), {"task_id"})
+        self.assertEqual(response.headers["location"], f"/tasks/{body['task_id']}")
+        self.assertEqual(response.headers["cache-control"], "no-store")
+
+    def test_enqueueing_runs_no_query(self) -> None:
+        self.assertEqual(self.queries(self.enqueue), 0)
+        self.assertEqual(len(self.backend.sent), 1)
+
+    def test_the_message_only_carries_start_and_end(self) -> None:
+        self.enqueue(start_date="2026-11-01T10:00:00Z", end_date="2026-11-02T10:00:00Z")
+        [(name, kwargs, _)] = self.backend.sent
+        self.assertEqual(name, TELEMETRY_REPORT_TASK)
+        self.assertEqual(kwargs, {"start": "2026-11-01T10:00:00.000Z", "end": "2026-11-02T10:00:00.000Z"})
+
+    def test_the_task_is_pending_until_the_worker_runs_it(self) -> None:
+        task_id = self.enqueue()
+        self.assertEqual(self.task(task_id), {"task_id": task_id, "status": "pending", "result": None})
+        self.backend.run(task_id)
+        self.assertEqual(self.task(task_id)["status"], "success")
+
+    def test_without_a_task_queue_is_503(self) -> None:
+        self.app.state.task_queue = None  # type: ignore[attr-defined]
+        response = self.client.get(URL)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {"detail": "the task queue is not available", "code": "task_queue_unavailable"})
+
+    def test_a_broker_failure_is_503_and_leaves_nothing_behind(self) -> None:
+        self.backend.fail_sending = BrokerDown("Error 111 connecting to redis://:secret@redis:6379/0")
+        response = self.client.get(URL)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["code"], "task_queue_unavailable")
+        self.assertNotIn("secret", response.text)
+        self.assertEqual(self.store.values, {})
+
+    def test_validation_comes_before_the_queue(self) -> None:
+        self.app.state.task_queue = None  # type: ignore[attr-defined]
+        self.assertEqual(self.client.get(URL, params={"start_date": "2026-11-02", "end_date": "2026-11-01"}).status_code, 422)
 
 
 class ShapeTests(ReportCase):
@@ -133,7 +205,8 @@ class ShapeTests(ReportCase):
     def test_no_identifier_nor_business_value_reaches_the_response(self) -> None:
         moment = datetime(2026, 11, 1, 12, tzinfo=UTC)
         self.add("outbound_order_created", moment, {"office": "valencia", "currency": "EUR", "quantity": 3})
-        text = self.client.get(URL, params={"start_date": "2026-11-01", "end_date": "2026-11-02"}).text
+        task_id = self.enqueue(start_date="2026-11-01", end_date="2026-11-02")
+        text = self.client.get(f"/tasks/{task_id}").text
         for fragment in ("user_id", "session_id", "event_id", "valencia", "EUR", "quantity"):
             self.assertNotIn(fragment, text)
 
@@ -147,11 +220,13 @@ class ShapeTests(ReportCase):
 
     def test_the_period_is_resolved_once_and_passed_to_the_analysis(self) -> None:
         empty = dict.fromkeys(METRIC_KEYS, [])
-        with patch("app.modules.telemetry.router.all_metrics", return_value=empty) as analysis:
+        with patch("telemetry.analysis.all_metrics", return_value=empty) as analysis:
             period = self.report()["period"]
         analysis.assert_called_once()
         _, start, end = analysis.call_args.args
         self.assertEqual((iso_utc(start), iso_utc(end)), (period["from"], period["to"]))
+        [(_, kwargs, _)] = self.backend.sent
+        self.assertEqual(kwargs, {"start": period["from"], "end": period["to"]})
 
 
 class ParameterTests(ReportCase):
@@ -207,9 +282,10 @@ class ParameterTests(ReportCase):
             with self.subTest(value=value):
                 self.rejected(start_date=value)
 
-    def test_a_rejected_period_uses_no_cache_entry_and_no_query(self) -> None:
+    def test_a_rejected_period_enqueues_no_task(self) -> None:
         self.rejected(start_date="2026-11-02", end_date="2026-11-01")
-        self.assertEqual(self.cache.size(CACHE_NAMESPACE), 0)
+        self.assertEqual(self.backend.sent, [])
+        self.assertEqual(self.store.values, {})
 
 
 class ResolvePeriodTests(unittest.TestCase):
@@ -234,6 +310,7 @@ class ResolvePeriodTests(unittest.TestCase):
 
     def test_the_cache_key_never_contains_now(self) -> None:
         self.assertEqual(cache_key(None, None), (None, None))
+        self.assertEqual(dedupe_scope(None, None), "-|-")
 
 
 class AuthTests(ReportCase):
@@ -245,7 +322,7 @@ class AuthTests(ReportCase):
         self.client.headers["Authorization"] = "Bearer no-es-un-token"
         self.assertEqual(self.client.get(URL).status_code, 401)
 
-    def test_a_cache_hit_does_not_skip_the_401(self) -> None:
+    def test_a_dedupe_hit_does_not_skip_the_401(self) -> None:
         self.report()
         del self.client.headers["Authorization"]
         self.assertEqual(self.client.get(URL).status_code, 401)
@@ -254,23 +331,33 @@ class AuthTests(ReportCase):
         for role in UserRole:
             with self.subTest(role=role):
                 authorize(self.client, role)
-                self.assertEqual(self.client.get(URL).status_code, 200)
+                self.assertEqual(self.client.get(URL).status_code, 202)
 
     def test_the_collector_stays_public(self) -> None:
         del self.client.headers["Authorization"]
         self.assertEqual(self.client.post("/telemetry/events", json={"events": []}).status_code, 200)
 
 
-class CacheTests(ReportCase):
-    def test_ttl_is_60_seconds_in_its_own_namespace(self) -> None:
-        self.assertEqual((CACHE_NAMESPACE, CACHE_TTL_SECONDS), ("telemetry_report", 60))
+class DedupeTests(ReportCase):
+    """A4: sustituye a la caché de 60 s en memoria. Misma combinación del mismo usuario en 60 s → misma tarea."""
 
-    def test_the_default_window_hits_even_if_now_has_changed(self) -> None:
+    def test_ttl_is_60_seconds_per_user(self) -> None:
+        self.assertEqual(DEDUPE_TTL_SECONDS, 60)
+        self.enqueue()
+        [key] = [key for key in self.store.values if key.startswith(DEDUPE_PREFIX)]
+        self.assertTrue(key.startswith(f"{DEDUPE_PREFIX}{TELEMETRY_REPORT_TASK}:"))
+        self.assertTrue(key.endswith(":-|-"))
+        self.assertEqual(self.store.ttl(key), 60)
+
+    def test_the_default_window_dedupes_even_if_now_has_changed(self) -> None:
         self.assertEqual(self.queries(), 5)
         self.assertEqual(self.queries(), 0)
+        self.assertEqual(len(self.backend.sent), 1)
 
-    def test_a_hit_returns_the_same_period_and_metrics(self) -> None:
-        self.assertEqual(self.report(), self.report())
+    def test_a_hit_returns_the_same_task_and_the_same_report(self) -> None:
+        first, second = self.enqueue(), self.enqueue()
+        self.assertEqual(first, second)
+        self.assertEqual(self.task(first), self.task(second))
 
     def test_within_the_ttl_new_rows_do_not_change_the_report(self) -> None:
         params = {"start_date": "2026-11-01", "end_date": "2026-11-02"}
@@ -280,7 +367,7 @@ class CacheTests(ReportCase):
 
     def test_it_recalculates_when_the_ttl_ends(self) -> None:
         self.assertEqual(self.queries(), 5)
-        self.clock.now += CACHE_TTL_SECONDS - 0.001
+        self.clock.now += DEDUPE_TTL_SECONDS - 0.001
         self.assertEqual(self.queries(), 0)
         self.clock.now += 0.001
         self.assertEqual(self.queries(), 5)
@@ -289,19 +376,24 @@ class CacheTests(ReportCase):
         self.assertEqual(self.queries(start_date="2026-11-01T00:00:00Z", end_date="2026-11-02T00:00:00Z"), 5)
         self.assertEqual(self.queries(start_date="2026-11-01", end_date="2026-11-02T01:00:00+01:00"), 0)
 
-    def test_another_combination_is_another_entry(self) -> None:
+    def test_another_combination_is_another_task(self) -> None:
         self.assertEqual(self.queries(start_date="2026-11-01", end_date="2026-11-02"), 5)
         self.assertEqual(self.queries(start_date="2026-11-01", end_date="2026-11-03"), 5)
-        self.assertEqual(self.cache.size(CACHE_NAMESPACE), 2)
+        self.assertEqual(len({task_id for _, _, task_id in self.backend.sent}), 2)
 
-    def test_a_failure_is_not_cached(self) -> None:
+    def test_another_user_gets_another_task(self) -> None:
+        first = self.enqueue()
+        authorize(self.client, UserRole.ADMIN)
+        self.assertNotEqual(self.enqueue(), first)
+
+    def test_a_failed_task_is_not_reused(self) -> None:
         failure = OperationalError("SELECT 1", {}, Exception("down"))
-        with patch("app.modules.telemetry.router.all_metrics", side_effect=failure):
-            response = self.client.get(URL)
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json()["code"], "storage_unavailable")
-        self.assertEqual(self.cache.size(CACHE_NAMESPACE), 0)
-        self.report()
+        with patch("telemetry.analysis.all_metrics", side_effect=failure):
+            failed = self.enqueue()
+        self.assertEqual(self.task(failed), {"task_id": failed, "status": "failure", "result": {"code": "task_failed", "detail": "the task failed"}})
+        retried = self.enqueue()
+        self.assertNotEqual(retried, failed)
+        self.assertEqual(self.task(retried)["status"], "success")
 
     def test_the_collector_does_not_invalidate_the_report(self) -> None:
         self.report()

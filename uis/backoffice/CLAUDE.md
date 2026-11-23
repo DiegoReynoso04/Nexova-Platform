@@ -174,7 +174,13 @@ Extra del ticket del reporte técnico. Contrato: [`services/api/SPECS.md`](../..
 - **Formato:** la API no redondea; `lib/telemetry-report-format.ts` formatea tasas y milisegundos. Los valores de la API se muestran tal cual, en inglés.
 - **Ventana:** la de la API por defecto, 7 días. El periodo se muestra siempre, y el fin es exclusivo.
 - **Fuera de la telemetría a propósito:** `/telemetry` y `/telemetry/report` no están en los enums del contrato, así que la página no emite `page_viewed` ni `client_request_failed`. Añadirlos sería la versión `1.1.0` (D14 de `report-analysis.md`).
-- **Tests:** `tests/telemetry-report.test.mjs` (normalizador, servicio, reducer y sesión), `__tests__/utils/telemetry-report-format.test.ts` y las reglas de `tests/production-source.test.mjs`.
+- **Asíncrono desde DEV-55** (A16 de [`docs/async-tasks/analysis.md`](../../docs/async-tasks/analysis.md); contrato en `services/api/SPECS.md` Parte J):
+  - **Encolar y sondear:** `GET /telemetry/report` responde 202 `{task_id}` (`requestTelemetryReport`) y se sondea `GET /tasks/{task_id}` (`getTelemetryReportTask`), los dos solo en `services/telemetry-report.service.ts`. El reporte es el `result` de la tarea en `success`; de un `failure` no se lee nada.
+  - **El sondeo** vive en la sesión del hook (`hooks/use-telemetry-report.ts`): esperas de 1 s, 2 s y después 3 s (`POLL_DELAYS_MS`), con un tope de 10 min (`POLL_TIMEOUT_MS`). Al salir de la página (`dispose`) se aborta la petición en curso y la espera, y no se programa ningún sondeo más.
+  - **Estados:** «En cola» (`pending`, y mientras se encola), «Calculando» (`started`, también entre reintentos), el resultado, y error con «Reintentar». Con un reporte en pantalla, una recarga no lo esconde.
+  - **Errores propios:** `queue_unavailable` (503 al encolar o al sondear), `task_failed`, `task_expired` (404 de `/tasks` durante el sondeo) y `polling_timeout`. Los textos están en `lib/telemetry-report-format.ts` (`telemetryReportErrorCopy`, `TASK_PHASE_COPY`) y no muestran códigos ni detalles técnicos (Jest).
+  - **Reintentar** vuelve a encolar. En los 60 s siguientes, la API devuelve la misma tarea si no falló (deduplicación por usuario).
+- **Tests:** `tests/telemetry-report.test.mjs` (normalizadores del reporte y de la tarea, servicio, reducer y sesión con el sondeo, con esperas y reloj falsos), `__tests__/utils/telemetry-report-format.test.ts` y las reglas de `tests/production-source.test.mjs`.
 
 ## Reporte semanal de desempeño (`/reporting`)
 

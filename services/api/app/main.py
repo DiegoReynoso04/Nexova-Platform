@@ -36,6 +36,8 @@ from app.modules.inventory.router import router as inventory_router
 from app.modules.telemetry.collector import EventRateLimiter
 from app.modules.telemetry.router import TELEMETRY_EVENTS_PATH, TELEMETRY_MAX_BODY_BYTES
 from app.modules.telemetry.router import router as telemetry_router
+from app.modules.tasks.dependencies import build_task_queue
+from app.modules.tasks.router import router as tasks_router
 from app.modules.telemetry.stock_edit import StockEditReporter
 from app.routes.auth import router as auth_router
 from app.routes.profiles import router as profiles_router
@@ -82,6 +84,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.stock_edit_reporter = StockEditReporter(settings, app.state.inventory_engine)
     # Throttle del colector (plan §7.2): en memoria, uno por app; exige --workers 1.
     app.state.telemetry_rate_limiter = EventRateLimiter()
+    # Cola de tareas (DEV-55): productor hacia Redis, sin conectar aquí. Sin REDIS_URL,
+    # `None`: las rutas que encolan o leen tareas responden 503 (los tests la sustituyen).
+    app.state.task_queue = build_task_queue(settings)
 
     install_error_handlers(app)
     # Rutas existentes con datos sensibles: todas exigen un JWT válido (AUTH-01).
@@ -105,6 +110,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Reporte de desempeño de negocio (services/reporting): GET con cualquier rol,
     # POST solo admin (lo declara la ruta).
     app.include_router(reporting_router, dependencies=authenticated)
+    # Estado de las tareas de la cola (DEV-55): la ruta declara su propia dependencia de auth.
+    app.include_router(tasks_router)
 
     # OpenAPI del gestor de incidencias: sin el 422 que nunca responde (valida con 400).
     default_openapi = app.openapi

@@ -18,6 +18,9 @@ requires-python = ">=3.11"
 # orden que este servicio:
 #   pip install -e packages/shared -e packages/incident-analyzer -e "services/api[dev]"
 dependencies = [
+    # Cola de tareas DEV-55 (autorizadas por el usuario, A14): la API encola y lee
+    # estados; el worker (services/task_queue) ejecuta. Redis es broker y backend.
+    "celery[redis]>=5.7,<5.8",
     "fastapi>=0.141,<0.142",
     # AUTH-01 (autorizadas por el ticket): hash bcrypt con libpass (fork
     # mantenido de passlib; se importa como `passlib`) y firma JWT con python-jose.
@@ -29,6 +32,9 @@ dependencies = [
     "psycopg2-binary>=2.9.13,<2.10",
     "python-jose[cryptography]>=3.5,<3.6",
     "python-multipart>=0.0.32,<0.1",
+    # DEV-55 (A14): cliente de Redis, usado también directamente por la API
+    # (metadatos y deduplicación de tareas). El rango es el que admite kombu 5.7.
+    "redis>=6.4,<9",
     # Hito 5 (autorizada por el enunciado): ORM del inventario (instala SQLAlchemy).
     "sqlmodel>=0.0.48,<0.0.49",
     "tinydb>=4.9,<4.10",
@@ -58,9 +64,16 @@ dev = [
     "pytest>=9.1,<9.2",
     "pytest-cov>=7.1,<7.2",
 ]
+# DEV-55 (A14): monitor de la cola, solo para desarrollo. Grupo propio (no `dev`):
+# no entra en requirements.txt ni en la imagen de la API; lo instala el target
+# `flower` de services/Dockerfile desde requirements-flower.txt. `uv run` no lo
+# instala (los grupos por defecto son solo `dev`).
+flower = [
+    "flower>=2.2,<2.3",
+]
 
 [tool.setuptools]
-packages = ["app", "app.auth", "app.core", "app.modules", "app.modules.incident_manager", "app.modules.incidents", "app.modules.inventory", "app.routes"]
+packages = ["app", "app.auth", "app.core", "app.modules", "app.modules.incident_manager", "app.modules.incidents", "app.modules.inventory", "app.modules.tasks", "app.routes"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
