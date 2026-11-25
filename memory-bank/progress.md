@@ -4,6 +4,16 @@ Estado vivo del proyecto. Cada entrada nueva se añade **arriba**, con fecha, y 
 
 ---
 
+## 2026-11-25 — README raíz como presentación del proyecto
+
+**Estado: hecho** (cambio del usuario, solo documental; rama `docs/readme-portfolio`).
+
+- El briefing de empresa pasa del `README.md` raíz a `docs/briefing.md` (`git mv`, contenido sin cambios).
+- `README.md` (inglés) y `README.es.md` (español) nuevos en la raíz: qué contiene el monorepo, arquitectura, arranque con Docker, tests y forma de trabajo.
+- Referencias actualizadas a `docs/briefing.md` en `AGENTS.md` (§1 y paso 3 del flujo de commit), `.agents/rules/nexova-context.md`, la skill `memory-bank-sync`, `memory-bank/projectbrief.md` y `memory-bank/techContext.md`. Las entradas históricas de este archivo y los documentos de análisis ya cerrados no se tocan.
+
+---
+
 ## 2026-11-22 — DEV-55, cola de tareas: F1, parada 5 (documentación, Flower, verificación final y limpieza)
 
 **Estado: parada 5 hecha; F1 completa (paradas 1–5) en la rama `feature/async-task-queue`; commit de la parada 5 `4de13de`, en la PR #39 (abierta, etiqueta `async-tasks`).** *Corregido el 2026-11-22: antes decía «sin commit de la parada 5, sin push ni PR hasta el OK del usuario».* Sobre `8678323` (parada 4). Nada contra la demo; el stack normal del usuario no se arrancó.
