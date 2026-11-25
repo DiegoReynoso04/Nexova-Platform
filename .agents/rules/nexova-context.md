@@ -11,7 +11,7 @@ scope: always-active
 **No inventar información sobre Nexova.** Todo dato de negocio debe poder señalarse literalmente en:
 
 - `contexts/CONTEXT.md` — briefing completo de la empresa (fuente de verdad principal). **`contexts/` está en `.gitignore` y no viaja con el repositorio** — solo existe en checkouts locales que ya la tenían.
-- `README.md` (raíz) — desde el 2026-09-27, copia versionada de `contexts/CONTEXT.md` (contenido idéntico). Si no tienes `contexts/`, aquí está el briefing completo.
+- `docs/briefing.md` — desde el 2026-09-27, copia versionada de `contexts/CONTEXT.md` (contenido idéntico; hasta el 2026-11-25 estaba en el `README.md` raíz). Si no tienes `contexts/`, aquí está el briefing completo.
 - `contexts/hito1/CONTEXT-WEB-NEXOVA.md`, `contexts/hito2/CONTEXT-HITO2.md`, `contexts/hito3/CONTEXT-HITO3.md` — briefing específico de cada hito ya construido (solo local, sin copia versionada).
 - Documentos de contexto de proyecto versionados en `docs/` (p. ej. `docs/COMPANY_INCIDENT_FILE_ANALIZER_PROJECT.md`, procesador de incidentes).
 - `memory-bank/projectbrief.md` — resumen versionado de lo anterior y de lo construido en el repo.

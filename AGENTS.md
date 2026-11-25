@@ -10,7 +10,7 @@ Leer, en este orden:
 2. [`memory-bank/techContext.md`](./memory-bank/techContext.md) — stacks reales, decisiones de arquitectura vigentes.
 3. [`memory-bank/progress.md`](./memory-bank/progress.md) — qué está hecho, qué está en curso, problemas conocidos.
 
-Para el briefing de negocio completo (no el resumen), leer `contexts/CONTEXT.md` **si existe en tu checkout** — esa carpeta está en `.gitignore` y no viaja con el repositorio (ver nota en `techContext.md`). Si no la tienes, el `README.md` raíz contiene ese mismo briefing (copia versionada desde el 2026-09-27). No existe ningún `CONTEXT.md` en la raíz.
+Para el briefing de negocio completo (no el resumen), leer `contexts/CONTEXT.md` **si existe en tu checkout** — esa carpeta está en `.gitignore` y no viaja con el repositorio (ver nota en `techContext.md`). Si no la tienes, `docs/briefing.md` contiene ese mismo briefing (copia versionada desde el 2026-09-27; hasta el 2026-11-25 vivía en el `README.md` raíz, que ahora es la presentación del proyecto). No existe ningún `CONTEXT.md` en la raíz.
 
 ## 2. Antes de trabajar en una carpeta concreta
 
@@ -153,7 +153,7 @@ Ningún agente commitea código sin completar estos cinco pasos, en orden:
 
 2. **Revisar el diff real antes de comitear:** `git status --short` y `git diff --stat`. Confirmar que no se incluyen archivos generados (`node_modules/`, `.next/`, `*.log`, `*.tsbuildinfo`) ni dependencias no autorizadas en ningún `package.json` tocado.
 
-3. **Confirmar fidelidad al contexto de negocio:** ningún dato nuevo sobre Nexova (nombre, cifra, responsable, proceso) queda sin respaldo en `contexts/CONTEXT.md` (si existe localmente), el `README.md` raíz, un documento de contexto de `docs/` o `memory-bank/projectbrief.md` — ver `.agents/rules/nexova-context.md`.
+3. **Confirmar fidelidad al contexto de negocio:** ningún dato nuevo sobre Nexova (nombre, cifra, responsable, proceso) queda sin respaldo en `contexts/CONTEXT.md` (si existe localmente), `docs/briefing.md`, un documento de contexto de `docs/` o `memory-bank/projectbrief.md` — ver `.agents/rules/nexova-context.md`.
 
 4. **Sincronizar el banco de memoria:** aplicar la skill [`memory-bank-sync`](./.agents/skills/memory-bank-sync/SKILL.md) — actualizar `progress.md` (y `techContext.md`/`projectbrief.md` si corresponde). Sin esto, el banco de memoria queda desactualizado en días y la siguiente sesión de agente vuelve a empezar de cero.
 

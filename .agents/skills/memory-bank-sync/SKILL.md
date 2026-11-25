@@ -27,7 +27,7 @@ Qué archivo se toca, de un vistazo:
 
 - `git status --short` y `git diff --stat` de la rama de trabajo frente a su base — la lista real de archivos tocados, no una suposición.
 - El contenido actual de `memory-bank/progress.md`, `memory-bank/techContext.md` y `memory-bank/projectbrief.md` (para saber qué corregir, no solo qué añadir).
-- El contexto de negocio disponible: `contexts/CONTEXT.md` si existe en el checkout local, o su copia versionada en el `README.md` raíz, más `memory-bank/projectbrief.md` (ver `.agents/rules/nexova-context.md`).
+- El contexto de negocio disponible: `contexts/CONTEXT.md` si existe en el checkout local, o su copia versionada en `docs/briefing.md`, más `memory-bank/projectbrief.md` (ver `.agents/rules/nexova-context.md`).
 - La fecha actual (`AAAA-MM-DD`), para fechar la entrada nueva.
 
 ## Procedimiento
